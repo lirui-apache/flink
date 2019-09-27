@@ -33,6 +33,7 @@ import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.MapType;
+import org.apache.flink.table.types.logical.NullType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
@@ -108,7 +109,8 @@ public class HiveTypeUtil {
 				return toFlinkPrimitiveType((PrimitiveTypeInfo) hiveType);
 			case LIST:
 				ListTypeInfo listTypeInfo = (ListTypeInfo) hiveType;
-				return DataTypes.ARRAY(toFlinkType(listTypeInfo.getListElementTypeInfo()));
+				// hive array type nullable is false
+				return DataTypes.ARRAY(toFlinkType(listTypeInfo.getListElementTypeInfo())).notNull();
 			case MAP:
 				MapTypeInfo mapTypeInfo = (MapTypeInfo) hiveType;
 				return DataTypes.MAP(toFlinkType(mapTypeInfo.getMapKeyTypeInfo()), toFlinkType(mapTypeInfo.getMapValueTypeInfo()));
@@ -324,6 +326,11 @@ public class HiveTypeUtil {
 				}
 			}
 			return TypeInfoFactory.getStructTypeInfo(names, typeInfos);
+		}
+
+		@Override
+		public TypeInfo visit(NullType nullType) {
+			return TypeInfoFactory.voidTypeInfo;
 		}
 
 		@Override

@@ -48,7 +48,7 @@ import java.util.function.Supplier;
  */
 public class ParserImpl implements Parser {
 
-	private final CatalogManager catalogManager;
+	final CatalogManager catalogManager;
 
 	// we use supplier pattern here in order to use the most up to
 	// date configuration. Users might change the parser configuration in a TableConfig in between

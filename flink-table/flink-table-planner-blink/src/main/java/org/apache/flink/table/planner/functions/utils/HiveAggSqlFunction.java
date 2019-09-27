@@ -23,6 +23,7 @@ import org.apache.flink.table.functions.AggregateFunction;
 import org.apache.flink.table.functions.FunctionIdentifier;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.NullType;
 import org.apache.flink.util.InstantiationUtil;
 
 import org.apache.calcite.rel.type.RelDataType;
@@ -75,6 +76,13 @@ public class HiveAggSqlFunction extends AggSqlFunction {
 		return opBinding -> {
 			List<RelDataType> sqlTypes = opBinding.collectOperandTypes();
 			LogicalType[] parameters = UserDefinedFunctionUtils.getOperandTypeArray(opBinding);
+
+			// we'll have null for NULL type, change it to corresponding logical type
+			for (int i = 0; i < parameters.length; i++) {
+				if (parameters[i] == null) {
+					parameters[i] = new NullType();
+				}
+			}
 
 			Object[] constantArguments = new Object[sqlTypes.size()];
 			// Can not touch the literals, Calcite make them in previous RelNode.

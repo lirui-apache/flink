@@ -132,7 +132,8 @@ public class HiveGenericUDAF
 				// Note that this is provided for informational purposes only and the function implementation
 				// is not expected to ensure the wildcard handling of the target relation.
 				// That is handled by the framework.
-				Boolean.FALSE));
+				// TODO: if we don't have any input, consider it's for allColumns. Need further verification.
+				inputInspectors.length == 0));
 	}
 
 	/**

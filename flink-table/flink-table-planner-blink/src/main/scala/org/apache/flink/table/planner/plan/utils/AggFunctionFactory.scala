@@ -450,6 +450,9 @@ class AggFunctionFactory(
       case DECIMAL =>
         val d = argTypes(0).asInstanceOf[DecimalType]
         new DecimalSingleValueAggFunction(d)
+      case CHAR =>
+        val d = argTypes(0).asInstanceOf[CharType]
+        new CharSingleValueAggFunction(d)
       case t =>
         throw new TableException(s"SINGLE_VALUE aggregate function doesn't support type '$t'.")
     }

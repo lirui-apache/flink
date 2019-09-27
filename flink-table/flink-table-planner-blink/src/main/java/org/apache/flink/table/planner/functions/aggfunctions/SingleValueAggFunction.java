@@ -23,6 +23,7 @@ import org.apache.flink.table.expressions.CallExpression;
 import org.apache.flink.table.expressions.Expression;
 import org.apache.flink.table.expressions.UnresolvedReferenceExpression;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.CharType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.TimeType;
 import org.apache.flink.table.types.logical.TimestampType;
@@ -249,6 +250,25 @@ public abstract class SingleValueAggFunction extends DeclarativeAggregateFunctio
 		@Override
 		public DataType getResultType() {
 			return DataTypes.STRING();
+		}
+	}
+
+	/**
+	 * Built-in char single value aggregate function.
+	 */
+	public static final class CharSingleValueAggFunction extends SingleValueAggFunction {
+
+		private static final long serialVersionUID = 1L;
+
+		private final CharType charType;
+
+		public CharSingleValueAggFunction(CharType charType) {
+			this.charType = charType;
+		}
+
+		@Override
+		public DataType getResultType() {
+			return DataTypes.CHAR(charType.getLength());
 		}
 	}
 

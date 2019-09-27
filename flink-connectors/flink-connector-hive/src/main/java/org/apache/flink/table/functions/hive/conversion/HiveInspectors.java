@@ -144,7 +144,8 @@ public class HiveInspectors {
 					inspector instanceof LongObjectInspector ||
 					inspector instanceof FloatObjectInspector ||
 					inspector instanceof DoubleObjectInspector ||
-					inspector instanceof BinaryObjectInspector) {
+					inspector instanceof BinaryObjectInspector ||
+					inspector instanceof VoidObjectInspector) {
 				conversion = IdentityConversion.INSTANCE;
 			} else if (inspector instanceof DateObjectInspector) {
 				conversion = hiveShim::toHiveDate;

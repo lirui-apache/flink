@@ -216,10 +216,12 @@ class FlinkRelMdColumnUniqueness private extends MetadataHandler[BuiltInMetadata
 
     // If no columns can affect uniqueness, then return unknown
     if (childColumns.cardinality == 0) {
-      null
-    } else {
-      mq.areColumnsUnique(originalNode.getInput(), childColumns.build, ignoreNulls)
+      if (columns.cardinality() != 0 || projects.size() != 1 ||
+        !projects.get(0).isInstanceOf[RexInputRef]) {
+        return null
+      }
     }
+    mq.areColumnsUnique(originalNode.getInput(), childColumns.build, ignoreNulls)
   }
 
   def areColumnsUnique(

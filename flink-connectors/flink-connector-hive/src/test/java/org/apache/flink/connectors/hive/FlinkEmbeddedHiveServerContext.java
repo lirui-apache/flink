@@ -19,6 +19,7 @@
 package org.apache.flink.connectors.hive;
 
 import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
+import org.apache.flink.util.FileUtils;
 
 import com.klarna.hiverunner.HiveServerContext;
 import com.klarna.hiverunner.config.HiveRunnerConfig;
@@ -30,6 +31,7 @@ import org.junit.rules.TemporaryFolder;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Map;
 import java.util.UUID;
 
@@ -97,10 +99,15 @@ public class FlinkEmbeddedHiveServerContext implements HiveServerContext {
 	// Some Hive code may create HiveConf instances relying on the hive-site in classpath. Make sure such code can
 	// read the configurations we set here.
 	private void setHiveSitePath() {
-		File hiveSite = new File(newFolder(basedir, "hive-conf"), "hive-site.xml");
-		try (FileOutputStream outputStream = new FileOutputStream(hiveSite)) {
-			hiveConf.writeXml(outputStream);
-			HiveConf.setHiveSiteLocation(hiveSite.toURI().toURL());
+		try {
+			// TODO: let's try putting the conf in a dedicated folder
+			File dir = Files.createTempDirectory("hive-conf").toFile();
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> FileUtils.deleteDirectoryQuietly(dir)));
+			File hiveSite = new File(dir, "hive-site.xml");
+			try (FileOutputStream outputStream = new FileOutputStream(hiveSite)) {
+				hiveConf.writeXml(outputStream);
+				HiveConf.setHiveSiteLocation(hiveSite.toURI().toURL());
+			}
 		} catch (IOException e) {
 			throw new RuntimeException("Failed to write hive-site.xml", e);
 		}

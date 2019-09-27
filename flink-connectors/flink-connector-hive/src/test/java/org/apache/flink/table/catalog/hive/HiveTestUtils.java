@@ -135,7 +135,7 @@ public class HiveTestUtils {
 	public static TableEnvironment createTableEnvWithBlinkPlannerBatchMode(SqlDialect dialect) {
 		EnvironmentSettings settings = EnvironmentSettings.newInstance().useBlinkPlanner().inBatchMode().build();
 		TableEnvironment tableEnv = TableEnvironment.create(settings);
-		tableEnv.getConfig().getConfiguration().setInteger(TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key(), 1);
+		tableEnv.getConfig().getConfiguration().setInteger(TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key(), 2);
 		tableEnv.getConfig().setSqlDialect(dialect);
 		return tableEnv;
 	}

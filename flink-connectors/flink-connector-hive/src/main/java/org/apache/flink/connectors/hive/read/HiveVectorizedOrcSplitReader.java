@@ -34,12 +34,12 @@ import org.apache.hadoop.mapred.JobConf;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import static org.apache.flink.table.data.vector.VectorizedColumnBatch.DEFAULT_SIZE;
-
 /**
  * Orc {@link SplitReader} to read files using {@link OrcColumnarRowSplitReader}.
  */
 public class HiveVectorizedOrcSplitReader implements SplitReader {
+
+	private static final int HIVE_ORC_BATCH_SIZE = 1024;
 
 	private OrcColumnarRowSplitReader reader;
 
@@ -71,7 +71,7 @@ public class HiveVectorizedOrcSplitReader implements SplitReader {
 						split.getHiveTablePartition().getPartitionSpec(),
 						selectedFields,
 						new ArrayList<>(),
-						DEFAULT_SIZE,
+						HIVE_ORC_BATCH_SIZE,
 						new Path(fileSplit.getPath().toString()),
 						fileSplit.getStart(),
 						fileSplit.getLength()) :
@@ -83,7 +83,7 @@ public class HiveVectorizedOrcSplitReader implements SplitReader {
 						split.getHiveTablePartition().getPartitionSpec(),
 						selectedFields,
 						new ArrayList<>(),
-						DEFAULT_SIZE,
+						HIVE_ORC_BATCH_SIZE,
 						new Path(fileSplit.getPath().toString()),
 						fileSplit.getStart(),
 						fileSplit.getLength());
