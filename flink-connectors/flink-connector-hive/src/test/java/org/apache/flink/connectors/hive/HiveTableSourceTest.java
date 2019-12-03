@@ -50,7 +50,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * Tests {@link HiveTableSource}.
  */
-@RunWith(FlinkStandaloneHiveRunner.class)
+@RunWith(FlinkEmbeddedHiveRunner.class)
 public class HiveTableSourceTest {
 
 	@HiveSQL(files = {})

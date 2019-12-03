@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HADOOPBIN;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVECONVERTJOIN;
@@ -44,7 +45,9 @@ import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_INFER_BUCKET_SO
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_SERVER2_LOGGING_OPERATION_ENABLED;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.LOCALSCRATCHDIR;
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTORECONNECTURLKEY;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTOREWAREHOUSE;
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTORE_FASTPATH;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTORE_VALIDATE_COLUMNS;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTORE_VALIDATE_CONSTRAINTS;
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTORE_VALIDATE_TABLES;
@@ -62,16 +65,10 @@ public class FlinkStandaloneHiveServerContext implements HiveServerContext {
 	private final TemporaryFolder basedir;
 	private final HiveRunnerConfig hiveRunnerConfig;
 	private boolean inited = false;
-	private final int hmsPort;
 
-	FlinkStandaloneHiveServerContext(TemporaryFolder basedir, HiveRunnerConfig hiveRunnerConfig, int hmsPort) {
+	FlinkStandaloneHiveServerContext(TemporaryFolder basedir, HiveRunnerConfig hiveRunnerConfig) {
 		this.basedir = basedir;
 		this.hiveRunnerConfig = hiveRunnerConfig;
-		this.hmsPort = hmsPort;
-	}
-
-	private String toHmsURI() {
-		return "thrift://localhost:" + hmsPort;
 	}
 
 	@Override
@@ -167,7 +164,6 @@ public class FlinkStandaloneHiveServerContext implements HiveServerContext {
 		// Set the Hive Metastore DB driver
 		hiveConf.set("datanucleus.schema.autoCreateAll", "true");
 		hiveConf.set("hive.metastore.schema.verification", "false");
-		hiveConf.set("hive.metastore.uris", toHmsURI());
 		// No pooling needed. This will save us a lot of threads
 		hiveConf.set("datanucleus.connectionPoolingType", "None");
 
@@ -178,6 +174,11 @@ public class FlinkStandaloneHiveServerContext implements HiveServerContext {
 		// disable authorization to avoid NPE
 		conf.set(HIVE_AUTHORIZATION_MANAGER.varname,
 				"org.apache.hive.hcatalog.storagehandler.DummyHCatAuthProvider");
+
+		// set jdo connection url
+		String metaStorageUrl = "jdbc:derby:memory:" + UUID.randomUUID().toString();
+		conf.setVar(METASTORECONNECTURLKEY, metaStorageUrl + ";create=true");
+		conf.setBoolVar(METASTORE_FASTPATH, true);
 	}
 
 	private void configureFileSystem(TemporaryFolder basedir, HiveConf conf) {
