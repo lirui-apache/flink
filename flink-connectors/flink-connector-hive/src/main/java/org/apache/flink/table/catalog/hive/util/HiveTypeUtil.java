@@ -109,8 +109,7 @@ public class HiveTypeUtil {
 				return toFlinkPrimitiveType((PrimitiveTypeInfo) hiveType);
 			case LIST:
 				ListTypeInfo listTypeInfo = (ListTypeInfo) hiveType;
-				// hive array type nullable is false
-				return DataTypes.ARRAY(toFlinkType(listTypeInfo.getListElementTypeInfo())).notNull();
+				return DataTypes.ARRAY(toFlinkType(listTypeInfo.getListElementTypeInfo()));
 			case MAP:
 				MapTypeInfo mapTypeInfo = (MapTypeInfo) hiveType;
 				return DataTypes.MAP(toFlinkType(mapTypeInfo.getMapKeyTypeInfo()), toFlinkType(mapTypeInfo.getMapValueTypeInfo()));

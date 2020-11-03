@@ -315,7 +315,8 @@ public class TableEnvHiveConnectorITCase {
 				.addRow(new Object[]{1, "a"})
 				.commit();
 		tableEnv.executeSql("create table dest (x int) partitioned by (p1 int,p2 string)");
-		tableEnv.executeSql("insert into dest partition (p1=1) select * from src").await();
+		// hive dialect requires dynamic partitions in the spec at the moment
+		tableEnv.executeSql("insert into dest partition (p1=1,p2) select * from src").await();
 		List<Row> results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from dest").execute().collect());
 		assertEquals("[1,1,a]", results.toString());
 		tableEnv.executeSql("drop table if exists src");
@@ -326,7 +327,8 @@ public class TableEnvHiveConnectorITCase {
 	public void testInsertPartitionWithValuesSource() throws Exception {
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog();
 		tableEnv.executeSql("create table dest (x int) partitioned by (p1 int,p2 string)");
-		tableEnv.executeSql("insert into dest partition (p1=1) values(1, 'a')").await();
+		// hive dialect requires dynamic partitions in the spec at the moment
+		tableEnv.executeSql("insert into dest partition (p1=1,p2) values(1, 'a')").await();
 		List<Row> results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from dest").execute().collect());
 		assertEquals("[1,1,a]", results.toString());
 		tableEnv.executeSql("drop table if exists dest");

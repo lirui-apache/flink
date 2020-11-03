@@ -243,9 +243,7 @@ public class HiveRunnerITCase {
 			hiveShell.execute("insert into table db1.src1 values (1.0),(2.12),(5.123),(5.456),(123456789.12)");
 
 			// populate src2 with same data from Flink
-			tableEnv.executeSql("insert into db1.src2 values (cast(1.0 as decimal(10,2))), (cast(2.12 as decimal(10,2))), " +
-					"(cast(5.123 as decimal(10,2))), (cast(5.456 as decimal(10,2))), (cast(123456789.12 as decimal(10,2)))")
-					.await();
+			tableEnv.executeSql("insert into db1.src2 values (1.0),(2.12),(5.123),(5.456),(123456789.12)").await();
 			// verify src1 and src2 contain same data
 			verifyHiveQueryResult("select * from db1.src2", hiveShell.executeQuery("select * from db1.src1"));
 
@@ -296,7 +294,7 @@ public class HiveRunnerITCase {
 			tableEnv.executeSql("create table db1.src (x int)");
 			HiveTestUtils.createTextTableInserter(hiveCatalog, "db1", "src").addRow(new Object[]{1}).addRow(new Object[]{2}).commit();
 			tableEnv.executeSql("create table db1.dest (x int) partitioned by (p1 string, p2 double)");
-			tableEnv.executeSql("insert into db1.dest partition (p1='1''1', p2=1.1) select x from db1.src").await();
+			tableEnv.executeSql("insert into db1.dest partition (p1='1\\'1', p2=1.1) select x from db1.src").await();
 			assertEquals(1, hiveCatalog.listPartitions(new ObjectPath("db1", "dest")).size());
 			verifyHiveQueryResult("select * from db1.dest", Arrays.asList("1\t1'1\t1.1", "2\t1'1\t1.1"));
 		} finally {
@@ -332,7 +330,8 @@ public class HiveRunnerITCase {
 			tableEnv.executeSql("create table db1.src (x int, y string)");
 			HiveTestUtils.createTextTableInserter(hiveCatalog, "db1", "src").addRow(new Object[]{1, "a"}).addRow(new Object[]{2, "b"}).commit();
 			tableEnv.executeSql("create table db1.dest (x int) partitioned by (p1 double, p2 string)");
-			tableEnv.executeSql("insert into db1.dest partition (p1=1.1) select x,y from db1.src").await();
+			// hive dialect requires dynamic partitions in the spec at the moment
+			tableEnv.executeSql("insert into db1.dest partition (p1=1.1,p2) select x,y from db1.src").await();
 			assertEquals(2, hiveCatalog.listPartitions(new ObjectPath("db1", "dest")).size());
 			verifyHiveQueryResult("select * from db1.dest", Arrays.asList("1\t1.1\ta", "2\t1.1\tb"));
 		} finally {

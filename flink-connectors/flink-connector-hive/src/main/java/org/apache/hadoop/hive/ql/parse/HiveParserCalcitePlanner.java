@@ -86,6 +86,7 @@ import org.apache.calcite.sql.SqlWindow;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
@@ -771,8 +772,13 @@ public class HiveParserCalcitePlanner extends CalcitePlanner {
 									case SHORT:
 									case INT:
 									case LONG:
-									case DECIMAL:
 										row.add(rexBuilder.makeExactLiteral(new BigDecimal(val), calciteType));
+										break;
+									case DECIMAL:
+										BigDecimal bigDec = new BigDecimal(val);
+										row.add(SqlTypeUtil.isValidDecimalValue(bigDec, calciteType) ?
+												rexBuilder.makeExactLiteral(bigDec, calciteType) :
+												rexBuilder.makeNullLiteral(calciteType));
 										break;
 									case FLOAT:
 									case DOUBLE:

@@ -37,6 +37,7 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -55,6 +56,7 @@ import java.util.stream.Stream;
  * Hive QFile tests.
  */
 @RunWith(FlinkStandaloneHiveRunner.class)
+@Ignore
 public class HiveQFileTest {
 
 	@HiveSQL(files = {})

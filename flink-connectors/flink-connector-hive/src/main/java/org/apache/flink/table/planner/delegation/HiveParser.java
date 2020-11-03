@@ -167,8 +167,12 @@ public class HiveParser extends ParserImpl {
 				}
 			}
 			return res == null ? Collections.emptyList() : Collections.singletonList(res);
-		} catch (ParseException | SemanticException | IOException | LockException e) {
-			LOG.warn("Failed to parse SQL statement with Hive planner. Falling back to Flink's planner.", e);
+		} catch (ParseException e){
+			// ParseException can happen for flink-specific statements, e.g. catalog DDLs
+			LOG.warn("Failed to parse SQL statement with Hive parser. Falling back to Flink's parser.", e);
+			return super.parse(statement);
+		} catch (SemanticException | IOException | LockException e) {
+			LOG.warn("Failed to parse SQL statement with Hive parser. Falling back to Flink's parser.", e);
 			// disable fallback for now
 			throw new RuntimeException(e);
 		} finally {
@@ -177,9 +181,11 @@ public class HiveParser extends ParserImpl {
 	}
 
 	private static boolean isDDL(QueryState queryState, BaseSemanticAnalyzer analyzer) {
+		HiveOperation operation = queryState.getHiveOperation();
 		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof FunctionSemanticAnalyzer ||
-				analyzer instanceof MacroSemanticAnalyzer || queryState.getHiveOperation() == HiveOperation.CREATETABLE ||
-				queryState.getHiveOperation() == HiveOperation.CREATETABLE_AS_SELECT;
+				analyzer instanceof MacroSemanticAnalyzer || operation == HiveOperation.CREATETABLE ||
+				operation == HiveOperation.CREATETABLE_AS_SELECT || operation == HiveOperation.CREATEVIEW ||
+				operation == HiveOperation.ALTERVIEW_AS;
 	}
 
 	private Operation handleDDL(ASTNode node, BaseSemanticAnalyzer hiveAnalyzer, Context context) throws SemanticException {
@@ -311,10 +317,12 @@ public class HiveParser extends ParserImpl {
 			} else {
 				// dynamic partition
 				Map<String, String> spec = qbMetaData.getPartSpecForAlias(insClauseName);
-				for (String partCol : partCols) {
-					String val = spec.get(partCol);
-					if (val != null) {
-						staticPartSpec.put(partCol, val);
+				if (spec != null) {
+					for (String partCol : partCols) {
+						String val = spec.get(partCol);
+						if (val != null) {
+							staticPartSpec.put(partCol, val);
+						}
 					}
 				}
 			}

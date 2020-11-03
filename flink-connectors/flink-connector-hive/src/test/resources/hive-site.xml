@@ -39,4 +39,9 @@
 		<value>true</value>
 	</property>
 
+	<property>
+		<name>hive.allow.udf.load.on.demand</name>
+		<value>true</value>
+	</property>
+
 </configuration>

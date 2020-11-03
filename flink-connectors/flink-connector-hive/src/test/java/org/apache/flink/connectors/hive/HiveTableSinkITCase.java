@@ -224,6 +224,8 @@ public class HiveTableSinkITCase {
 					"'" + SINK_PARTITION_COMMIT_SUCCESS_FILE_NAME.key() + "'='_MY_SUCCESS'" +
 					")");
 
+			// hive dialect only works with hive tables at the moment, switch to default dialect
+			tEnv.getConfig().setSqlDialect(SqlDialect.DEFAULT);
 			tEnv.sqlQuery("select * from my_table").executeInsert("sink_table").await();
 
 			assertBatch("db1.sink_table", Arrays.asList(
