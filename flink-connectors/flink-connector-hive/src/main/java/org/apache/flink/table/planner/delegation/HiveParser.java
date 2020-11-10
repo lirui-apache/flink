@@ -18,6 +18,7 @@
 
 package org.apache.flink.table.planner.delegation;
 
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogManager;
@@ -27,6 +28,8 @@ import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.UnresolvedIdentifier;
 import org.apache.flink.table.catalog.config.CatalogConfig;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
+import org.apache.flink.table.catalog.hive.client.HiveShim;
+import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
 import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.table.module.hive.udf.generic.HiveGenericUDFGrouping;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
@@ -56,7 +59,8 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.QueryState;
+import org.apache.hadoop.hive.ql.HiveParserContext;
+import org.apache.hadoop.hive.ql.HiveParserQueryState;
 import org.apache.hadoop.hive.ql.exec.DDLTask;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.Task;
@@ -65,19 +69,17 @@ import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.TypeConverter;
+import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.CalcitePlanner;
 import org.apache.hadoop.hive.ql.parse.DDLSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.FunctionSemanticAnalyzer;
+import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
+import org.apache.hadoop.hive.ql.parse.HiveParserQB;
 import org.apache.hadoop.hive.ql.parse.MacroSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ParseException;
-import org.apache.hadoop.hive.ql.parse.ParseUtils;
-import org.apache.hadoop.hive.ql.parse.QB;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
@@ -131,6 +133,7 @@ public class HiveParser extends ParserImpl {
 		}
 		HiveConf hiveConf = new HiveConf(((HiveCatalog) currentCatalog).getHiveConf());
 		hiveConf.setVar(HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
+		HiveShim hiveShim = HiveShimLoader.loadHiveShim(((HiveCatalog) currentCatalog).getHiveVersion());
 		try {
 			// creates SessionState
 			SessionState sessionState = new SessionState(hiveConf);
@@ -141,18 +144,18 @@ public class HiveParser extends ParserImpl {
 			SessionState.start(sessionState);
 			// We override Hive's grouping function. Refer to the implementation for more details.
 			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
-			final Context context = new Context(hiveConf);
+			final HiveParserContext context = new HiveParserContext(hiveConf);
 			// parse statement to get AST
-			final ASTNode node = ParseUtils.parse(statement, context);
-			final QueryState queryState = new QueryState(hiveConf);
+			final ASTNode node = HiveASTParseUtils.parse(statement, context);
+			final Object queryState = hiveShim.createQueryState(hiveConf);
 			// generate Calcite plan
-			BaseSemanticAnalyzer hiveAnalyzer = SemanticAnalyzerFactory.get(queryState, node);
+			Tuple2<BaseSemanticAnalyzer, HiveOperation> analyzerAndOperation = hiveShim.getAnalyzerAndOperation(node, hiveConf, queryState);
 			Operation res;
-			if (isDDL(queryState, hiveAnalyzer)) {
+			if (isDDL(analyzerAndOperation.f1, analyzerAndOperation.f0)) {
 				return super.parse(statement);
 //				res = handleDDL(node, hiveAnalyzer, context);
 			} else {
-				CalcitePlanner analyzer = new HiveParserCalcitePlanner(queryState, plannerContext, catalogManager);
+				HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(new HiveParserQueryState(hiveConf), plannerContext, catalogManager, hiveShim);
 				analyzer.initCtx(context);
 				analyzer.init(false);
 				RelNode relNode = analyzer.genLogicalPlan(node);
@@ -167,7 +170,7 @@ public class HiveParser extends ParserImpl {
 				}
 			}
 			return res == null ? Collections.emptyList() : Collections.singletonList(res);
-		} catch (ParseException e){
+		} catch (ParseException e) {
 			// ParseException can happen for flink-specific statements, e.g. catalog DDLs
 			LOG.warn("Failed to parse SQL statement with Hive parser. Falling back to Flink's parser.", e);
 			return super.parse(statement);
@@ -180,8 +183,7 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private static boolean isDDL(QueryState queryState, BaseSemanticAnalyzer analyzer) {
-		HiveOperation operation = queryState.getHiveOperation();
+	private static boolean isDDL(HiveOperation operation, BaseSemanticAnalyzer analyzer) {
 		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof FunctionSemanticAnalyzer ||
 				analyzer instanceof MacroSemanticAnalyzer || operation == HiveOperation.CREATETABLE ||
 				operation == HiveOperation.CREATETABLE_AS_SELECT || operation == HiveOperation.CREATEVIEW ||
@@ -266,7 +268,7 @@ public class HiveParser extends ParserImpl {
 			Preconditions.checkArgument(sortInput instanceof Project, "" +
 					"Expect input of Sort to be a Project, actually got " + sortInput);
 		}
-		QB topQB = analyzer.getQB();
+		HiveParserQB topQB = analyzer.getQB();
 		QBMetaData qbMetaData = topQB.getMetaData();
 		// decide the dest table
 		Map<String, Table> nameToDestTable = qbMetaData.getNameToDestTable();
@@ -298,13 +300,13 @@ public class HiveParser extends ParserImpl {
 		List<FieldSchema> allCols = new ArrayList<>(destTable.getCols());
 		allCols.addAll(destTable.getPartCols());
 		for (FieldSchema col : allCols) {
-			targetColToType.put(col.getName(), TypeConverter.convert(TypeInfoUtils.getTypeInfoFromTypeString(col.getType()), typeFactory));
+			targetColToType.put(col.getName(), HiveParserTypeConverter.convert(TypeInfoUtils.getTypeInfoFromTypeString(col.getType()), typeFactory));
 		}
 
 		// decide static partition specs
 		Map<String, String> staticPartSpec = new LinkedHashMap<>();
 		if (destTable.isPartitioned()) {
-			List<String> partCols = destTable.getPartColNames();
+			List<String> partCols = HiveCatalog.getFieldNames(destTable.getTTable().getPartitionKeys());
 
 			if (!nameToDestPart.isEmpty()) {
 				// static partition
@@ -338,7 +340,7 @@ public class HiveParser extends ParserImpl {
 				RelNode expandedProject = replaceProjectForStaticPart(sortInput, staticPartSpec, destTable, targetColToType);
 
 				List<RelFieldCollation> fieldCollations = sort.collation.getFieldCollations();
-				int numDynmPart = destTable.getPartColNames().size() - staticPartSpec.size();
+				int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
 				// we may need to shift the field collations
 				if (!fieldCollations.isEmpty() && numDynmPart > 0) {
 					int insertIndex = sortInput.getProjects().size() - numDynmPart;
@@ -427,7 +429,7 @@ public class HiveParser extends ParserImpl {
 		for (FieldSchema col : cols) {
 			int index = destSchema.indexOf(col.getName());
 			if (index < 0) {
-				updatedIndices.add(TypeConverter.convert(TypeInfoUtils.getTypeInfoFromTypeString(col.getType()),
+				updatedIndices.add(HiveParserTypeConverter.convert(TypeInfoUtils.getTypeInfoFromTypeString(col.getType()),
 						plannerContext.getTypeFactory()));
 			} else {
 				updatedIndices.add(index);
@@ -463,7 +465,7 @@ public class HiveParser extends ParserImpl {
 			Map<String, RelDataType> targetColToType) {
 		List<RexNode> exprs = project.getProjects();
 		List<RexNode> extendedExprs = new ArrayList<>(exprs);
-		int numDynmPart = destTable.getPartColNames().size() - staticPartSpec.size();
+		int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
 		int insertIndex = extendedExprs.size() - numDynmPart;
 		RexBuilder rexBuilder = plannerContext.getCluster().getRexBuilder();
 		for (Map.Entry<String, String> spec : staticPartSpec.entrySet()) {

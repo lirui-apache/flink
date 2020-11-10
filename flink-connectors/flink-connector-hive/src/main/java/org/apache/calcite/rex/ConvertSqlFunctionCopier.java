@@ -34,9 +34,10 @@ import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.validate.SqlNameMatcher;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveBetween;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveExtractDate;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
 import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,29 +50,22 @@ import java.util.stream.Collectors;
  */
 public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 
-	// some HiveExtractDate has wrong name, map them to functions with the correct names
+	// some HiveParserExtractDate has wrong name, map them to functions with the correct names
 	private static final Map<SqlFunction, SqlFunction> HIVE_EXTRACT_DATE_TO_NEW_NAME = new HashMap<>();
 
 	static {
 		// weekofyear
-		HIVE_EXTRACT_DATE_TO_NEW_NAME.put(HiveExtractDate.WEEK,
+		HIVE_EXTRACT_DATE_TO_NEW_NAME.put(HiveParserExtractDate.WEEK,
 				new SqlFunction("WEEKOFYEAR", SqlKind.EXTRACT, ReturnTypes.INTEGER_NULLABLE, null,
 						OperandTypes.INTERVALINTERVAL_INTERVALDATETIME,
 						SqlFunctionCategory.SYSTEM));
 	}
 
-	private final Class hiveCalciteSqlFnClz;
 	private final SqlOperatorTable opTable;
 	private final SqlNameMatcher nameMatcher;
 
 	public ConvertSqlFunctionCopier(RexBuilder builder, SqlOperatorTable opTable, SqlNameMatcher nameMatcher) {
 		super(builder);
-		try {
-			hiveCalciteSqlFnClz = Class.forName(
-					"org.apache.hadoop.hive.ql.optimizer.calcite.translator.SqlFunctionConverter$CalciteSqlFn");
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(e);
-		}
 		this.opTable = opTable;
 		this.nameMatcher = nameMatcher;
 	}
@@ -80,7 +74,7 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 	public RexNode visitCall(RexCall call) {
 		SqlOperator operator = call.getOperator();
 		List<RexNode> operands = call.getOperands();
-		if (HiveExtractDate.ALL_FUNCTIONS.contains(operator)) {
+		if (HiveParserExtractDate.ALL_FUNCTIONS.contains(operator)) {
 			// Hive adds extra operands for these functions, need to remove them
 			operands = operands.stream()
 					.filter(o -> !(o instanceof RexLiteral && ((RexLiteral) o).getTypeName() == SqlTypeName.SYMBOL))
@@ -147,6 +141,6 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 	}
 
 	boolean isHiveCalciteSqlFn(SqlOperator operator) {
-		return hiveCalciteSqlFnClz.isInstance(operator);
+		return operator instanceof HiveParserSqlFunctionConverter.CalciteSqlFn;
 	}
 }

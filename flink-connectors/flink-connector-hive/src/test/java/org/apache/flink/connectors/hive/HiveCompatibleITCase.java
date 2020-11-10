@@ -18,6 +18,7 @@
 
 package org.apache.flink.connectors.hive;
 
+import org.apache.flink.table.HiveVersionTestUtil;
 import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
@@ -36,7 +37,9 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Test hive query compatibility.
@@ -121,16 +124,21 @@ public class HiveCompatibleITCase {
 				"select * from (select a.value, a.* from (select * from src) a join (select * from src) b on a.key = b.key) t",
 				"select * from bar where i in (1,2,3)",
 				"select * from bar where i between 1 and 3",
-				"select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1",
 				"select 'x' as key_new , split(value,',') as value_new from src ORDER BY key_new ASC, value_new[0] ASC limit 20",
 				"select x from foo sort by x",
 				"select x from foo cluster by x",
 				"select x,y from foo distribute by abs(y)",
-				"select x,y from foo distribute by y sort by x desc"
+				"select x,y from foo distribute by y sort by x desc",
+				"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2"
 		};
+		List<String> toRun = new ArrayList<>(Arrays.asList(queries));
+		// add test cases specific to each version
+		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
+			toRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
+		}
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(SqlDialect.HIVE);
-//		runQuery("select 'x' as key_new , split(value,',') as value_new from src ORDER BY key_new ASC, value_new[0] ASC limit 20", tableEnv);
-		for (String query : queries) {
+//		runQuery("select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2", tableEnv);
+		for (String query : toRun) {
 			runQuery(query, tableEnv);
 		}
 		System.out.println("finished");

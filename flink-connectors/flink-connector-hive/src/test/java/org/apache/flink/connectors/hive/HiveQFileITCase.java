@@ -19,6 +19,7 @@
 package org.apache.flink.connectors.hive;
 
 import org.apache.flink.table.api.SqlDialect;
+import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.HiveTestUtils;
@@ -29,6 +30,7 @@ import org.apache.flink.table.module.CoreModule;
 import org.apache.flink.table.module.hive.HiveModule;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CollectionUtil;
+import org.apache.flink.util.ExceptionUtils;
 
 import com.klarna.hiverunner.HiveShell;
 import com.klarna.hiverunner.annotations.HiveSQL;
@@ -57,7 +59,7 @@ import java.util.stream.Stream;
  */
 @RunWith(FlinkStandaloneHiveRunner.class)
 @Ignore
-public class HiveQFileTest {
+public class HiveQFileITCase {
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;
@@ -130,7 +132,7 @@ public class HiveQFileTest {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "cbo_const.q");
+		File qfile = new File(QFILES_DIR, "archive_excludeHadoop20.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);
@@ -142,6 +144,7 @@ public class HiveQFileTest {
 		}
 		fileWriter.write(s);
 		fileWriter.newLine();
+		fileWriter.flush();
 		System.out.println(s);
 	}
 
@@ -231,7 +234,7 @@ public class HiveQFileTest {
 				}
 				if (verbose && !(t instanceof UnsupportedOperationException)) {
 					println("Failed to run statement: " + statement);
-					t.printStackTrace();
+					println(ExceptionUtils.stringifyException(t));
 				} else {
 					println(t.getMessage());
 				}
@@ -300,9 +303,11 @@ public class HiveQFileTest {
 	}
 
 	private void runQuery(TableEnvironment tableEnv, String query) throws Exception {
-//		println(tableEnv.explain(table));
-//		println(TableUtils.collectToList(table));
-		List<Row> results = CollectionUtil.iteratorToList(tableEnv.executeSql(query).collect());
+		Table table = tableEnv.sqlQuery(query);
+		if (verbose) {
+			println(table.explain());
+		}
+		List<Row> results = CollectionUtil.iteratorToList(table.execute().collect());
 		if (verbose) {
 			println("Successfully executed query: " + query);
 			println(results.toString());

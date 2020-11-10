@@ -16,10 +16,32 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.catalog.hive.client;
+package org.apache.hadoop.hive.ql.parse;
 
 /**
- * Shim for Hive version 2.2.0.
+ * Counterpart of hive's PlannerContext.
  */
-public class HiveShimV220 extends HiveShimV211 {
+class HiveParserPlannerContext {
+	protected ASTNode child;
+	protected SemanticAnalyzer.Phase1Ctx ctx1;
+
+	void setParseTreeAttr(ASTNode child, SemanticAnalyzer.Phase1Ctx ctx1) {
+		this.child = child;
+		this.ctx1 = ctx1;
+	}
+
+	void setCTASToken(ASTNode child) {
+	}
+
+	void setViewToken(ASTNode child) {
+	}
+
+	void setInsertToken(ASTNode ast, boolean isTmpFileDest) {
+	}
+
+	void setMultiInsertToken(ASTNode child) {
+	}
+
+	void resetToken() {
+	}
 }

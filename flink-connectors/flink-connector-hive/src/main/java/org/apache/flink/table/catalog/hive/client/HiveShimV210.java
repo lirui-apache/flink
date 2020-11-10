@@ -18,6 +18,8 @@
 
 package org.apache.flink.table.catalog.hive.client;
 
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.api.constraints.UniqueConstraint;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
@@ -25,12 +27,17 @@ import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
 import org.apache.hadoop.hive.metastore.api.InvalidOperationException;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
+import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
+import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
 
@@ -46,6 +53,33 @@ import java.util.Optional;
  * Shim for Hive version 2.1.0.
  */
 public class HiveShimV210 extends HiveShimV201 {
+
+	private static Class queryStateClz;
+	private static Constructor queryStateConstructor;
+	private static Method getHiveOperation;
+	private static Method getAnalyzer;
+
+	private static boolean inited = false;
+
+	private static void init() {
+		if (!inited) {
+			synchronized (HiveShimV210.class) {
+				if (!inited) {
+					try {
+						queryStateClz = Class.forName("org.apache.hadoop.hive.ql.QueryState");
+						queryStateConstructor = queryStateClz.getDeclaredConstructor(HiveConf.class);
+						getHiveOperation = queryStateClz.getDeclaredMethod("getHiveOperation");
+						getHiveOperation.setAccessible(true);
+						getAnalyzer = SemanticAnalyzerFactory.class.getDeclaredMethod("get", queryStateClz, ASTNode.class);
+						getAnalyzer.setAccessible(true);
+						inited = true;
+					} catch (Exception e) {
+						throw new FlinkHiveException("Failed to init shim methods", e);
+					}
+				}
+			}
+		}
+	}
 
 	@Override
 	public void alterPartition(IMetaStoreClient client, String databaseName, String tableName, Partition partition)
@@ -137,6 +171,28 @@ public class HiveShimV210 extends HiveShimV201 {
 					new Object[]{table, hivePKs, Collections.emptyList()});
 		} catch (Exception e) {
 			throw new CatalogException("Failed to create Hive table with constraints", e);
+		}
+	}
+
+	@Override
+	public Tuple2<BaseSemanticAnalyzer, HiveOperation> getAnalyzerAndOperation(ASTNode node, HiveConf hiveConf, Object queryState) {
+		init();
+		try {
+			BaseSemanticAnalyzer analyzer = (BaseSemanticAnalyzer) getAnalyzer.invoke(null, queryState, node);
+			HiveOperation operation = (HiveOperation) getHiveOperation.invoke(queryState);
+			return new Tuple2<>(analyzer, operation);
+		} catch (Exception e) {
+			throw new FlinkHiveException(e);
+		}
+	}
+
+	@Override
+	public Object createQueryState(HiveConf hiveConf) {
+		try {
+			init();
+			return queryStateConstructor.newInstance(hiveConf);
+		} catch (Exception e) {
+			throw new FlinkHiveException(e);
 		}
 	}
 

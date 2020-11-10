@@ -39,7 +39,7 @@ class BatchExecHiveDistributionRule extends ConverterRule(
     val hiveDistribution = rel.asInstanceOf[FlinkLogicalHiveDistribution]
 
     val input = hiveDistribution.getInput
-    val requiredTraitSet = hiveDistribution.getTraitSet.replace(FlinkConventions.BATCH_PHYSICAL)
+    val requiredTraitSet = input.getTraitSet.replace(FlinkConventions.BATCH_PHYSICAL)
     val providedTraitSet = hiveDistribution.getTraitSet.replace(FlinkConventions.BATCH_PHYSICAL)
 
     val newInput = RelOptRule.convert(input, requiredTraitSet)
