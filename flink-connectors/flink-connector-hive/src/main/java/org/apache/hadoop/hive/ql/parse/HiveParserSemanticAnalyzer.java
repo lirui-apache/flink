@@ -2166,7 +2166,7 @@ public class HiveParserSemanticAnalyzer {
 			return result;
 		} else {
 			ASTNode grpByExprs = parseInfo.getGroupByForClause(dest);
-			List<ASTNode> result = new ArrayList<ASTNode>(grpByExprs == null ? 0
+			List<ASTNode> result = new ArrayList<>(grpByExprs == null ? 0
 					: grpByExprs.getChildCount());
 			if (grpByExprs != null) {
 				for (int i = 0; i < grpByExprs.getChildCount(); ++i) {

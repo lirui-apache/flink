@@ -47,6 +47,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
+import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -69,6 +70,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.GroupByDesc;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.ListTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.MapTypeInfo;
@@ -89,6 +91,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
+import static org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.getColumnInternalName;
+import static org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText;
 
 /**
  * Util class for the hive planner.
@@ -117,7 +121,7 @@ public class HiveParserUtils {
 
 	// Overrides CalcitePlanner::canHandleQbForCbo to support SORT BY, CLUSTER BY, etc.
 	public static String canHandleQbForCbo(QueryProperties queryProperties) {
-		if (!queryProperties.hasPTF() && !queryProperties.usesScript() && !queryProperties.hasLateralViews()) {
+		if (!queryProperties.hasPTF() && !queryProperties.usesScript()) {
 			return null;
 		}
 		String msg = "";
@@ -642,5 +646,93 @@ public class HiveParserUtils {
 			throw new SemanticException("Expression in GROUPING function not present in GROUP BY");
 		}
 		return newTargetNode;
+	}
+
+	// extracts useful information for a given lateral view node
+	public static LateralViewInfo extractLateralViewInfo(ASTNode lateralView, HiveParserRowResolver inputRR,
+			HiveParserSemanticAnalyzer hiveAnalyzer, RelOptCluster cluster) throws SemanticException {
+		// checks the left sub-tree
+		ASTNode sel = (ASTNode) lateralView.getChild(0);
+		Preconditions.checkArgument(sel.getToken().getType() == HiveASTParser.TOK_SELECT);
+		Preconditions.checkArgument(sel.getChildCount() == 1);
+		ASTNode selExpr = (ASTNode) sel.getChild(0);
+		Preconditions.checkArgument(selExpr.getToken().getType() == HiveASTParser.TOK_SELEXPR);
+		// decide function name and function
+		ASTNode func = (ASTNode) selExpr.getChild(0);
+		Preconditions.checkArgument(func.getToken().getType() == HiveASTParser.TOK_FUNCTION);
+		String funcName = getFunctionText(func, true);
+		FunctionInfo fi = FunctionRegistry.getFunctionInfo(funcName);
+		GenericUDTF udtf = fi.getGenericUDTF();
+		Preconditions.checkArgument(udtf != null, funcName + " is not a valid UDTF");
+		// decide operands
+		List<ExprNodeDesc> operands = new ArrayList<>(func.getChildCount() - 1);
+		List<ColumnInfo> operandColInfos = new ArrayList<>(func.getChildCount() - 1);
+		HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(inputRR);
+		for (int i = 1; i < func.getChildCount(); i++) {
+			ExprNodeDesc exprDesc = hiveAnalyzer.genExprNodeDesc((ASTNode) func.getChild(i), inputRR, typeCheckCtx);
+			operands.add(exprDesc);
+			operandColInfos.add(new ColumnInfo(getColumnInternalName(i - 1), exprDesc.getWritableObjectInspector(), null, false));
+		}
+		// decide table alias -- there must be a table alias
+		ASTNode tabAliasNode = (ASTNode) selExpr.getChild(selExpr.getChildCount() - 1);
+		Preconditions.checkArgument(tabAliasNode.getToken().getType() == HiveASTParser.TOK_TABALIAS);
+		String tabAlias = unescapeIdentifier(tabAliasNode.getChild(0).getText().toLowerCase());
+		// decide column aliases -- column aliases are optional
+		List<String> colAliases = new ArrayList<>();
+		for (int i = 1; i < selExpr.getChildCount() - 1; i++) {
+			ASTNode child = (ASTNode) selExpr.getChild(i);
+			Preconditions.checkArgument(child.getToken().getType() == HiveASTParser.Identifier);
+			colAliases.add(unescapeIdentifier(child.getText().toLowerCase()));
+		}
+		return new LateralViewInfo(funcName, udtf, operands, operandColInfos, colAliases, tabAlias);
+	}
+
+	/**
+	 * Information needed to generate logical plan for a lateral view.
+	 */
+	public static class LateralViewInfo {
+		private final String funcName;
+		private final GenericUDTF func;
+		// operands to the UDTF
+		private final List<ExprNodeDesc> operands;
+		private final List<ColumnInfo> operandColInfos;
+		// aliases for the UDTF output
+		private final List<String> colAliases;
+		// alias of the logical table
+		private final String tabAlias;
+
+		public LateralViewInfo(String funcName, GenericUDTF func, List<ExprNodeDesc> operands,
+				List<ColumnInfo> operandColInfos, List<String> colAliases, String tabAlias) {
+			this.funcName = funcName;
+			this.func = func;
+			this.operands = operands;
+			this.operandColInfos = operandColInfos;
+			this.colAliases = colAliases;
+			this.tabAlias = tabAlias;
+		}
+
+		public String getFuncName() {
+			return funcName;
+		}
+
+		public GenericUDTF getFunc() {
+			return func;
+		}
+
+		public List<ExprNodeDesc> getOperands() {
+			return operands;
+		}
+
+		public List<ColumnInfo> getOperandColInfos() {
+			return operandColInfos;
+		}
+
+		public List<String> getColAliases() {
+			return colAliases;
+		}
+
+		public String getTabAlias() {
+			return tabAlias;
+		}
 	}
 }

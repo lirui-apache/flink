@@ -129,7 +129,11 @@ public class HiveCompatibleITCase {
 				"select x from foo cluster by x",
 				"select x,y from foo distribute by abs(y)",
 				"select x,y from foo distribute by y sort by x desc",
-				"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2"
+				"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2",
+				"select sum(x) as s1 from foo group by y having s1 > 2 and avg(x) < 4",
+				"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
+				"select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1",
+				"select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2"
 		};
 		List<String> toRun = new ArrayList<>(Arrays.asList(queries));
 		// add test cases specific to each version
@@ -137,7 +141,7 @@ public class HiveCompatibleITCase {
 			toRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(SqlDialect.HIVE);
-//		runQuery("select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2", tableEnv);
+//		runQuery("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2", tableEnv);
 		for (String query : toRun) {
 			runQuery(query, tableEnv);
 		}

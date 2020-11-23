@@ -114,7 +114,7 @@ public class HiveParserRexNodeConverter {
 
 	//outerRR belongs to outer query and is required to resolve correlated references
 	private final HiveParserRowResolver outerRR;
-	private final Map<String, Integer> outerNameToPosMap;
+	private final Map<String, Integer> outerNameToPos;
 	private int correlatedId;
 
 	//Constructor used by HiveRexExecutorImpl
@@ -124,13 +124,13 @@ public class HiveParserRexNodeConverter {
 
 	//subqueries will need outer query's row resolver
 	public HiveParserRexNodeConverter(RelOptCluster cluster, RelDataType inpDataType,
-			Map<String, Integer> outerNameToPosMap,
-			Map<String, Integer> nameToPosMap, HiveParserRowResolver hiveRR, HiveParserRowResolver outerRR, int offset, boolean flattenExpr, int correlatedId) {
+			Map<String, Integer> outerNameToPos, Map<String, Integer> nameToPos, HiveParserRowResolver hiveRR,
+			HiveParserRowResolver outerRR, int offset, boolean flattenExpr, int correlatedId) {
 		this.cluster = cluster;
-		this.inputCtxs = Collections.singletonList(new InputCtx(inpDataType, nameToPosMap, hiveRR, offset));
+		this.inputCtxs = Collections.singletonList(new InputCtx(inpDataType, nameToPos, hiveRR, offset));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = outerRR;
-		this.outerNameToPosMap = outerNameToPosMap;
+		this.outerNameToPos = outerNameToPos;
 		this.correlatedId = correlatedId;
 	}
 
@@ -140,7 +140,7 @@ public class HiveParserRexNodeConverter {
 		this.inputCtxs = Collections.singletonList(new InputCtx(inpDataType, nameToPosMap, null, offset));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = null;
-		this.outerNameToPosMap = null;
+		this.outerNameToPos = null;
 	}
 
 	public HiveParserRexNodeConverter(RelOptCluster cluster, List<InputCtx> inpCtxLst, boolean flattenExpr) {
@@ -148,7 +148,7 @@ public class HiveParserRexNodeConverter {
 		this.inputCtxs = Collections.unmodifiableList(new ArrayList<>(inpCtxLst));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = null;
-		this.outerNameToPosMap = null;
+		this.outerNameToPos = null;
 	}
 
 	public static RexNode convert(RelOptCluster cluster, ExprNodeDesc joinCondnExprNode,
@@ -203,11 +203,11 @@ public class HiveParserRexNodeConverter {
 		if (ic == null) {
 			// we have correlated column, build data type from outer rr
 			RelDataType rowType = HiveParserTypeConverter.getType(cluster, this.outerRR, null);
-			if (this.outerNameToPosMap.get(col.getColumn()) == null) {
+			if (this.outerNameToPos.get(col.getColumn()) == null) {
 				throw new SemanticException("Invalid column name " + col.getColumn());
 			}
 
-			int pos = this.outerNameToPosMap.get(col.getColumn());
+			int pos = this.outerNameToPos.get(col.getColumn());
 			CorrelationId colCorr = new CorrelationId(this.correlatedId);
 			RexNode corExpr = cluster.getRexBuilder().makeCorrel(rowType, colCorr);
 			return cluster.getRexBuilder().makeFieldAccess(corExpr, pos);

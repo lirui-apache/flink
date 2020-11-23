@@ -40,7 +40,7 @@ public class HeartbeatManagerOptions {
 	@Documentation.Section(Documentation.Sections.EXPERT_FAULT_TOLERANCE)
 	public static final ConfigOption<Long> HEARTBEAT_TIMEOUT =
 			key("heartbeat.timeout")
-			.defaultValue(5000000L)
+			.defaultValue(50000L)
 			.withDescription("Timeout for requesting and receiving heartbeat for both sender and receiver sides.");
 
 	// ------------------------------------------------------------------------

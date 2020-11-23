@@ -52,7 +52,7 @@ public class ConvertTableFunctionCopier extends ConvertSqlFunctionCopier {
 		SqlOperator operator = call.getOperator();
 		if (isHiveCalciteSqlFn(operator)) {
 			// explicitly use USER_DEFINED_TABLE_FUNCTION since Hive can set USER_DEFINED_FUNCTION for UDTF
-			SqlOperator convertedOperator = convertOperator((SqlFunction) operator, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
+			SqlOperator convertedOperator = convertOperator(operator, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
 			// create RexCorrelVariable
 			CorrelationId correlId = cluster.createCorrel();
 			RelDataTypeFactory.Builder dataTypeBuilder = cluster.getTypeFactory().builder();
