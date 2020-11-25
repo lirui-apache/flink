@@ -2811,11 +2811,8 @@ public class HiveParserCalcitePlanner {
 				// this is the 1st lateral view
 				if (res == null) {
 					ASTNode rightAST = (ASTNode) lateralView.getChild(1);
-					if (rightAST.getToken().getType() == HiveASTParser.TOK_TABREF) {
-						// TOK_TABREF -> TOK_TABNAME -> identifier
-						String rightName = unescapeIdentifier(rightAST.getChild(0).getChild(0).getText().toLowerCase());
-						res = aliasToRel.get(rightName);
-					}
+					// LHS can be table or sub-query
+					res = aliasToRel.get(alias);
 				}
 				Preconditions.checkState(res != null, "Failed to decide LHS table for current lateral view");
 				HiveParserRowResolver inputRR = relToRowResolver.get(res);
@@ -2957,7 +2954,11 @@ public class HiveParserCalcitePlanner {
 			return false;
 		}
 		// Now check HiveParserQB in more detail.
-		return HiveParserUtils.canHandleQbForCbo(queryProperties) == null;
+		String reason = HiveParserUtils.canHandleQbForCbo(queryProperties);
+		if (reason != null) {
+			LOG.warn("HiveParser doesn't support the SQL statement because it " + reason);
+		}
+		return reason == null;
 	}
 
 	public List<String> getDestSchemaForClause(String clause) {

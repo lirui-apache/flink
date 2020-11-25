@@ -24,6 +24,7 @@ import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.sql.SqlAggFunction;
@@ -38,7 +39,9 @@ import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtrac
 import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
+import org.apache.hadoop.hive.ql.optimizer.calcite.translator.RexNodeConverter;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,12 +56,23 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 	// some HiveParserExtractDate has wrong name, map them to functions with the correct names
 	private static final Map<SqlFunction, SqlFunction> HIVE_EXTRACT_DATE_TO_NEW_NAME = new HashMap<>();
 
+	// need reflection to get some fields from RexWindow
+	private static final Field REX_WINDOW_PART_KEYS;
+	private static final Field REX_WINDOW_ORDER_KEYS;
+
 	static {
 		// weekofyear
 		HIVE_EXTRACT_DATE_TO_NEW_NAME.put(HiveParserExtractDate.WEEK,
 				new SqlFunction("WEEKOFYEAR", SqlKind.EXTRACT, ReturnTypes.INTEGER_NULLABLE, null,
 						OperandTypes.INTERVALINTERVAL_INTERVALDATETIME,
 						SqlFunctionCategory.SYSTEM));
+
+		try {
+			REX_WINDOW_PART_KEYS = RexWindow.class.getDeclaredField("partitionKeys");
+			REX_WINDOW_ORDER_KEYS = RexWindow.class.getDeclaredField("orderKeys");
+		} catch (Exception e) {
+			throw new FlinkHiveException("Failed to init RexWindow fields", e);
+		}
 	}
 
 	private final SqlOperatorTable opTable;
@@ -104,20 +118,20 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 		SqlAggFunction convertedAgg = (SqlAggFunction) operator;
 		RexWindow window = over.getWindow();
 		// let's not rely on the type of the RexOver created by Hive since it can be different from what Flink expects
-		RelDataType inferredType = builder.makeCall(convertedAgg, over.operands).getType();
+		RelDataType inferredType = builder.makeCall(convertedAgg, over.getOperands()).getType();
 		// Hive may add literals to partition keys, remove them
 		List<RexNode> partitionKeys = new ArrayList<>();
-		for (RexNode hivePartitionKey : window.partitionKeys) {
+		for (RexNode hivePartitionKey : getPartKeys(window)) {
 			if (!(hivePartitionKey instanceof RexLiteral)) {
 				partitionKeys.add(hivePartitionKey);
 			}
 		}
-		List<RexFieldCollation> convertedOrderKeys = new ArrayList<>(window.orderKeys.size());
-		for (RexFieldCollation orderKey : window.orderKeys) {
+		List<RexFieldCollation> convertedOrderKeys = new ArrayList<>(getOrderKeys(window).size());
+		for (RexFieldCollation orderKey : getOrderKeys(window)) {
 			convertedOrderKeys.add(new RexFieldCollation(orderKey.getKey().accept(this), orderKey.getValue()));
 		}
 		final boolean[] update = null;
-		return HiveParserUtils.makeOver(builder, inferredType, convertedAgg, visitList(over.operands, update),
+		return HiveParserUtils.makeOver(builder, inferredType, convertedAgg, visitList(over.getOperands(), update),
 				visitList(partitionKeys, update), convertedOrderKeys, window.getLowerBound(), window.getUpperBound(), window.isRows(),
 				true, false, false, false /*these parameters are kept in line with Hive*/);
 	}
@@ -142,5 +156,21 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 
 	boolean isHiveCalciteSqlFn(SqlOperator operator) {
 		return operator instanceof HiveParserSqlFunctionConverter.CalciteSqlFn;
+	}
+
+	private List<RexNode> getPartKeys(RexWindow window) {
+		try {
+			return (List<RexNode>) REX_WINDOW_PART_KEYS.get(window);
+		} catch (IllegalAccessException e) {
+			throw new FlinkHiveException("Failed to get partitionKeys from RexWindow", e);
+		}
+	}
+
+	private List<RexFieldCollation> getOrderKeys(RexWindow window) {
+		try {
+			return (List<RexFieldCollation>) REX_WINDOW_ORDER_KEYS.get(window);
+		} catch (IllegalAccessException e) {
+			throw new FlinkHiveException("Failed to get orderKeys from RexWindow", e);
+		}
 	}
 }

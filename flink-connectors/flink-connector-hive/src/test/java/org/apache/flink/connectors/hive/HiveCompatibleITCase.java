@@ -42,6 +42,48 @@ public class HiveCompatibleITCase {
 
 	private static HiveCatalog hiveCatalog;
 
+	private static final String[] QUERIES = new String[]{
+			"select x from foo order by x desc limit 1",
+			"select x,count(y),max(y) from foo group by x",
+			"select count(distinct i) from bar group by s",
+			"select max(c) from (select x,count(y) as c from foo group by x) t1",
+			"select count(x) from foo union all select i from bar",
+			"select x,sum(y) as s from foo group by x having min(y)>1",
+			"select s from foo join bar on foo.x=bar.i and foo.y=bar.i group by s order by s",
+			"select * from foo join (select max(i) as m from bar) a on foo.y=a.m",
+			"select * from foo left outer join bar on foo.y=bar.i",
+			"select * from foo right outer join bar on foo.y=bar.i",
+			"select * from foo full outer join bar on foo.y=bar.i",
+			"select * from foo where y in (select i from bar)",
+			"select * from foo left semi join bar on foo.y=bar.i",
+			"select (select count(x) from foo where foo.y=bar.i) from bar",
+			"select hiveudf(x,y) from foo",
+			"select hiveudtf(ai) from baz",
+			"select x from foo union select i from bar",
+			"select avg(salary) over (partition by dep) as avgsal from employee",
+			"select dep,name,salary from (select dep,name,salary,rank() over (partition by dep order by salary desc) as rnk from employee) a where rnk=1",
+			"select salary,sum(cnt) over (order by salary)/sum(cnt) over (order by salary ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) from (select salary,count(*) as cnt from employee group by salary) a",
+			"select i from bar except select x from foo",
+			"select x from foo intersect select i from bar",
+			"select x,y,grouping__id,sum(1) from foo group by x,y grouping sets ((x,y),(x))",
+			"select x,y,grouping(x),sum(1) from foo group by x,y grouping sets ((x,y),(x))",
+			"select src.key,src.`[k].*` from src",
+			"select * from (select a.value, a.* from (select * from src) a join (select * from src) b on a.key = b.key) t",
+			"select * from bar where i in (1,2,3)",
+			"select * from bar where i between 1 and 3",
+			"select 'x' as key_new , split(value,',') as value_new from src ORDER BY key_new ASC, value_new[0] ASC limit 20",
+			"select x from foo sort by x",
+			"select x from foo cluster by x",
+			"select x,y from foo distribute by abs(y)",
+			"select x,y from foo distribute by y sort by x desc",
+			"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2",
+			"select sum(x) as s1 from foo group by y having s1 > 2 and avg(x) < 4",
+			"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
+			"select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1",
+			"select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2",
+			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1"
+	};
+
 	@BeforeClass
 	public static void setup() {
 		hiveCatalog = HiveTestUtils.createHiveCatalog();
@@ -99,56 +141,16 @@ public class HiveCompatibleITCase {
 		tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
 		tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
 
-		String[] queries = new String[]{
-				"select x from foo order by x desc limit 1",
-				"select x,count(y),max(y) from foo group by x",
-				"select count(distinct i) from bar group by s",
-				"select max(c) from (select x,count(y) as c from foo group by x) t1",
-				"select count(x) from foo union all select i from bar",
-				"select x,sum(y) as s from foo group by x having min(y)>1",
-				"select s from foo join bar on foo.x=bar.i and foo.y=bar.i group by s order by s",
-				"select * from foo join (select max(i) as m from bar) a on foo.y=a.m",
-				"select * from foo left outer join bar on foo.y=bar.i",
-				"select * from foo right outer join bar on foo.y=bar.i",
-				"select * from foo full outer join bar on foo.y=bar.i",
-				"select * from foo where y in (select i from bar)",
-				"select * from foo left semi join bar on foo.y=bar.i",
-				"select (select count(x) from foo where foo.y=bar.i) from bar",
-				"select hiveudf(x,y) from foo",
-				"select hiveudtf(ai) from baz",
-				"select x from foo union select i from bar",
-				"select avg(salary) over (partition by dep) as avgsal from employee",
-				"select dep,name,salary from (select dep,name,salary,rank() over (partition by dep order by salary desc) as rnk from employee) a where rnk=1",
-				"select salary,sum(cnt) over (order by salary)/sum(cnt) over (order by salary ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) from (select salary,count(*) as cnt from employee group by salary) a",
-				"select i from bar except select x from foo",
-				"select x from foo intersect select i from bar",
-				"select x,y,grouping__id,sum(1) from foo group by x,y grouping sets ((x,y),(x))",
-				"select x,y,grouping(x),sum(1) from foo group by x,y grouping sets ((x,y),(x))",
-				"select src.key,src.`[k].*` from src",
-				"select * from (select a.value, a.* from (select * from src) a join (select * from src) b on a.key = b.key) t",
-				"select * from bar where i in (1,2,3)",
-				"select * from bar where i between 1 and 3",
-				"select 'x' as key_new , split(value,',') as value_new from src ORDER BY key_new ASC, value_new[0] ASC limit 20",
-				"select x from foo sort by x",
-				"select x from foo cluster by x",
-				"select x,y from foo distribute by abs(y)",
-				"select x,y from foo distribute by y sort by x desc",
-				"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2",
-				"select sum(x) as s1 from foo group by y having s1 > 2 and avg(x) < 4",
-				"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
-				"select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1",
-				"select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2"
-		};
-		List<String> toRun = new ArrayList<>(Arrays.asList(queries));
+		List<String> toRun = new ArrayList<>(Arrays.asList(QUERIES));
 		// add test cases specific to each version
 		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
 			toRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
 
-//		runQuery("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2", tableEnv);
-		for (String query : toRun) {
-			runQuery(query, tableEnv);
-		}
+		runQuery("select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1", tableEnv);
+//		for (String query : toRun) {
+//			runQuery(query, tableEnv);
+//		}
 		System.out.println("finished");
 	}
 

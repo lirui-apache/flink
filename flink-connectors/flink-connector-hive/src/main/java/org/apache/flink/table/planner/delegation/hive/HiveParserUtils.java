@@ -131,9 +131,6 @@ public class HiveParserUtils {
 		if (queryProperties.usesScript()) {
 			msg += "uses scripts; ";
 		}
-		if (queryProperties.hasLateralViews()) {
-			msg += "has lateral views; ";
-		}
 		return msg;
 	}
 
@@ -441,10 +438,10 @@ public class HiveParserUtils {
 			GenericUDAFEvaluator.Mode emode, ArrayList<ExprNodeDesc> aggParameters)
 			throws SemanticException {
 
-		SemanticAnalyzer.GenericUDAFInfo r = new SemanticAnalyzer.GenericUDAFInfo();
+		SemanticAnalyzer.GenericUDAFInfo res = new SemanticAnalyzer.GenericUDAFInfo();
 
 		// set r.genericUDAFEvaluator
-		r.genericUDAFEvaluator = evaluator;
+		res.genericUDAFEvaluator = evaluator;
 
 		// set r.returnType
 		ObjectInspector returnOI = null;
@@ -454,23 +451,23 @@ public class HiveParserUtils {
 			for (int ii = 0; ii < aggOIs.size(); ++ii) {
 				aggOIArray[ii] = aggOIs.get(ii);
 			}
-			returnOI = r.genericUDAFEvaluator.init(emode, aggOIArray);
-			r.returnType = TypeInfoUtils.getTypeInfoFromObjectInspector(returnOI);
+			returnOI = res.genericUDAFEvaluator.init(emode, aggOIArray);
+			res.returnType = TypeInfoUtils.getTypeInfoFromObjectInspector(returnOI);
 		} catch (HiveException e) {
 			throw new SemanticException(e);
 		}
 		// set r.convertedParameters
 		// TODO: type conversion
-		r.convertedParameters = aggParameters;
+		res.convertedParameters = aggParameters;
 
-		return r;
+		return res;
 	}
 
 	/**
 	 * Convert exprNodeDesc array to ObjectInspector array.
 	 */
 	public static ArrayList<ObjectInspector> getWritableObjectInspector(ArrayList<ExprNodeDesc> exprs) {
-		ArrayList<ObjectInspector> result = new ArrayList<ObjectInspector>();
+		ArrayList<ObjectInspector> result = new ArrayList<>();
 		for (ExprNodeDesc expr : exprs) {
 			result.add(expr.getWritableObjectInspector());
 		}

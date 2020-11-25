@@ -39,7 +39,6 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -58,7 +57,7 @@ import java.util.stream.Stream;
  * Hive QFile tests.
  */
 @RunWith(FlinkStandaloneHiveRunner.class)
-@Ignore
+//@Ignore
 public class HiveQFileITCase {
 
 	@HiveSQL(files = {})
@@ -90,7 +89,7 @@ public class HiveQFileITCase {
 		init(QTEST_DIR);
 		// The default SerDe doesn't work for the tests, which is inline with Hive
 		setConf(HiveConf.ConfVars.HIVEDEFAULTRCFILESERDE.varname, ColumnarSerDe.class.getCanonicalName());
-		fileWriter = new BufferedWriter(new FileWriter(new File("qtest-result")));
+		fileWriter = new BufferedWriter(new FileWriter(new File("target/qtest-result")));
 	}
 
 	@AfterClass
@@ -132,7 +131,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "archive_excludeHadoop20.q");
+		File qfile = new File(QFILES_DIR, "constprog_semijoin.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);
