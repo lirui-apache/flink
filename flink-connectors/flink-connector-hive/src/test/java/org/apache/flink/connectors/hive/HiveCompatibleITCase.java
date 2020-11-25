@@ -23,19 +23,13 @@ import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.HiveTestUtils;
-import org.apache.flink.table.catalog.hive.client.HiveMetastoreClientFactory;
-import org.apache.flink.table.catalog.hive.client.HiveMetastoreClientWrapper;
-import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
 import org.apache.flink.table.module.CoreModule;
 import org.apache.flink.table.module.hive.HiveModule;
 import org.apache.flink.util.CollectionUtil;
 
-import com.klarna.hiverunner.HiveShell;
-import com.klarna.hiverunner.annotations.HiveSQL;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,56 +38,66 @@ import java.util.List;
 /**
  * Test hive query compatibility.
  */
-@RunWith(FlinkStandaloneHiveRunner.class)
 public class HiveCompatibleITCase {
 
-	@HiveSQL(files = {})
-	private static HiveShell hiveShell;
-
 	private static HiveCatalog hiveCatalog;
-	private static HiveMetastoreClientWrapper hmsClient;
 
 	@BeforeClass
 	public static void setup() {
-		HiveConf hiveConf = hiveShell.getHiveConf();
-		hiveCatalog = HiveTestUtils.createHiveCatalog(hiveConf);
+		hiveCatalog = HiveTestUtils.createHiveCatalog();
 		hiveCatalog.open();
-		hmsClient = HiveMetastoreClientFactory.create(hiveConf, HiveShimLoader.getHiveVersion());
 	}
 
 	@Test
 	public void testHiveCompatible() throws Exception {
 		// required by query like "src.`[k].*` from src"
 		hiveCatalog.getHiveConf().setVar(HiveConf.ConfVars.HIVE_QUOTEDID_SUPPORT, "none");
+		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(SqlDialect.HIVE);
 
-		hiveShell.execute("create table foo (x int, y int)");
-		hiveShell.execute("create table bar(i int, s string)");
-		hiveShell.execute("create table baz(ai array<int>, d double)");
-		hiveShell.execute("create table employee(id int,name string,dep string,salary int,age int)");
-		hiveShell.execute("create table dest (x int)");
-		hiveShell.execute("create table destp (x int) partitioned by (p string, q string)");
-		hiveShell.execute("CREATE TABLE src (key STRING, value STRING)");
-		hiveShell.execute("CREATE TABLE srcpart (key STRING, value STRING) PARTITIONED BY (ds STRING, hr STRING)");
-		hiveShell.insertInto("default", "foo").addRow(1, 1).addRow(2, 2).addRow(3, 3).addRow(4, 4).addRow(5, 5).commit();
-		hiveShell.insertInto("default", "bar").addRow(1, "a").addRow(1, "aa").addRow(2, "b").commit();
-		hiveShell.insertInto("default", "baz").addRow(Arrays.asList(1, 2, 3), 3.0).commit();
-		hiveShell.insertInto("default", "src").addRow("1", "val1").addRow("2", "val2").addRow("3", "val3").commit();
-		hiveShell.insertInto("default", "employee")
-				.addRow(1, "A", "Management", 4500, 55)
-				.addRow(2, "B", "Management", 4400, 61)
-				.addRow(3, "C", "Management", 4000, 42)
-				.addRow(4, "D", "Production", 3700, 35)
-				.addRow(5, "E", "Production", 3500, 24)
-				.addRow(6, "F", "Production", 3600, 28)
-				.addRow(7, "G", "Production", 3800, 35)
-				.addRow(8, "H", "Production", 4000, 52)
-				.addRow(9, "I", "Service", 4100, 40)
-				.addRow(10, "J", "Sales", 4300, 36)
-				.addRow(11, "K", "Sales", 4100, 38)
+		tableEnv.executeSql("create table foo (x int, y int)");
+		tableEnv.executeSql("create table bar(i int, s string)");
+		tableEnv.executeSql("create table baz(ai array<int>, d double)");
+		tableEnv.executeSql("create table employee(id int,name string,dep string,salary int,age int)");
+		tableEnv.executeSql("create table dest (x int)");
+		tableEnv.executeSql("create table destp (x int) partitioned by (p string, q string)");
+		tableEnv.executeSql("CREATE TABLE src (key STRING, `value` STRING)");
+		tableEnv.executeSql("CREATE TABLE srcpart (key STRING, `value` STRING) PARTITIONED BY (ds STRING, hr STRING)");
+		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "foo")
+				.addRow(new Object[]{1, 1})
+				.addRow(new Object[]{2, 2})
+				.addRow(new Object[]{3, 3})
+				.addRow(new Object[]{4, 4})
+				.addRow(new Object[]{5, 5})
+				.commit();
+		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "bar")
+				.addRow(new Object[]{1, "a"})
+				.addRow(new Object[]{1, "aa"})
+				.addRow(new Object[]{2, "b"})
+				.commit();
+		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "baz")
+				.addRow(new Object[]{Arrays.asList(1, 2, 3), 3.0})
+				.commit();
+		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "src")
+				.addRow(new Object[]{"1", "val1"})
+				.addRow(new Object[]{"2", "val2"})
+				.addRow(new Object[]{"3", "val3"})
+				.commit();
+		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "employee")
+				.addRow(new Object[]{1, "A", "Management", 4500, 55})
+				.addRow(new Object[]{2, "B", "Management", 4400, 61})
+				.addRow(new Object[]{3, "C", "Management", 4000, 42})
+				.addRow(new Object[]{4, "D", "Production", 3700, 35})
+				.addRow(new Object[]{5, "E", "Production", 3500, 24})
+				.addRow(new Object[]{6, "F", "Production", 3600, 28})
+				.addRow(new Object[]{7, "G", "Production", 3800, 35})
+				.addRow(new Object[]{8, "H", "Production", 4000, 52})
+				.addRow(new Object[]{9, "I", "Service", 4100, 40})
+				.addRow(new Object[]{10, "J", "Sales", 4300, 36})
+				.addRow(new Object[]{11, "K", "Sales", 4100, 38})
 				.commit();
 
-		hiveShell.execute("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
-		hiveShell.execute("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
+		tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
+		tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
 
 		String[] queries = new String[]{
 				"select x from foo order by x desc limit 1",
@@ -140,7 +144,7 @@ public class HiveCompatibleITCase {
 		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
 			toRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
-		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(SqlDialect.HIVE);
+
 //		runQuery("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2", tableEnv);
 		for (String query : toRun) {
 			runQuery(query, tableEnv);
