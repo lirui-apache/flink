@@ -21,6 +21,7 @@ package org.apache.flink.table.planner.delegation.hive;
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.StringUtils;
 
 import org.antlr.runtime.CommonToken;
 import org.antlr.runtime.tree.Tree;
@@ -731,5 +732,69 @@ public class HiveParserUtils {
 		public String getTabAlias() {
 			return tabAlias;
 		}
+	}
+
+	public static List<String> splitSQLStatements(String statements) {
+		String[] lines = statements.split("\\R");
+		StringBuilder builder = new StringBuilder();
+		for (String line : lines) {
+			line = line.trim();
+			if (line.startsWith("--")) {
+				continue;
+			}
+			if (builder.length() > 0) {
+				builder.append("\n");
+			}
+			builder.append(line);
+		}
+		return splitSemiColon(builder.toString());
+	}
+
+	private static List<String> splitSemiColon(String line) {
+		boolean insideSingleQuote = false;
+		boolean insideDoubleQuote = false;
+		boolean escape = false;
+		int beginIndex = 0;
+		List<String> ret = new ArrayList<>();
+		for (int index = 0; index < line.length(); index++) {
+			if (line.startsWith("--", index)) {
+				if (!insideSingleQuote && !insideDoubleQuote && !escape) {
+					// skip until new line
+					index += 2;
+					while (index < line.length() && line.charAt(index) != '\n') {
+						index++;
+					}
+					if (index == line.length()) {
+						break;
+					}
+				}
+			} else if (line.charAt(index) == '\'') {
+				// take a look to see if it is escaped
+				if (!escape) {
+					// flip the boolean variable
+					insideSingleQuote = !insideSingleQuote;
+				}
+			} else if (line.charAt(index) == '\"') {
+				// take a look to see if it is escaped
+				if (!escape) {
+					// flip the boolean variable
+					insideDoubleQuote = !insideDoubleQuote;
+				}
+			} else if (line.charAt(index) == ';') {
+				if (!insideSingleQuote && !insideDoubleQuote && !escape) {
+					// split, do not include ; itself
+					ret.add(line.substring(beginIndex, index));
+					beginIndex = index + 1;
+				}
+			}
+			// set the escape
+			if (escape) {
+				escape = false;
+			} else if (line.charAt(index) == '\\') {
+				escape = true;
+			}
+		}
+		ret.add(line.substring(beginIndex));
+		return ret.stream().map(String::trim).filter(s -> !StringUtils.isNullOrWhitespaceOnly(s)).collect(Collectors.toList());
 	}
 }

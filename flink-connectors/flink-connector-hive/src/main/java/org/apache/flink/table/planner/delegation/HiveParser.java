@@ -19,6 +19,8 @@
 package org.apache.flink.table.planner.delegation;
 
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.api.SqlParserException;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogManager;
@@ -125,11 +127,11 @@ public class HiveParser extends ParserImpl {
 	}
 
 	@Override
-	public List<Operation> parse(String statement) {
+	public List<Operation> parse(String statements) {
 		Catalog currentCatalog = catalogManager.getCatalog(catalogManager.getCurrentCatalog()).orElse(null);
 		if (!(currentCatalog instanceof HiveCatalog)) {
 			LOG.warn("Current catalog is not HiveCatalog. Falling back to Flink's planner.");
-			return super.parse(statement);
+			return super.parse(statements);
 		}
 		HiveConf hiveConf = new HiveConf(((HiveCatalog) currentCatalog).getHiveConf());
 		hiveConf.setVar(HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
@@ -144,15 +146,29 @@ public class HiveParser extends ParserImpl {
 			SessionState.start(sessionState);
 			// We override Hive's grouping function. Refer to the implementation for more details.
 			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
+			List<Operation> operations = new ArrayList<>();
+			for (String cmd : HiveParserUtils.splitSQLStatements(statements)) {
+				operations.addAll(processCmd(cmd, hiveConf, hiveShim));
+			}
+			return operations;
+		} catch (LockException e) {
+			throw new FlinkHiveException("Failed to init SessionState", e);
+		} finally {
+			clearSessionState(hiveConf);
+		}
+	}
+
+	private List<Operation> processCmd(String cmd, HiveConf hiveConf, HiveShim hiveShim) {
+		try {
 			final HiveParserContext context = new HiveParserContext(hiveConf);
 			// parse statement to get AST
-			final ASTNode node = HiveASTParseUtils.parse(statement, context);
+			final ASTNode node = HiveASTParseUtils.parse(cmd, context);
 			final Object queryState = hiveShim.createQueryState(hiveConf);
 			// generate Calcite plan
 			Tuple2<BaseSemanticAnalyzer, HiveOperation> analyzerAndOperation = hiveShim.getAnalyzerAndOperation(node, hiveConf, queryState);
 			Operation res;
 			if (isDDL(analyzerAndOperation.f1, analyzerAndOperation.f0)) {
-				return super.parse(statement);
+				return super.parse(cmd);
 //				res = handleDDL(node, hiveAnalyzer, context);
 			} else {
 				HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(new HiveParserQueryState(hiveConf), plannerContext, catalogManager, hiveShim);
@@ -160,26 +176,26 @@ public class HiveParser extends ParserImpl {
 				analyzer.init(false);
 				RelNode relNode = analyzer.genLogicalPlan(node);
 				Preconditions.checkState(relNode != null,
-						String.format("%s failed to generate plan for %s", analyzer.getClass().getSimpleName(), statement));
+						String.format("%s failed to generate plan for %s", analyzer.getClass().getSimpleName(), cmd));
 
 				// if not a query, treat it as an insert
 				if (!analyzer.getQB().getIsQuery()) {
-					res = createInsertOperation((HiveParserCalcitePlanner) analyzer, relNode);
+					res = createInsertOperation(analyzer, relNode);
 				} else {
 					res = new PlannerQueryOperation(relNode);
 				}
 			}
-			return res == null ? Collections.emptyList() : Collections.singletonList(res);
+			return Collections.singletonList(res);
 		} catch (ParseException e) {
 			// ParseException can happen for flink-specific statements, e.g. catalog DDLs
-			LOG.warn("Failed to parse SQL statement with Hive parser. Falling back to Flink's parser.", e);
-			return super.parse(statement);
-		} catch (SemanticException | IOException | LockException e) {
-			LOG.warn("Failed to parse SQL statement with Hive parser. Falling back to Flink's parser.", e);
+			try {
+				return super.parse(cmd);
+			} catch (SqlParserException parserException) {
+				throw new SqlParserException("SQL parse failed", e);
+			}
+		} catch (SemanticException | IOException e) {
 			// disable fallback for now
-			throw new RuntimeException(e);
-		} finally {
-			clearSessionState(hiveConf);
+			throw new FlinkHiveException("Failed to parse SQL statement with Hive parser.", e);
 		}
 	}
 
