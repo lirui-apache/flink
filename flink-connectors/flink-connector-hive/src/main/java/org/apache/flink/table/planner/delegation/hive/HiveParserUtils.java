@@ -29,19 +29,26 @@ import org.antlr.runtime.tree.TreeVisitor;
 import org.antlr.runtime.tree.TreeVisitorAction;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexFieldCollation;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.ConversionUtil;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.NlsString;
+import org.apache.calcite.util.Pair;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -85,6 +92,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -796,5 +804,126 @@ public class HiveParserUtils {
 		}
 		ret.add(line.substring(beginIndex));
 		return ret.stream().map(String::trim).filter(s -> !StringUtils.isNullOrWhitespaceOnly(s)).collect(Collectors.toList());
+	}
+
+	/**
+	 * Push any equi join conditions that are not column references as Projections
+	 * on top of the children.
+	 *
+	 * @param factory        Project factory to use.
+	 * @param inputRels      inputs to a join
+	 * @param leftJoinKeys   expressions for LHS of join key
+	 * @param rightJoinKeys  expressions for RHS of join key
+	 * @param systemColCount number of system columns, usually zero. These columns are
+	 *                       projected at the leading edge of the output row.
+	 * @param leftKeys       on return this contains the join key positions from the new
+	 *                       project rel on the LHS.
+	 * @param rightKeys      on return this contains the join key positions from the new
+	 *                       project rel on the RHS.
+	 * @return the join condition after the equi expressions pushed down.
+	 */
+	public static RexNode projectNonColumnEquiConditions(RelFactories.ProjectFactory factory, RelNode[] inputRels,
+			List<RexNode> leftJoinKeys, List<RexNode> rightJoinKeys, int systemColCount,
+			List<Integer> leftKeys, List<Integer> rightKeys) {
+		RelNode leftRel = inputRels[0];
+		RelNode rightRel = inputRels[1];
+		RexBuilder rexBuilder = leftRel.getCluster().getRexBuilder();
+		RexNode outJoinCond = null;
+
+		int origLeftInputSize = leftRel.getRowType().getFieldCount();
+		int origRightInputSize = rightRel.getRowType().getFieldCount();
+
+		List<RexNode> newLeftFields = new ArrayList<>();
+		List<String> newLeftFieldNames = new ArrayList<>();
+
+		List<RexNode> newRightFields = new ArrayList<>();
+		List<String> newRightFieldNames = new ArrayList<>();
+		int leftKeyCount = leftJoinKeys.size();
+		int i;
+
+		for (i = 0; i < origLeftInputSize; i++) {
+			final RelDataTypeField field = leftRel.getRowType().getFieldList().get(i);
+			newLeftFields.add(rexBuilder.makeInputRef(field.getType(), i));
+			newLeftFieldNames.add(field.getName());
+		}
+
+		for (i = 0; i < origRightInputSize; i++) {
+			final RelDataTypeField field = rightRel.getRowType().getFieldList().get(i);
+			newRightFields.add(rexBuilder.makeInputRef(field.getType(), i));
+			newRightFieldNames.add(field.getName());
+		}
+
+		ImmutableBitSet.Builder origColEqCondsPosBuilder = ImmutableBitSet.builder();
+		int newKeyCount = 0;
+		List<Pair<Integer, Integer>> origColEqConds = new ArrayList<>();
+		for (i = 0; i < leftKeyCount; i++) {
+			RexNode leftKey = leftJoinKeys.get(i);
+			RexNode rightKey = rightJoinKeys.get(i);
+
+			if (leftKey instanceof RexInputRef && rightKey instanceof RexInputRef) {
+				origColEqConds.add(Pair.of(((RexInputRef) leftKey).getIndex(),
+						((RexInputRef) rightKey).getIndex()));
+				origColEqCondsPosBuilder.set(i);
+			} else {
+				newLeftFields.add(leftKey);
+				newLeftFieldNames.add(null);
+				newRightFields.add(rightKey);
+				newRightFieldNames.add(null);
+				newKeyCount++;
+			}
+		}
+		ImmutableBitSet origColEqCondsPos = origColEqCondsPosBuilder.build();
+
+		for (i = 0; i < origColEqConds.size(); i++) {
+			Pair<Integer, Integer> p = origColEqConds.get(i);
+			int condPos = origColEqCondsPos.nth(i);
+			RexNode leftKey = leftJoinKeys.get(condPos);
+			RexNode rightKey = rightJoinKeys.get(condPos);
+			leftKeys.add(p.left);
+			rightKeys.add(p.right);
+			RexNode cond = rexBuilder.makeCall(
+					SqlStdOperatorTable.EQUALS,
+					rexBuilder.makeInputRef(leftKey.getType(), systemColCount + p.left),
+					rexBuilder.makeInputRef(rightKey.getType(), systemColCount + origLeftInputSize
+							+ newKeyCount + p.right));
+			if (outJoinCond == null) {
+				outJoinCond = cond;
+			} else {
+				outJoinCond = rexBuilder.makeCall(SqlStdOperatorTable.AND, outJoinCond, cond);
+			}
+		}
+
+		if (newKeyCount == 0) {
+			return outJoinCond;
+		}
+
+		int newLeftOffset = systemColCount + origLeftInputSize;
+		int newRightOffset = systemColCount + origLeftInputSize + origRightInputSize + newKeyCount;
+		for (i = 0; i < newKeyCount; i++) {
+			leftKeys.add(origLeftInputSize + i);
+			rightKeys.add(origRightInputSize + i);
+			RexNode cond = rexBuilder.makeCall(SqlStdOperatorTable.EQUALS,
+					rexBuilder.makeInputRef(newLeftFields.get(origLeftInputSize + i).getType(), newLeftOffset + i),
+					rexBuilder.makeInputRef(newRightFields.get(origRightInputSize + i).getType(), newRightOffset + i));
+			if (outJoinCond == null) {
+				outJoinCond = cond;
+			} else {
+				outJoinCond = rexBuilder.makeCall(SqlStdOperatorTable.AND, outJoinCond, cond);
+			}
+		}
+
+		// added project if need to produce new keys than the original input
+		// fields
+		if (newKeyCount > 0) {
+			leftRel = factory.createProject(leftRel, Collections.emptyList(), newLeftFields,
+					SqlValidatorUtil.uniquify(newLeftFieldNames, false));
+			rightRel = factory.createProject(rightRel, Collections.emptyList(), newRightFields,
+					SqlValidatorUtil.uniquify(newRightFieldNames, false));
+		}
+
+		inputRels[0] = leftRel;
+		inputRels[1] = rightRel;
+
+		return outJoinCond;
 	}
 }

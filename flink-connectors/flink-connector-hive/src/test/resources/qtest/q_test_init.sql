@@ -116,7 +116,7 @@ OVERWRITE INTO TABLE primitives PARTITION(year=2009, month=4);
 -- Function qtest_get_java_boolean
 --
 DROP FUNCTION IF EXISTS qtest_get_java_boolean;
--- CREATE FUNCTION qtest_get_java_boolean AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestGetJavaBoolean';
+CREATE FUNCTION qtest_get_java_boolean AS 'org.apache.flink.connectors.hive.GenericUDFTestGetJavaBoolean';
 
 
 -- It seems these dest tables should be created by each qfile

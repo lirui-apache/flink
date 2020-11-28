@@ -57,7 +57,7 @@ public class HiveCompatibleITCase {
 			"select * from foo where y in (select i from bar)",
 			"select * from foo left semi join bar on foo.y=bar.i",
 			"select (select count(x) from foo where foo.y=bar.i) from bar",
-			"select hiveudf(x,y) from foo",
+			"select default.hiveudf(x,y) from foo",
 			"select hiveudtf(ai) from baz",
 			"select x from foo union select i from bar",
 			"select avg(salary) over (partition by dep) as avgsal from employee",
@@ -84,6 +84,14 @@ public class HiveCompatibleITCase {
 			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1"
 	};
 
+	private static final String[] UPDATES = new String[]{
+			"insert into dest select 0,y from foo sort by y",
+			"insert into dest(y,x) select x,y from foo cluster by x",
+			"insert into dest(y) select y from foo sort by y limit 1",
+			"insert into destp select x,'0','00' from foo order by x limit 1",
+			"insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`"
+	};
+
 	@BeforeClass
 	public static void setup() {
 		hiveCatalog = HiveTestUtils.createHiveCatalog();
@@ -100,7 +108,7 @@ public class HiveCompatibleITCase {
 		tableEnv.executeSql("create table bar(i int, s string)");
 		tableEnv.executeSql("create table baz(ai array<int>, d double)");
 		tableEnv.executeSql("create table employee(id int,name string,dep string,salary int,age int)");
-		tableEnv.executeSql("create table dest (x int)");
+		tableEnv.executeSql("create table dest (x int, y int)");
 		tableEnv.executeSql("create table destp (x int) partitioned by (p string, q string)");
 		tableEnv.executeSql("CREATE TABLE src (key STRING, `value` STRING)");
 		tableEnv.executeSql("CREATE TABLE srcpart (key STRING, `value` STRING) PARTITIONED BY (ds STRING, hr STRING)");
@@ -141,15 +149,20 @@ public class HiveCompatibleITCase {
 		tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
 		tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
 
-		List<String> toRun = new ArrayList<>(Arrays.asList(QUERIES));
+		List<String> dqlToRun = new ArrayList<>(Arrays.asList(QUERIES));
 		// add test cases specific to each version
 		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
-			toRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
+			dqlToRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
 
-		runQuery("select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1", tableEnv);
+		runUpdate("insert into destp select x,'0','0' from foo order by x", tableEnv);
+
+//		runQuery("select default.hiveudf(x,y) from foo", tableEnv);
 //		for (String query : toRun) {
 //			runQuery(query, tableEnv);
+//		}
+//		for (String dml : UPDATES) {
+//			runUpdate(dml, tableEnv);
 //		}
 		System.out.println("finished");
 	}
@@ -164,6 +177,7 @@ public class HiveCompatibleITCase {
 	private void runUpdate(String dml, TableEnvironment tableEnv) throws Exception {
 		System.out.println(tableEnv.explainSql(dml));
 		tableEnv.executeSql(dml).await();
+		System.out.println("Successfully executed DML: " + dml);
 	}
 
 	private TableEnvironment getTableEnvWithHiveCatalog(SqlDialect dialect) {

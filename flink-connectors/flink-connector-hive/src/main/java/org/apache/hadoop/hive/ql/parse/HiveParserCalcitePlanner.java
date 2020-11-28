@@ -556,7 +556,7 @@ public class HiveParserCalcitePlanner {
 				RelNode[] inputRels = new RelNode[]{leftRel, rightRel};
 				final List<Integer> leftKeys = new ArrayList<>();
 				final List<Integer> rightKeys = new ArrayList<>();
-				joinCondRex = HiveCalciteUtil.projectNonColumnEquiConditions(
+				joinCondRex = HiveParserUtils.projectNonColumnEquiConditions(
 						RelFactories.DEFAULT_PROJECT_FACTORY, inputRels, leftJoinKeys, rightJoinKeys, 0,
 						leftKeys, rightKeys);
 				topRel = LogicalJoin.create(inputRels[0], inputRels[1], Collections.emptyList(), joinCondRex, Collections.emptySet(), calciteJoinType);
@@ -2613,8 +2613,7 @@ public class HiveParserCalcitePlanner {
 			}
 		}
 
-		private RelNode genLogicalPlan(HiveParserQB qb, boolean outerMostQB,
-				Map<String, Integer> outerNameToPosMap,
+		private RelNode genLogicalPlan(HiveParserQB qb, boolean outerMostQB, Map<String, Integer> outerNameToPosMap,
 				HiveParserRowResolver outerRR) throws SemanticException {
 			RelNode res;
 
@@ -2747,8 +2746,7 @@ public class HiveParserCalcitePlanner {
 			// to ensure VC is not visible beyond Limit, OB.
 			// 2. Hive can not preserve order across select. In subqueries OB is used
 			// to get a deterministic set of tuples from following limit. Hence we
-			// introduce the constraining select above Limit (if present) instead of
-			// OB.
+			// introduce the constraining select above Limit (if present) instead of  OB.
 			// 3. The top level OB will not introduce constraining select due to Hive
 			// limitation(#2) stated above. The RR for OB will not include VC. Thus
 			// Result Schema will not include exprs used by top OB. During AST Conv,

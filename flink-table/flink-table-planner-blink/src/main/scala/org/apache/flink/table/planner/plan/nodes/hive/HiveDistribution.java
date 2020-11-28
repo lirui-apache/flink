@@ -24,6 +24,7 @@ import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelShuttle;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
 
 import java.util.List;
@@ -67,5 +68,13 @@ public class HiveDistribution extends SingleRel {
 	@Override
 	public RelNode accept(RelShuttle shuttle) {
 		return shuttle.visit(this);
+	}
+
+	@Override
+	public RelWriter explainTerms(RelWriter pw) {
+		super.explainTerms(pw);
+		pw.item("collation", collation);
+		pw.item("dist", distKeys);
+		return pw;
 	}
 }

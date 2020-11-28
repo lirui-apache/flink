@@ -220,7 +220,7 @@ public class HiveParserTypeCheckProcFactory {
 
 		// Create a list of top nodes
 		ArrayList<Node> topNodes = new ArrayList<>(Collections.singleton(expr));
-		HashMap<Node, Object> nodeOutputs = new LinkedHashMap<Node, Object>();
+		HashMap<Node, Object> nodeOutputs = new LinkedHashMap<>();
 		ogw.startWalking(topNodes, nodeOutputs);
 
 		return convert(nodeOutputs);
@@ -716,7 +716,7 @@ public class HiveParserTypeCheckProcFactory {
 		static HashSet<Integer> windowingTokens;
 
 		static {
-			specialUnaryOperatorTextHashMap = new HashMap<Integer, String>();
+			specialUnaryOperatorTextHashMap = new HashMap<>();
 			specialUnaryOperatorTextHashMap.put(HiveASTParser.PLUS, "positive");
 			specialUnaryOperatorTextHashMap.put(HiveASTParser.MINUS, "negative");
 			specialFunctionTextHashMap = new HashMap<Integer, String>();
@@ -1318,7 +1318,7 @@ public class HiveParserTypeCheckProcFactory {
 
 			// Create all children
 			int childrenBegin = (isFunction ? 1 : 0);
-			ArrayList<ExprNodeDesc> children = new ArrayList<ExprNodeDesc>(
+			ArrayList<ExprNodeDesc> children = new ArrayList<>(
 					expr.getChildCount() - childrenBegin);
 			for (int ci = childrenBegin; ci < expr.getChildCount(); ci++) {
 				if (nodeOutputs[ci] instanceof ExprNodeColumnListDesc) {

@@ -1,7 +1,4 @@
-EXPLAIN
-CREATE TEMPORARY FUNCTION test_max AS 'org.apache.hadoop.hive.ql.udf.UDAFTestMax';
-
-CREATE TEMPORARY FUNCTION test_max AS 'org.apache.hadoop.hive.ql.udf.UDAFTestMax';
+CREATE FUNCTION test_max AS 'org.apache.hadoop.hive.contrib.udaf.example.UDAFExampleMax';
 
 CREATE TABLE dest1(col INT);
 
@@ -16,6 +13,6 @@ SELECT test_max(CAST(length(src.value) AS DOUBLE)) FROM src;
 SELECT test_max(CAST(length(src.value) AS FLOAT)) FROM src;
 SELECT test_max(substr(src.value,5)) FROM src;
 
-DROP TEMPORARY FUNCTION test_max;
+DROP FUNCTION test_max;
 
 drop table if exists dest1;

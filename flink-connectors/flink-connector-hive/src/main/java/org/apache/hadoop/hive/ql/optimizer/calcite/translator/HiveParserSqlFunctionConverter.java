@@ -24,10 +24,12 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlMonotonicBinaryOperator;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
@@ -40,7 +42,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveParserSqlCountAggFunction;
 import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveParserSqlSumAggFunction;
 import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveSqlMinMaxAggFunction;
@@ -61,10 +62,12 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Counterpart of hive's SqlFunctionConverter.
@@ -389,6 +392,8 @@ public class HiveParserSqlFunctionConverter {
 					hToken(HiveASTParser.Identifier, "floor_minute"));
 			registerFunction("floor_second", HiveParserFloorDate.SECOND,
 					hToken(HiveASTParser.Identifier, "floor_second"));
+			// support <=>
+			registerFunction("<=>", SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, hToken(HiveASTParser.EQUAL_NS, "<=>"));
 		}
 
 		private void registerFunction(String name, SqlOperator calciteFn, HiveToken hiveToken) {
@@ -447,10 +452,10 @@ public class HiveParserSqlFunctionConverter {
 	public static class CalciteSqlFn extends SqlFunction {
 		private final boolean deterministic;
 
-		public CalciteSqlFn(String name, SqlKind kind, SqlReturnTypeInference returnTypeInference,
+		public CalciteSqlFn(String name, SqlIdentifier identifier, SqlKind kind, SqlReturnTypeInference returnTypeInference,
 				SqlOperandTypeInference operandTypeInference, SqlOperandTypeChecker operandTypeChecker,
 				SqlFunctionCategory category, boolean deterministic) {
-			super(name, kind, returnTypeInference, operandTypeInference, operandTypeChecker, category);
+			super(name, identifier, kind, returnTypeInference, operandTypeInference, operandTypeChecker, category);
 			this.deterministic = deterministic;
 		}
 
@@ -462,6 +467,8 @@ public class HiveParserSqlFunctionConverter {
 
 	private static class CalciteUDFInfo {
 		private String udfName;
+		// need an identifier if we have a composite name
+		private SqlIdentifier identifier;
 		private SqlReturnTypeInference returnTypeInference;
 		private SqlOperandTypeInference operandTypeInference;
 		private SqlOperandTypeChecker operandTypeChecker;
@@ -471,6 +478,10 @@ public class HiveParserSqlFunctionConverter {
 			List<RelDataType> calciteArgTypes, RelDataType calciteRetType) {
 		CalciteUDFInfo udfInfo = new CalciteUDFInfo();
 		udfInfo.udfName = hiveUdfName;
+		String[] nameParts = hiveUdfName.split("\\.");
+		if (nameParts.length > 1) {
+			udfInfo.identifier = new SqlIdentifier(Arrays.stream(nameParts).collect(Collectors.toList()), new SqlParserPos(0, 0));
+		}
 		udfInfo.returnTypeInference = ReturnTypes.explicit(calciteRetType);
 		udfInfo.operandTypeInference = InferTypes.explicit(calciteArgTypes);
 		List<SqlTypeFamily> typeFamily = new ArrayList<>();
@@ -482,15 +493,7 @@ public class HiveParserSqlFunctionConverter {
 	}
 
 	public static SqlOperator getCalciteFn(String hiveUdfName,
-			List<RelDataType> calciteArgTypes, RelDataType calciteRetType, boolean deterministic)
-			throws CalciteSemanticException {
-
-		if (hiveUdfName != null && hiveUdfName.trim().equals("<=>")) {
-			// We can create Calcite IS_DISTINCT_FROM operator for this. But since our
-			// join reordering algo cant handle this anyway there is no advantage of
-			// this.So, bail out for now.
-			throw new CalciteSemanticException("<=> is not yet supported for cbo.", CalciteSemanticException.UnsupportedFeature.Less_than_equal_greater_than);
-		}
+			List<RelDataType> calciteArgTypes, RelDataType calciteRetType, boolean deterministic) {
 		SqlOperator calciteOp;
 		CalciteUDFInfo uInf = getUDFInfo(hiveUdfName, calciteArgTypes, calciteRetType);
 		switch (hiveUdfName) {
@@ -508,8 +511,8 @@ public class HiveParserSqlFunctionConverter {
 			default:
 				calciteOp = HIVE_TO_CALCITE.get(hiveUdfName);
 				if (null == calciteOp) {
-					calciteOp = new CalciteSqlFn(uInf.udfName, SqlKind.OTHER_FUNCTION, uInf.returnTypeInference,
-							uInf.operandTypeInference, uInf.operandTypeChecker,
+					calciteOp = new CalciteSqlFn(uInf.udfName, uInf.identifier, SqlKind.OTHER_FUNCTION,
+							uInf.returnTypeInference, uInf.operandTypeInference, uInf.operandTypeChecker,
 							SqlFunctionCategory.USER_DEFINED_FUNCTION, deterministic);
 				}
 				break;

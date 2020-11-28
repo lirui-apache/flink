@@ -39,6 +39,7 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -57,8 +58,11 @@ import java.util.stream.Stream;
  * Hive QFile tests.
  */
 @RunWith(FlinkStandaloneHiveRunner.class)
-//@Ignore
+@Ignore
 public class HiveQFileITCase {
+
+	private static final String START = null;
+	private static final String END = null;
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;
@@ -116,6 +120,9 @@ public class HiveQFileITCase {
 		boolean runThrough = true;
 		boolean allTests = true;
 		for (File qfile : qfiles) {
+			if (!withinRange(qfile)) {
+				continue;
+			}
 			numFile++;
 			RunQFileResult result = runQFile(qfile, tableEnv, runThrough);
 			numStatement += result.total();
@@ -131,10 +138,14 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "constprog_semijoin.q");
+		File qfile = new File(QFILES_DIR, "escape1.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);
+	}
+
+	private static boolean withinRange(File qfile) {
+		return (START == null || qfile.getName().compareTo(START) >= 0) && (END == null || qfile.getName().compareTo(END) <= 0);
 	}
 
 	private static void println(String s) throws Exception {

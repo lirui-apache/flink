@@ -42,11 +42,14 @@ import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverter;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
+import org.apache.flink.table.planner.plan.nodes.hive.HiveDistribution;
 import org.apache.flink.util.Preconditions;
 
+import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelCollationImpl;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.logical.LogicalProject;
@@ -277,12 +280,19 @@ public class HiveParser extends ParserImpl {
 	}
 
 	private Operation createInsertOperation(HiveParserCalcitePlanner analyzer, RelNode queryRelNode) throws CalciteSemanticException {
-		Preconditions.checkArgument(queryRelNode instanceof Project || queryRelNode instanceof Sort,
-				"Expect top RelNode to be either Project or Sort, actually got " + queryRelNode);
-		if (queryRelNode instanceof Sort) {
-			RelNode sortInput = ((Sort) queryRelNode).getInput();
-			Preconditions.checkArgument(sortInput instanceof Project, "" +
-					"Expect input of Sort to be a Project, actually got " + sortInput);
+		// sanity check
+		Preconditions.checkArgument(queryRelNode instanceof Project || queryRelNode instanceof Sort || queryRelNode instanceof HiveDistribution,
+				"Expect top RelNode to be Project, Sort, or HiveDistribution, actually got " + queryRelNode);
+		if (!(queryRelNode instanceof Project)) {
+			RelNode parent = ((SingleRel) queryRelNode).getInput();
+			// SEL + SORT or SEL + DIST + LIMIT
+			Preconditions.checkArgument(parent instanceof Project || parent instanceof HiveDistribution,
+					"Expect input to be a Project or HiveDistribution, actually got " + parent);
+			if (parent instanceof HiveDistribution) {
+				RelNode grandParent = ((HiveDistribution) parent).getInput();
+				Preconditions.checkArgument(grandParent instanceof Project,
+						"Expect input of HiveDistribution to be a Project, actually got " + grandParent);
+			}
 		}
 		HiveParserQB topQB = analyzer.getQB();
 		QBMetaData qbMetaData = topQB.getMetaData();
@@ -303,7 +313,7 @@ public class HiveParser extends ParserImpl {
 		}
 
 		// handle dest schema, e.g. insert into dest(.,.,.) select ...
-		queryRelNode = handleDestSchema(queryRelNode, destTable, analyzer.getDestSchemaForClause(insClauseName));
+		queryRelNode = handleDestSchema((SingleRel) queryRelNode, destTable, analyzer.getDestSchemaForClause(insClauseName));
 
 		// create identifier
 		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
@@ -350,31 +360,27 @@ public class HiveParser extends ParserImpl {
 		if (!staticPartSpec.isEmpty()) {
 			if (queryRelNode instanceof Project) {
 				queryRelNode = replaceProjectForStaticPart((Project) queryRelNode, staticPartSpec, destTable, targetColToType);
-			} else {
+			} else if (queryRelNode instanceof Sort) {
 				Sort sort = (Sort) queryRelNode;
-				Project sortInput = (Project) sort.getInput();
-				RelNode expandedProject = replaceProjectForStaticPart(sortInput, staticPartSpec, destTable, targetColToType);
-
-				List<RelFieldCollation> fieldCollations = sort.collation.getFieldCollations();
-				int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
-				// we may need to shift the field collations
-				if (!fieldCollations.isEmpty() && numDynmPart > 0) {
-					int insertIndex = sortInput.getProjects().size() - numDynmPart;
-					int toShift = staticPartSpec.size();
-					List<RelFieldCollation> shiftedCollations = new ArrayList<>(fieldCollations.size());
-					for (RelFieldCollation fieldCollation : fieldCollations) {
-						if (fieldCollation.getFieldIndex() >= insertIndex) {
-							fieldCollation = fieldCollation.withFieldIndex(fieldCollation.getFieldIndex() + toShift);
-						}
-						shiftedCollations.add(fieldCollation);
-					}
-					queryRelNode = LogicalSort.create(expandedProject,
-							plannerContext.getCluster().traitSet().canonize(RelCollationImpl.of(shiftedCollations)),
-							sort.offset, sort.fetch);
-					sort.replaceInput(0, null);
+				RelNode oldInput = sort.getInput();
+				RelNode newInput;
+				if (oldInput instanceof HiveDistribution) {
+					newInput = replaceDistForStaticParts((HiveDistribution) oldInput, destTable, staticPartSpec, targetColToType);
 				} else {
-					queryRelNode.replaceInput(0, expandedProject);
+					newInput = replaceProjectForStaticPart((Project) oldInput, staticPartSpec, destTable, targetColToType);
+					// we may need to shift the field collations
+					final int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
+					if (!sort.getCollation().getFieldCollations().isEmpty() && numDynmPart > 0) {
+						sort.replaceInput(0, null);
+						sort = LogicalSort.create(newInput,
+								shiftRelCollation(sort.getCollation(), (Project) oldInput, staticPartSpec.size(), numDynmPart),
+								sort.offset, sort.fetch);
+					}
 				}
+				sort.replaceInput(0, newInput);
+				queryRelNode = sort;
+			} else {
+				queryRelNode = replaceDistForStaticParts((HiveDistribution) queryRelNode, destTable, staticPartSpec, targetColToType);
 			}
 		}
 
@@ -388,13 +394,53 @@ public class HiveParser extends ParserImpl {
 		return new CatalogSinkModifyOperation(identifier, new PlannerQueryOperation(queryRelNode), staticPartSpec, overwrite, Collections.emptyMap());
 	}
 
+	private RelNode replaceDistForStaticParts(HiveDistribution hiveDist, Table destTable,
+			Map<String, String> staticPartSpec, Map<String, RelDataType> targetColToType) {
+		Project project = (Project) hiveDist.getInput();
+		RelNode expandedProject = replaceProjectForStaticPart(project, staticPartSpec, destTable, targetColToType);
+		hiveDist.replaceInput(0, null);
+		final int toShift = staticPartSpec.size();
+		final int numDynmPart = destTable.getTTable().getPartitionKeys().size() - toShift;
+		return HiveDistribution.create(
+				expandedProject,
+				shiftRelCollation(hiveDist.getCollation(), project, toShift, numDynmPart),
+				shiftDistKeys(hiveDist.getDistKeys(), project, toShift, numDynmPart));
+	}
+
+	private static List<Integer> shiftDistKeys(List<Integer> distKeys, Project origProject, int toShift, int numDynmPart) {
+		List<Integer> shiftedDistKeys = new ArrayList<>(distKeys.size());
+		// starting index of dynamic parts, static parts needs to be inserted before them
+		final int insertIndex = origProject.getProjects().size() - numDynmPart;
+		for (Integer key : distKeys) {
+			if (key >= insertIndex) {
+				key += toShift;
+			}
+			shiftedDistKeys.add(key);
+		}
+		return shiftedDistKeys;
+	}
+
+	private RelCollation shiftRelCollation(RelCollation collation, Project origProject, int toShift, int numDynmPart) {
+		List<RelFieldCollation> fieldCollations = collation.getFieldCollations();
+		// starting index of dynamic parts, static parts needs to be inserted before them
+		final int insertIndex = origProject.getProjects().size() - numDynmPart;
+		List<RelFieldCollation> shiftedCollations = new ArrayList<>(fieldCollations.size());
+		for (RelFieldCollation fieldCollation : fieldCollations) {
+			if (fieldCollation.getFieldIndex() >= insertIndex) {
+				fieldCollation = fieldCollation.withFieldIndex(fieldCollation.getFieldIndex() + toShift);
+			}
+			shiftedCollations.add(fieldCollation);
+		}
+		return plannerContext.getCluster().traitSet().canonize(RelCollationImpl.of(shiftedCollations));
+	}
+
 	private RelNode addTypeConversions(RelNode queryRelNode, List<RelDataType> targetTypes) {
 		if (queryRelNode instanceof Project) {
 			return replaceProjectForTypeConversion((Project) queryRelNode, targetTypes);
 		} else {
-			Project sortInput = (Project) ((Sort) queryRelNode).getInput();
-			RelNode newProject = replaceProjectForTypeConversion(sortInput, targetTypes);
-			queryRelNode.replaceInput(0, newProject);
+			// current node is not Project, we search for it in inputs
+			RelNode newInput = addTypeConversions(queryRelNode.getInput(0), targetTypes);
+			queryRelNode.replaceInput(0, newInput);
 			return queryRelNode;
 		}
 	}
@@ -420,7 +466,7 @@ public class HiveParser extends ParserImpl {
 		}
 		if (updated) {
 			RelNode newProject = LogicalProject.create(project.getInput(), Collections.emptyList(), updatedExprs,
-					project.getNamedProjects().stream().map(p -> p.right).collect(Collectors.toList()));
+					getProjectNames(project));
 			project.replaceInput(0, null);
 			return newProject;
 		} else {
@@ -428,7 +474,7 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private RelNode handleDestSchema(RelNode queryRelNode, Table destTable, List<String> destSchema) throws CalciteSemanticException {
+	private RelNode handleDestSchema(SingleRel queryRelNode, Table destTable, List<String> destSchema) throws CalciteSemanticException {
 		if (destSchema == null || destSchema.isEmpty()) {
 			return queryRelNode;
 		}
@@ -438,9 +484,9 @@ public class HiveParser extends ParserImpl {
 		if (destSchema.equals(cols.stream().map(FieldSchema::getName).collect(Collectors.toList()))) {
 			return queryRelNode;
 		}
-		// build a list to create a Project on top of query RelNode
-		// for each col in dest table, if it's in dest schema, store the corresponding index of the
-		// query RelNode, otherwise store its type and we'll create NULL for it
+		// build a list to create a Project on top of original Project
+		// for each col in dest table, if it's in dest schema, store its corresponding index in the
+		// dest schema, otherwise store its type and we'll create NULL for it
 		List<Object> updatedIndices = new ArrayList<>(cols.size());
 		for (FieldSchema col : cols) {
 			int index = destSchema.indexOf(col.getName());
@@ -453,28 +499,67 @@ public class HiveParser extends ParserImpl {
 		}
 		if (queryRelNode instanceof Project) {
 			return addProjectForDestSchema((Project) queryRelNode, updatedIndices);
-		} else {
+		} else if (queryRelNode instanceof Sort) {
 			Sort sort = (Sort) queryRelNode;
-			Project sortInput = (Project) sort.getInput();
-			RelNode addedProject = addProjectForDestSchema(sortInput, updatedIndices);
+			RelNode sortInput = sort.getInput();
+			// DIST + LIMIT
+			if (sortInput instanceof HiveDistribution) {
+				RelNode newDist = handleDestSchemaForDist((HiveDistribution) sortInput, updatedIndices);
+				sort.replaceInput(0, newDist);
+				return sort;
+			}
+			// PROJECT + SORT
+			RelNode addedProject = addProjectForDestSchema((Project) sortInput, updatedIndices);
 			// we may need to update the field collations
-			List<RelFieldCollation> fieldCollations = sort.collation.getFieldCollations();
+			List<RelFieldCollation> fieldCollations = sort.getCollation().getFieldCollations();
 			if (!fieldCollations.isEmpty()) {
-				List<RelFieldCollation> updatedCollations = new ArrayList<>(fieldCollations.size());
-				for (RelFieldCollation fieldCollation : fieldCollations) {
-					int newIndex = updatedIndices.indexOf(fieldCollation.getFieldIndex());
-					Preconditions.checkState(newIndex >= 0, "Sort references to a non-existing field");
-					fieldCollation = fieldCollation.withFieldIndex(newIndex);
-					updatedCollations.add(fieldCollation);
-				}
 				sort.replaceInput(0, null);
 				sort = LogicalSort.create(addedProject,
-						plannerContext.getCluster().traitSet().canonize(RelCollationImpl.of(updatedCollations)),
+						updateRelCollation(sort.getCollation(), updatedIndices),
 						sort.offset, sort.fetch);
 			}
 			sort.replaceInput(0, addedProject);
 			return sort;
+		} else {
+			// PROJECT + DIST
+			return handleDestSchemaForDist((HiveDistribution) queryRelNode, updatedIndices);
 		}
+	}
+
+	private RelNode handleDestSchemaForDist(HiveDistribution hiveDist, List<Object> updatedIndices) {
+		Project project = (Project) hiveDist.getInput();
+		RelNode addedProject = addProjectForDestSchema(project, updatedIndices);
+		// disconnect the original HiveDistribution
+		hiveDist.replaceInput(0, null);
+		return HiveDistribution.create(
+				addedProject,
+				updateRelCollation(hiveDist.getCollation(), updatedIndices),
+				updateDistKeys(hiveDist.getDistKeys(), updatedIndices));
+	}
+
+	private RelCollation updateRelCollation(RelCollation collation, List<Object> updatedIndices) {
+		List<RelFieldCollation> fieldCollations = collation.getFieldCollations();
+		if (fieldCollations.isEmpty()) {
+			return collation;
+		}
+		List<RelFieldCollation> updatedCollations = new ArrayList<>(fieldCollations.size());
+		for (RelFieldCollation fieldCollation : fieldCollations) {
+			int newIndex = updatedIndices.indexOf(fieldCollation.getFieldIndex());
+			Preconditions.checkState(newIndex >= 0, "Sort/Order references a non-existing field");
+			fieldCollation = fieldCollation.withFieldIndex(newIndex);
+			updatedCollations.add(fieldCollation);
+		}
+		return plannerContext.getCluster().traitSet().canonize(RelCollationImpl.of(updatedCollations));
+	}
+
+	private List<Integer> updateDistKeys(List<Integer> distKeys, List<Object> updatedIndices) {
+		List<Integer> updatedDistKeys = new ArrayList<>(distKeys.size());
+		for (Integer key : distKeys) {
+			int newKey = updatedIndices.indexOf(key);
+			Preconditions.checkState(newKey >= 0, "Cluster/Distribute references a non-existing field");
+			updatedDistKeys.add(newKey);
+		}
+		return updatedDistKeys;
 	}
 
 	private RelNode replaceProjectForStaticPart(Project project, Map<String, String> staticPartSpec, Table destTable,
@@ -493,6 +578,10 @@ public class HiveParser extends ParserImpl {
 		RelNode res = LogicalProject.create(project.getInput(), Collections.emptyList(), extendedExprs, (List<String>) null);
 		project.replaceInput(0, null);
 		return res;
+	}
+
+	private static List<String> getProjectNames(Project project) {
+		return project.getNamedProjects().stream().map(p -> p.right).collect(Collectors.toList());
 	}
 
 	private RelNode addProjectForDestSchema(Project input, List<Object> updatedIndices) {
