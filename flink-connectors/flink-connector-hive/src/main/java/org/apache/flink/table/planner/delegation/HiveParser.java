@@ -395,8 +395,8 @@ public class HiveParser extends ParserImpl {
 		queryRelNode = addTypeConversions(queryRelNode, new ArrayList<>(targetColToType.values()));
 
 		// decide whether it's overwrite
-		boolean overwrite = topQB.getParseInfo().getInsertOverwriteTables()
-				.containsKey(destTable.getDbName() + "." + destTable.getTableName());
+		boolean overwrite = topQB.getParseInfo().getInsertOverwriteTables().keySet().stream().map(String::toLowerCase).collect(Collectors.toSet())
+				.contains(destTable.getDbName() + "." + destTable.getTableName());
 
 		return new CatalogSinkModifyOperation(identifier, new PlannerQueryOperation(queryRelNode), staticPartSpec, overwrite, Collections.emptyMap());
 	}
