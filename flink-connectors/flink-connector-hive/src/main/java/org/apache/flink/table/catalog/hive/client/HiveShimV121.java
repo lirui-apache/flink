@@ -18,9 +18,48 @@
 
 package org.apache.flink.table.catalog.hive.client;
 
+import org.apache.flink.connectors.hive.FlinkHiveException;
+
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
+import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
+
+import java.lang.reflect.Method;
+
 /**
  * Shim for Hive version 1.2.1.
  */
 public class HiveShimV121 extends HiveShimV120 {
+
+	private static Method getAnalyzer;
+
+	private static boolean inited = false;
+
+	private static void init() {
+		if (!inited) {
+			synchronized (HiveShimV200.class) {
+				if (!inited) {
+					try {
+						getAnalyzer = SemanticAnalyzerFactory.class.getDeclaredMethod("get", HiveConf.class, ASTNode.class);
+						getAnalyzer.setAccessible(true);
+						inited = true;
+					} catch (Exception e) {
+						throw new FlinkHiveException("Failed to init shim methods", e);
+					}
+				}
+			}
+		}
+	}
+
+	@Override
+	public BaseSemanticAnalyzer getAnalyzer(ASTNode node, HiveConf hiveConf, Object queryState) {
+		init();
+		try {
+			return  (BaseSemanticAnalyzer) getAnalyzer.invoke(null, hiveConf, node);
+		} catch (Exception e) {
+			throw new FlinkHiveException(e);
+		}
+	}
 
 }

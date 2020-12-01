@@ -81,7 +81,8 @@ public class HiveCompatibleITCase {
 			"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
 			"select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1",
 			"select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2",
-			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1"
+			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1",
+			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -155,15 +156,15 @@ public class HiveCompatibleITCase {
 			dqlToRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
 
-		runUpdate("insert into destp select x,'0','0' from foo order by x", tableEnv);
+//		runUpdate("insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`", tableEnv);
+//		runQuery("select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep", tableEnv);
 
-//		runQuery("select default.hiveudf(x,y) from foo", tableEnv);
-//		for (String query : toRun) {
-//			runQuery(query, tableEnv);
-//		}
-//		for (String dml : UPDATES) {
-//			runUpdate(dml, tableEnv);
-//		}
+		for (String query : dqlToRun) {
+			runQuery(query, tableEnv);
+		}
+		for (String dml : UPDATES) {
+			runUpdate(dml, tableEnv);
+		}
 		System.out.println("finished");
 	}
 

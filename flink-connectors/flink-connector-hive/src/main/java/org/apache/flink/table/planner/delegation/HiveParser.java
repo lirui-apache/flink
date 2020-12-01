@@ -18,7 +18,6 @@
 
 package org.apache.flink.table.planner.delegation;
 
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.api.SqlParserException;
 import org.apache.flink.table.api.TableSchema;
@@ -80,6 +79,7 @@ import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.DDLSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.FunctionSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
+import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
 import org.apache.hadoop.hive.ql.parse.HiveParserQB;
 import org.apache.hadoop.hive.ql.parse.MacroSemanticAnalyzer;
@@ -88,7 +88,6 @@ import org.apache.hadoop.hive.ql.parse.QBMetaData;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
-import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.slf4j.Logger;
@@ -117,6 +116,15 @@ public class HiveParser extends ParserImpl {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParser.class);
 
+	// need to maintain the ASTNode types for DDLs that are not handled by DDLSemanticAnalyzer
+	private static final Set<Integer> DDL_TYPES = new HashSet<>();
+
+	static {
+		DDL_TYPES.add(HiveASTParser.TOK_CREATETABLE);
+		DDL_TYPES.add(HiveASTParser.TOK_CREATEVIEW);
+		DDL_TYPES.add(HiveASTParser.TOK_ALTERVIEW);
+	}
+
 	private final PlannerContext plannerContext;
 
 	HiveParser(
@@ -138,6 +146,7 @@ public class HiveParser extends ParserImpl {
 		}
 		HiveConf hiveConf = new HiveConf(((HiveCatalog) currentCatalog).getHiveConf());
 		hiveConf.setVar(HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
+		hiveConf.set("hive.allow.udf.load.on.demand", "false");
 		HiveShim hiveShim = HiveShimLoader.loadHiveShim(((HiveCatalog) currentCatalog).getHiveVersion());
 		try {
 			// creates SessionState
@@ -168,9 +177,9 @@ public class HiveParser extends ParserImpl {
 			final ASTNode node = HiveASTParseUtils.parse(cmd, context);
 			final Object queryState = hiveShim.createQueryState(hiveConf);
 			// generate Calcite plan
-			Tuple2<BaseSemanticAnalyzer, HiveOperation> analyzerAndOperation = hiveShim.getAnalyzerAndOperation(node, hiveConf, queryState);
+			BaseSemanticAnalyzer hiveSemAnalyzer = hiveShim.getAnalyzer(node, hiveConf, queryState);
 			Operation res;
-			if (isDDL(analyzerAndOperation.f1, analyzerAndOperation.f0)) {
+			if (isDDL(node, hiveSemAnalyzer)) {
 				return super.parse(cmd);
 //				res = handleDDL(node, hiveAnalyzer, context);
 			} else {
@@ -202,11 +211,9 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private static boolean isDDL(HiveOperation operation, BaseSemanticAnalyzer analyzer) {
+	private static boolean isDDL(ASTNode node, BaseSemanticAnalyzer analyzer) {
 		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof FunctionSemanticAnalyzer ||
-				analyzer instanceof MacroSemanticAnalyzer || operation == HiveOperation.CREATETABLE ||
-				operation == HiveOperation.CREATETABLE_AS_SELECT || operation == HiveOperation.CREATEVIEW ||
-				operation == HiveOperation.ALTERVIEW_AS;
+				analyzer instanceof MacroSemanticAnalyzer || DDL_TYPES.contains(node.getType());
 	}
 
 	private Operation handleDDL(ASTNode node, BaseSemanticAnalyzer hiveAnalyzer, Context context) throws SemanticException {

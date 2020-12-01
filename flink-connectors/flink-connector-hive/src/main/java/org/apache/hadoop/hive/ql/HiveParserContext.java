@@ -29,7 +29,6 @@ import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.TaskRunner;
 import org.apache.hadoop.hive.ql.hooks.WriteEntity;
-import org.apache.hadoop.hive.ql.lockmgr.DbTxnManager;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLock;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLockObj;
 import org.apache.hadoop.hive.ql.lockmgr.HiveTxnManager;
@@ -72,7 +71,6 @@ public class HiveParserContext {
 	private int resDirFilesNum;
 	boolean initialized;
 	String originalTracker = null;
-	private CompilationOpContext opContext;
 	private final Map<String, ContentSummary> pathToCS = new ConcurrentHashMap<String, ContentSummary>();
 
 	// scratch path to use for all non-local (ie. hdfs) file system tmp folders
@@ -122,8 +120,6 @@ public class HiveParserContext {
 			new HashMap<WriteEntity, List<HiveLockObj>>();
 
 	private final String stagingDir;
-
-	private DbTxnManager.Heartbeater heartbeater;
 
 	private boolean skipTableMasking;
 
@@ -270,7 +266,6 @@ public class HiveParserContext {
 		localScratchDir = new Path(SessionState.getLocalSessionPath(conf), executionId).toUri().getPath();
 		scratchDirPermission = HiveConf.getVar(conf, HiveConf.ConfVars.SCRATCHDIRPERMISSION);
 		stagingDir = HiveConf.getVar(conf, HiveConf.ConfVars.STAGINGDIR);
-		opContext = new CompilationOpContext();
 
 		viewsTokenRewriteStreams = new HashMap<>();
 	}
@@ -898,18 +893,6 @@ public class HiveParserContext {
 		return sequencer;
 	}
 
-	public CompilationOpContext getOpContext() {
-		return opContext;
-	}
-
-	public DbTxnManager.Heartbeater getHeartbeater() {
-		return heartbeater;
-	}
-
-	public void setHeartbeater(DbTxnManager.Heartbeater heartbeater) {
-		this.heartbeater = heartbeater;
-	}
-
 	public boolean isSkipTableMasking() {
 		return skipTableMasking;
 	}
@@ -924,11 +907,6 @@ public class HiveParserContext {
 
 	public void setExplainConfig(HiveParserExplainConfiguration explainConfig) {
 		this.explainConfig = explainConfig;
-	}
-
-	public void resetOpContext() {
-		opContext = new CompilationOpContext();
-		sequencer = new AtomicInteger();
 	}
 
 	public boolean getIsUpdateDeleteMerge() {

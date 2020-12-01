@@ -711,7 +711,7 @@ public class HiveParserCalcitePlanner {
 				// 2. if returnpath is on and hivetestmode is on bail
 				if (qb.getParseInfo().getTabSample(tableAlias) != null
 						|| hiveAnalyzer.getNameToSplitSampleMap().containsKey(tableAlias)
-						|| (hiveAnalyzer.conf.getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) && (hiveAnalyzer.conf.getBoolVar(HiveConf.ConfVars.HIVETESTMODE))) {
+						|| (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) && (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVETESTMODE))) {
 					String msg = String.format("Table Sample specified for %s."
 							+ " Currently we don't support Table Sample clauses in CBO,"
 							+ " turn off cbo for queries on tableSamples.", tableAlias);
@@ -781,7 +781,7 @@ public class HiveParserCalcitePlanner {
 		private RelNode genValues(String tabAlias, Table tmpTable, HiveParserRowResolver rowResolver) {
 			try {
 				Path dataFile = new Path(tmpTable.getSd().getLocation(), "data_file");
-				FileSystem fs = dataFile.getFileSystem(hiveAnalyzer.conf);
+				FileSystem fs = dataFile.getFileSystem(hiveAnalyzer.getConf());
 				List<List<RexLiteral>> rows = new ArrayList<>();
 				// TODO: leverage Hive to read the data
 				try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(dataFile)))) {
@@ -1410,21 +1410,21 @@ public class HiveParserCalcitePlanner {
 					|| !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty();
 
 			// 2. Sanity check
-			if (hiveAnalyzer.conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)
+			if (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)
 					&& qbp.getDistinctFuncExprsForClause(detsClauseName).size() > 1) {
 				throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
 			}
 			if (cubeRollupGrpSetPresent) {
-				if (!HiveConf.getBoolVar(hiveAnalyzer.conf, HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
+				if (!HiveConf.getBoolVar(hiveAnalyzer.getConf(), HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
 					throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_AGGR_NOMAPAGGR.getMsg());
 				}
 
-				if (hiveAnalyzer.conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+				if (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
 					hiveAnalyzer.checkExpressionsForGroupingSet(gbAstExprs, qb.getParseInfo()
 									.getDistinctFuncExprsForClause(detsClauseName), aggregationTrees,
 							this.relToRowResolver.get(srcRel));
 
-					if (qbp.getDestGroupingSets().size() > hiveAnalyzer.conf
+					if (qbp.getDestGroupingSets().size() > hiveAnalyzer.getConf()
 							.getIntVar(HiveConf.ConfVars.HIVE_NEW_JOB_GROUPING_SET_CARDINALITY)) {
 						String errorMsg = "The number of rows per input row due to grouping sets is "
 								+ qbp.getDestGroupingSets().size();
@@ -1732,9 +1732,10 @@ public class HiveParserCalcitePlanner {
 				// in strict mode, in the presence of order by, limit must be specified
 				Integer limit = qb.getParseInfo().getDestLimit(dest);
 				if (limit == null) {
-					String error = HiveConf.StrictChecks.checkNoLimit(hiveAnalyzer.conf);
-					if (error != null) {
-						throw new SemanticException(generateErrorMessage(obAST, error));
+					String mapRedMode = hiveAnalyzer.getConf().getVar(HiveConf.ConfVars.HIVEMAPREDMODE);
+					boolean banLargeQuery = Boolean.parseBoolean(hiveAnalyzer.getConf().get("hive.strict.checks.large.query", "false"));
+					if ("strict".equalsIgnoreCase(mapRedMode) || banLargeQuery) {
+						throw new SemanticException(generateErrorMessage(obAST, "Order by-s without limit"));
 					}
 				}
 
@@ -2222,7 +2223,7 @@ public class HiveParserCalcitePlanner {
 			int exprType = expr.getType();
 			if (exprType == HiveASTParser.TOK_FUNCTION || exprType == HiveASTParser.TOK_FUNCTIONSTAR) {
 				String funcName = HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText(expr, true);
-				FunctionInfo fi = FunctionRegistry.getFunctionInfo(funcName);
+				FunctionInfo fi = HiveParserUtils.getFunctionInfo(funcName);
 				if (fi != null && fi.getGenericUDTF() != null) {
 					LOG.debug("Found UDTF " + funcName);
 					genericUDTF = fi.getGenericUDTF();
@@ -2342,7 +2343,7 @@ public class HiveParserCalcitePlanner {
 					} else if (expr.getType() == HiveASTParser.TOK_TABLE_OR_COL
 							&& !hasAsClause
 							&& !inputRR.getIsExprResolver()
-							&& HiveParserUtils.isRegex(unescapeIdentifier(expr.getChild(0).getText()), hiveAnalyzer.conf)) {
+							&& HiveParserUtils.isRegex(unescapeIdentifier(expr.getChild(0).getText()), hiveAnalyzer.getConf())) {
 						// In case the expression is a regex COL. This can only happen without AS clause
 						// We don't allow this for ExprResolver - the Group By case
 						pos = hiveAnalyzer.genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),
@@ -2353,7 +2354,7 @@ public class HiveParserCalcitePlanner {
 							&& inputRR.hasTableAlias(unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()))
 							&& !hasAsClause
 							&& !inputRR.getIsExprResolver()
-							&& HiveParserUtils.isRegex(unescapeIdentifier(expr.getChild(1).getText()), hiveAnalyzer.conf)) {
+							&& HiveParserUtils.isRegex(unescapeIdentifier(expr.getChild(1).getText()), hiveAnalyzer.getConf())) {
 						// In case the expression is TABLE.COL (col can be regex). This can only happen without AS clause
 						// We don't allow this for ExprResolver - the Group By case
 						pos = hiveAnalyzer.genColListRegex(
@@ -2815,7 +2816,7 @@ public class HiveParserCalcitePlanner {
 				Preconditions.checkState(res != null, "Failed to decide LHS table for current lateral view");
 				HiveParserRowResolver inputRR = relToRowResolver.get(res);
 				HiveParserUtils.LateralViewInfo info = HiveParserUtils.extractLateralViewInfo(lateralView, inputRR,
-						hiveAnalyzer, cluster);
+						hiveAnalyzer);
 				HiveParserRexNodeConverter rexNodeConverter = new HiveParserRexNodeConverter(cluster, res.getRowType(),
 						relToHiveColNameCalcitePosMap.get(res), 0, false);
 				List<RexNode> operands = new ArrayList<>(info.getOperands().size());

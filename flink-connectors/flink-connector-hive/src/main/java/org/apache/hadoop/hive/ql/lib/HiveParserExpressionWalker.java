@@ -25,7 +25,7 @@ import org.apache.hadoop.hive.ql.parse.SemanticException;
 /**
  * Counterpart of hive's ExpressionWalker.
  */
-public class HiveParserExpressionWalker extends DefaultGraphWalker {
+public class HiveParserExpressionWalker extends HiveParserDefaultGraphWalker {
 
 	/**
 	 * Constructor.

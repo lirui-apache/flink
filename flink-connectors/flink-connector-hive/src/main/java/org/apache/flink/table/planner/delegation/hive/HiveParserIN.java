@@ -22,10 +22,9 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveIn;
 
 /**
- * The SqlOperator for GenericUDFIn. We cannot use {@link HiveIn} because Calcite-1.26 requires only RexSubQuery can
+ * The SqlOperator for GenericUDFIn. We cannot use HiveIn because Calcite-1.26 requires only RexSubQuery can
  * have SqlKind.IN.
  */
 public class HiveParserIN extends SqlSpecialOperator {

@@ -18,7 +18,6 @@
 
 package org.apache.flink.table.catalog.hive.client;
 
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.api.constraints.UniqueConstraint;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
@@ -37,7 +36,6 @@ import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
-import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
 
@@ -54,9 +52,7 @@ import java.util.Optional;
  */
 public class HiveShimV210 extends HiveShimV201 {
 
-	private static Class queryStateClz;
 	private static Constructor queryStateConstructor;
-	private static Method getHiveOperation;
 	private static Method getAnalyzer;
 
 	private static boolean inited = false;
@@ -66,10 +62,8 @@ public class HiveShimV210 extends HiveShimV201 {
 			synchronized (HiveShimV210.class) {
 				if (!inited) {
 					try {
-						queryStateClz = Class.forName("org.apache.hadoop.hive.ql.QueryState");
+						Class queryStateClz = Class.forName("org.apache.hadoop.hive.ql.QueryState");
 						queryStateConstructor = queryStateClz.getDeclaredConstructor(HiveConf.class);
-						getHiveOperation = queryStateClz.getDeclaredMethod("getHiveOperation");
-						getHiveOperation.setAccessible(true);
 						getAnalyzer = SemanticAnalyzerFactory.class.getDeclaredMethod("get", queryStateClz, ASTNode.class);
 						getAnalyzer.setAccessible(true);
 						inited = true;
@@ -175,12 +169,10 @@ public class HiveShimV210 extends HiveShimV201 {
 	}
 
 	@Override
-	public Tuple2<BaseSemanticAnalyzer, HiveOperation> getAnalyzerAndOperation(ASTNode node, HiveConf hiveConf, Object queryState) {
+	public BaseSemanticAnalyzer getAnalyzer(ASTNode node, HiveConf hiveConf, Object queryState) {
 		init();
 		try {
-			BaseSemanticAnalyzer analyzer = (BaseSemanticAnalyzer) getAnalyzer.invoke(null, queryState, node);
-			HiveOperation operation = (HiveOperation) getHiveOperation.invoke(queryState);
-			return new Tuple2<>(analyzer, operation);
+			return  (BaseSemanticAnalyzer) getAnalyzer.invoke(null, queryState, node);
 		} catch (Exception e) {
 			throw new FlinkHiveException(e);
 		}

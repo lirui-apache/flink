@@ -61,8 +61,8 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = null;
-	private static final String END = null;
+	private static final String START = "autoColumnStats_2.q";
+	private static final String END = "except_all.q";
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;

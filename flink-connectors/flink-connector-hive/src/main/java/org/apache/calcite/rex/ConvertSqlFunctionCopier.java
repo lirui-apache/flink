@@ -18,28 +18,27 @@
 
 package org.apache.calcite.rex;
 
+import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.planner.delegation.hive.HiveParserBetween;
+import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+import org.apache.flink.util.Preconditions;
+
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.sql.SqlFunction;
+import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.apache.flink.connectors.hive.FlinkHiveException;
-import org.apache.flink.util.Preconditions;
-
-import org.apache.calcite.sql.SqlAggFunction;
-import org.apache.calcite.sql.SqlFunction;
-import org.apache.calcite.sql.SqlFunctionCategory;
-import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlOperatorTable;
-import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.validate.SqlNameMatcher;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveBetween;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
-import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
-import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.RexNodeConverter;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -139,7 +138,7 @@ public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
 	public SqlOperator convertOperator(SqlOperator operator) {
 		if (operator instanceof SqlFunction) {
 			operator = convertOperator(operator, ((SqlFunction) operator).getFunctionType());
-		} else if (operator instanceof HiveParserIN || operator instanceof HiveBetween) {
+		} else if (operator instanceof HiveParserIN || operator instanceof HiveParserBetween) {
 			operator = convertOperator(operator, SqlFunctionCategory.USER_DEFINED_FUNCTION);
 		}
 		return operator;

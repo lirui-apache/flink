@@ -49,9 +49,9 @@ import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
 import org.apache.hadoop.hive.ql.io.RCFileInputFormat;
 import org.apache.hadoop.hive.ql.io.orc.OrcInputFormat;
-import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Dispatcher;
 import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.HiveParserDefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
 import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -137,10 +137,7 @@ public class HiveParserSemanticAnalyzer {
 
 	private HiveParserQB qb;
 	private ASTNode ast;
-	/**
-	 * a map for the split sampling, from alias to an instance of SplitSample
-	 * that describes percentage and number.
-	 */
+	// a map for the split sampling, from alias to an instance of SplitSample that describes percentage and number.
 	private final HashMap<String, SplitSample> nameToSplitSample;
 	Map<String, PrunedPartitionList> prunedPartitions;
 	protected List<FieldSchema> resultSchema;
@@ -161,13 +158,13 @@ public class HiveParserSemanticAnalyzer {
 	// derived from the alias V3:V2:V1:T
 	private final Map<String, ReadEntity> viewAliasToInput;
 
-	//need merge isDirect flag to input even if the newInput does not have a parent
+	// need merge isDirect flag to input even if the newInput does not have a parent
 	private boolean mergeIsDirect;
 
 	// flag for no scan during analyze ... compute statistics
 	protected boolean noscan;
 
-	//flag for partial scan during analyze ... compute statistics
+	// flag for partial scan during analyze ... compute statistics
 	protected boolean partialscan;
 
 	protected volatile boolean disableJoinMerge = false;
@@ -186,7 +183,7 @@ public class HiveParserSemanticAnalyzer {
 
 	ColumnAccessInfo columnAccessInfo;
 
-	final HiveConf conf;
+	private final HiveConf conf;
 
 	HiveParserContext ctx;
 
@@ -225,6 +222,10 @@ public class HiveParserSemanticAnalyzer {
 		disableJoinMerge = defaultJoinMerge;
 	}
 
+	public HiveConf getConf() {
+		return conf;
+	}
+
 	void initCtx(HiveParserContext context) {
 		this.ctx = context;
 	}
@@ -236,7 +237,6 @@ public class HiveParserSemanticAnalyzer {
 	protected void reset(boolean clearPartsCache) {
 		if (clearPartsCache) {
 			prunedPartitions.clear();
-
 			//When init(true) combine with genResolvedParseTree, it will generate Resolved Parse tree from syntax tree
 			//ReadEntity created under these conditions should be all relevant to the syntax tree even the ones without parents
 			//set mergeIsDirect to true here.
@@ -399,7 +399,7 @@ public class HiveParserSemanticAnalyzer {
 				String functionName = unescapeIdentifier(expressionTree.getChild(0)
 						.getText());
 				// Validate the function name
-				if (FunctionRegistry.getFunctionInfo(functionName) == null) {
+				if (HiveParserUtils.getFunctionInfo(functionName) == null) {
 					throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(functionName));
 				}
 				if (FunctionRegistry.impliesOrder(functionName)) {
@@ -410,7 +410,7 @@ public class HiveParserSemanticAnalyzer {
 						throw new SemanticException(ErrorMsg.MISSING_OVER_CLAUSE.getMsg(functionName));
 					}
 					aggregations.put(expressionTree.toStringTree(), expressionTree);
-					FunctionInfo fi = FunctionRegistry.getFunctionInfo(functionName);
+					FunctionInfo fi = HiveParserUtils.getFunctionInfo(functionName);
 					if (!fi.isNative()) {
 						unparseTranslator.addIdentifierTranslation((ASTNode) expressionTree
 								.getChild(0));
@@ -1842,7 +1842,7 @@ public class HiveParserSemanticAnalyzer {
 				((ASTNode) nd).setOrigin(viewOrigin);
 				return null;
 			};
-			GraphWalker nodeOriginTagger = new DefaultGraphWalker(nodeOriginDispatcher);
+			GraphWalker nodeOriginTagger = new HiveParserDefaultGraphWalker(nodeOriginDispatcher);
 			nodeOriginTagger.startWalking(Collections.singleton(viewTree), null);
 		} catch (ParseException e) {
 			// A user could encounter this if a stored view definition contains
@@ -2993,5 +2993,4 @@ public class HiveParserSemanticAnalyzer {
 			return alias == null ? "<root>" : alias;
 		}
 	}
-
 }

@@ -18,6 +18,9 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.flink.table.planner.delegation.hive.HiveParserTypeInfoUtils;
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+
 import org.apache.calcite.rel.RelNode;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
@@ -836,7 +839,7 @@ public class HiveParserTypeCheckProcFactory {
 
 			FunctionInfo fi;
 			try {
-				fi = FunctionRegistry.getFunctionInfo(udfName);
+				fi = HiveParserUtils.getFunctionInfo(udfName);
 			} catch (SemanticException e) {
 				throw new UDFArgumentException(e);
 			}
@@ -944,7 +947,7 @@ public class HiveParserTypeCheckProcFactory {
 
 				if (myt.getCategory() == ObjectInspector.Category.LIST) {
 					// Only allow integer index for now
-					if (!TypeInfoUtils.implicitConvertible(children.get(1).getTypeInfo(),
+					if (!HiveParserTypeInfoUtils.implicitConvertible(children.get(1).getTypeInfo(),
 							TypeInfoFactory.intTypeInfo)) {
 						throw new SemanticException(SemanticAnalyzer.generateErrorMessage(
 								expr, ErrorMsg.INVALID_ARRAYINDEX_TYPE.getMsg()));
@@ -954,7 +957,7 @@ public class HiveParserTypeCheckProcFactory {
 					TypeInfo t = ((ListTypeInfo) myt).getListElementTypeInfo();
 					desc = new ExprNodeGenericFuncDesc(t, FunctionRegistry.getGenericUDFForIndex(), children);
 				} else if (myt.getCategory() == ObjectInspector.Category.MAP) {
-					if (!TypeInfoUtils.implicitConvertible(children.get(1).getTypeInfo(),
+					if (!HiveParserTypeInfoUtils.implicitConvertible(children.get(1).getTypeInfo(),
 							((MapTypeInfo) myt).getMapKeyTypeInfo())) {
 						throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_TYPE
 								.getMsg(expr));
@@ -967,7 +970,7 @@ public class HiveParserTypeCheckProcFactory {
 				}
 			} else {
 				// other operators or functions
-				FunctionInfo fi = FunctionRegistry.getFunctionInfo(funcText);
+				FunctionInfo fi = HiveParserUtils.getFunctionInfo(funcText);
 
 				if (fi == null) {
 					if (isFunction) {
@@ -1067,8 +1070,8 @@ public class HiveParserTypeCheckProcFactory {
 				}
 				if (genericUDF instanceof GenericUDFOPOr) {
 					// flatten OR
-					List<ExprNodeDesc> childrenList = new ArrayList<ExprNodeDesc>(
-							children.size());
+					// TODO: don't do this because older version UDF only supports 2 args
+					List<ExprNodeDesc> childrenList = new ArrayList<>(children.size());
 					for (ExprNodeDesc child : children) {
 						if (FunctionRegistry.isOpOr(child)) {
 							childrenList.addAll(child.getChildren());
@@ -1076,12 +1079,11 @@ public class HiveParserTypeCheckProcFactory {
 							childrenList.add(child);
 						}
 					}
-					desc = ExprNodeGenericFuncDesc.newInstance(genericUDF, funcText,
-							childrenList);
+					desc = ExprNodeGenericFuncDesc.newInstance(genericUDF, funcText, children);
 				} else if (genericUDF instanceof GenericUDFOPAnd) {
 					// flatten AND
-					List<ExprNodeDesc> childrenList = new ArrayList<ExprNodeDesc>(
-							children.size());
+					// TODO: don't do this because older version UDF only supports 2 args
+					List<ExprNodeDesc> childrenList = new ArrayList<>(children.size());
 					for (ExprNodeDesc child : children) {
 						if (FunctionRegistry.isOpAnd(child)) {
 							childrenList.addAll(child.getChildren());
@@ -1089,8 +1091,7 @@ public class HiveParserTypeCheckProcFactory {
 							childrenList.add(child);
 						}
 					}
-					desc = ExprNodeGenericFuncDesc.newInstance(genericUDF, funcText,
-							childrenList);
+					desc = ExprNodeGenericFuncDesc.newInstance(genericUDF, funcText, children);
 				} else if (ctx.isFoldExpr() && canConvertIntoNvl(genericUDF, children)) {
 					// Rewrite CASE into NVL
 					desc = ExprNodeGenericFuncDesc.newInstance(new GenericUDFNvl(),

@@ -25,7 +25,6 @@ import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.udf.UDFType;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
-import org.apache.hadoop.hive.ql.udf.generic.NDV;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
@@ -44,7 +43,6 @@ import org.apache.hadoop.io.LongWritable;
 				+ "is aggregated or not. Returns 1 for aggregated or 0 for not aggregated. ",
 		extended = "a is the grouping id, b is the index we want to extract")
 @UDFType(deterministic = true)
-@NDV(maxNdv = 2)
 public class HiveGenericUDFGrouping extends GenericUDF {
 
 	private transient PrimitiveObjectInspector groupingIdOI;

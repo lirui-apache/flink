@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.hive.ql.optimizer.calcite.translator;
 
+import org.apache.flink.table.planner.delegation.hive.HiveParserBetween;
 import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
 
 import org.apache.calcite.rel.type.RelDataType;
@@ -43,9 +44,8 @@ import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveParserSqlCountAggFunction;
+import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveParserSqlMinMaxAggFunction;
 import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveParserSqlSumAggFunction;
-import org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveSqlMinMaxAggFunction;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveBetween;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserFloorDate;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
@@ -353,7 +353,7 @@ public class HiveParserSqlFunctionConverter {
 			registerFunction("<>", SqlStdOperatorTable.NOT_EQUALS, hToken(HiveASTParser.NOTEQUAL, "<>"));
 			registerDuplicateFunction("!=", SqlStdOperatorTable.NOT_EQUALS, hToken(HiveASTParser.NOTEQUAL, "<>"));
 			registerFunction("in", HiveParserIN.INSTANCE, hToken(HiveASTParser.Identifier, "in"));
-			registerFunction("between", HiveBetween.INSTANCE, hToken(HiveASTParser.Identifier, "between"));
+			registerFunction("between", HiveParserBetween.INSTANCE, hToken(HiveASTParser.Identifier, "between"));
 			registerFunction("struct", SqlStdOperatorTable.ROW, hToken(HiveASTParser.Identifier, "struct"));
 			registerFunction("isnotnull", SqlStdOperatorTable.IS_NOT_NULL, hToken(HiveASTParser.TOK_ISNOTNULL, "TOK_ISNOTNULL"));
 			registerFunction("isnull", SqlStdOperatorTable.IS_NULL, hToken(HiveASTParser.TOK_ISNULL, "TOK_ISNULL"));
@@ -543,13 +543,13 @@ public class HiveParserSqlFunctionConverter {
 							udfInfo.operandTypeChecker);
 					break;
 				case "min":
-					calciteAggFn = new HiveSqlMinMaxAggFunction(
+					calciteAggFn = new HiveParserSqlMinMaxAggFunction(
 							udfInfo.returnTypeInference,
 							udfInfo.operandTypeInference,
 							udfInfo.operandTypeChecker, true);
 					break;
 				case "max":
-					calciteAggFn = new HiveSqlMinMaxAggFunction(
+					calciteAggFn = new HiveParserSqlMinMaxAggFunction(
 							udfInfo.returnTypeInference,
 							udfInfo.operandTypeInference,
 							udfInfo.operandTypeChecker, false);

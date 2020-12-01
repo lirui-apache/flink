@@ -19,8 +19,6 @@
 package org.apache.flink.table.catalog.hive.client;
 
 import org.apache.flink.api.common.serialization.BulkWriter;
-import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.orc.vector.RowDataVectorizer;
 import org.apache.flink.orc.writer.OrcBulkWriterFactory;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
@@ -32,11 +30,6 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.RetryingMetaStoreClient;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
-import org.apache.hadoop.hive.ql.plan.HiveOperation;
-import org.apache.hadoop.hive.ql.session.SessionState;
 
 import java.lang.reflect.Method;
 import java.util.Properties;
@@ -45,29 +38,6 @@ import java.util.Properties;
  * Shim for Hive version 2.0.0.
  */
 public class HiveShimV200 extends HiveShimV122 {
-
-	private static Method getAnalyzer;
-	private static Method getHiveOperation;
-
-	private static boolean inited = false;
-
-	private static void init() {
-		if (!inited) {
-			synchronized (HiveShimV200.class) {
-				if (!inited) {
-					try {
-						getAnalyzer = SemanticAnalyzerFactory.class.getDeclaredMethod("get", HiveConf.class, ASTNode.class);
-						getAnalyzer.setAccessible(true);
-						getHiveOperation = SessionState.class.getDeclaredMethod("getHiveOperation");
-						getHiveOperation.setAccessible(true);
-						inited = true;
-					} catch (Exception e) {
-						throw new FlinkHiveException("Failed to init shim methods", e);
-					}
-				}
-			}
-		}
-	}
 
 	@Override
 	public IMetaStoreClient getHiveMetastoreClient(HiveConf hiveConf) {
@@ -91,21 +61,5 @@ public class HiveShimV200 extends HiveShimV122 {
 				new RowDataVectorizer(schema, fieldTypes),
 				new Properties(),
 				conf);
-	}
-
-	@Override
-	public Tuple2<BaseSemanticAnalyzer, HiveOperation> getAnalyzerAndOperation(ASTNode node, HiveConf hiveConf, Object queryState) {
-		init();
-		try {
-			BaseSemanticAnalyzer analyzer = (BaseSemanticAnalyzer) getAnalyzer.invoke(null, hiveConf, node);
-			HiveOperation operation = null;
-			SessionState sessionState = SessionState.get();
-			if (sessionState != null) {
-				operation = (HiveOperation) getHiveOperation.invoke(sessionState);
-			}
-			return new Tuple2<>(analyzer, operation);
-		} catch (Exception e) {
-			throw new FlinkHiveException(e);
-		}
 	}
 }

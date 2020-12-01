@@ -19,6 +19,8 @@
 package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.catalog.hive.client.HiveMetastoreClientWrapper;
+import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
@@ -52,11 +54,14 @@ import org.apache.calcite.util.Pair;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
+import org.apache.hadoop.hive.ql.exec.FunctionTask;
+import org.apache.hadoop.hive.ql.exec.FunctionUtils;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
@@ -77,6 +82,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.GroupByDesc;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -86,6 +92,8 @@ import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -107,6 +115,8 @@ import static org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory.Def
  * Util class for the hive planner.
  */
 public class HiveParserUtils {
+
+	private static final Logger LOG = LoggerFactory.getLogger(HiveParserUtils.class);
 
 	private static final Class immutableListClz = HiveReflectionUtils.tryGetClass("com.google.common.collect.ImmutableList");
 	private static final Class shadedImmutableListClz = HiveReflectionUtils.tryGetClass(
@@ -656,7 +666,7 @@ public class HiveParserUtils {
 
 	// extracts useful information for a given lateral view node
 	public static LateralViewInfo extractLateralViewInfo(ASTNode lateralView, HiveParserRowResolver inputRR,
-			HiveParserSemanticAnalyzer hiveAnalyzer, RelOptCluster cluster) throws SemanticException {
+			HiveParserSemanticAnalyzer hiveAnalyzer) throws SemanticException {
 		// checks the left sub-tree
 		ASTNode sel = (ASTNode) lateralView.getChild(0);
 		Preconditions.checkArgument(sel.getToken().getType() == HiveASTParser.TOK_SELECT);
@@ -667,7 +677,7 @@ public class HiveParserUtils {
 		ASTNode func = (ASTNode) selExpr.getChild(0);
 		Preconditions.checkArgument(func.getToken().getType() == HiveASTParser.TOK_FUNCTION);
 		String funcName = getFunctionText(func, true);
-		FunctionInfo fi = FunctionRegistry.getFunctionInfo(funcName);
+		FunctionInfo fi = getFunctionInfo(funcName);
 		GenericUDTF udtf = fi.getGenericUDTF();
 		Preconditions.checkArgument(udtf != null, funcName + " is not a valid UDTF");
 		// decide operands
@@ -925,5 +935,29 @@ public class HiveParserUtils {
 		inputRels[1] = rightRel;
 
 		return outJoinCond;
+	}
+
+	// Get FunctionInfo and always look for it in metastore when FunctionRegistry returns null.
+	public static FunctionInfo getFunctionInfo(String funcName) throws SemanticException {
+		FunctionInfo res = FunctionRegistry.getFunctionInfo(funcName);
+		if (res == null) {
+			SessionState sessionState = SessionState.get();
+			HiveConf hiveConf = sessionState != null ? sessionState.getConf() : null;
+			if (hiveConf != null) {
+				// TODO: need to support overriding hive version
+				try (HiveMetastoreClientWrapper hmsClient = new HiveMetastoreClientWrapper(hiveConf, HiveShimLoader.getHiveVersion())) {
+					String[] parts = FunctionUtils.getQualifiedFunctionNameParts(funcName);
+					Function function = hmsClient.getFunction(parts[0], parts[1]);
+					FunctionRegistry.registerTemporaryUDF(
+							FunctionUtils.qualifyFunctionName(parts[1], parts[0]),
+							Thread.currentThread().getContextClassLoader().loadClass(function.getClassName()),
+							FunctionTask.toFunctionResource(function.getResourceUris()));
+					res = FunctionRegistry.getFunctionInfo(funcName);
+				} catch (Exception e) {
+					LOG.warn("Failed to look up function in metastore", e);
+				}
+			}
+		}
+		return res;
 	}
 }
