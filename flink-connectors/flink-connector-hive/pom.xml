@@ -158,8 +158,6 @@ under the License.
 			<scope>provided</scope>
 		</dependency>
 
-		<!-- Blink planner includes/overrides some classes in Calcite package. So make sure to declare this before calcite deps -->
-
 		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-table-planner-blink_${scala.binary.version}</artifactId>
@@ -247,20 +245,6 @@ under the License.
 			<artifactId>hadoop-mapreduce-client-core</artifactId>
 			<scope>provided</scope>
 		</dependency>
-
-		<!-- hive-exec has included protobuf-java:2.5.0. Declare this before hive-exec so that it gets picked up in classpath -->
-
-		<dependency>
-			<groupId>com.google.protobuf</groupId>
-			<artifactId>protobuf-java</artifactId>
-			<version>3.6.1</version>
-		</dependency>
-
-<!--		<dependency>-->
-<!--			<groupId>org.apache.calcite</groupId>-->
-<!--			<artifactId>calcite-druid</artifactId>-->
-<!--			<version>1.21.0</version>-->
-<!--		</dependency>-->
 
 		<!-- Hive dependencies -->
 		<!-- Note: Hive published jars do not have proper dependencies declared.
