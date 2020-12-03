@@ -62,8 +62,6 @@ public class HiveCompatibleITCase {
 			"select * from foo where y in (select i from bar)",
 			"select * from foo left semi join bar on foo.y=bar.i",
 			"select (select count(x) from foo where foo.y=bar.i) from bar",
-			"select default.hiveudf(x,y) from foo",
-			"select hiveudtf(ai) from baz",
 			"select x from foo union select i from bar",
 			"select avg(salary) over (partition by dep) as avgsal from employee",
 			"select dep,name,salary from (select dep,name,salary,rank() over (partition by dep order by salary desc) as rnk from employee) a where rnk=1",
@@ -84,8 +82,6 @@ public class HiveCompatibleITCase {
 			"select f1.x,f1.y,f2.x,f2.y from (select * from foo order by x,y) f1 join (select * from foo order by x,y) f2",
 			"select sum(x) as s1 from foo group by y having s1 > 2 and avg(x) < 4",
 			"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
-			"select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1",
-			"select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2",
 			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1",
 			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep"
 	};
@@ -152,13 +148,18 @@ public class HiveCompatibleITCase {
 				.addRow(new Object[]{11, "K", "Sales", 4100, 38})
 				.commit();
 
-		tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
-		tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
-
 		List<String> dqlToRun = new ArrayList<>(Arrays.asList(QUERIES));
 		// add test cases specific to each version
 		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
 			dqlToRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
+		}
+		if (HiveVersionTestUtil.HIVE_200_OR_LATER) {
+			tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
+			tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
+			dqlToRun.add("select default.hiveudf(x,y) from foo");
+			dqlToRun.add("select hiveudtf(ai) from baz");
+			dqlToRun.add("select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1");
+			dqlToRun.add("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2");
 		}
 
 		// test explain
