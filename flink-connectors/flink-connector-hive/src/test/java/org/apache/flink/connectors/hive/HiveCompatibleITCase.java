@@ -19,8 +19,10 @@
 package org.apache.flink.connectors.hive;
 
 import org.apache.flink.table.HiveVersionTestUtil;
+import org.apache.flink.table.api.ResultKind;
 import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.HiveTestUtils;
 import org.apache.flink.table.module.CoreModule;
@@ -34,6 +36,9 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 /**
  * Test hive query compatibility.
@@ -156,6 +161,10 @@ public class HiveCompatibleITCase {
 			dqlToRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
 
+		// test explain
+		runExplain(tableEnv, "explain insert into dest select * from foo");
+		runExplain(tableEnv, "explain extended select * from foo");
+
 //		runUpdate("insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`", tableEnv);
 //		runQuery("select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep", tableEnv);
 
@@ -166,6 +175,12 @@ public class HiveCompatibleITCase {
 			runUpdate(dml, tableEnv);
 		}
 		System.out.println("finished");
+	}
+
+	private void runExplain(TableEnvironment tableEnv, String sql) {
+		TableResult tableResult = tableEnv.executeSql(sql);
+		assertFalse(tableResult.getJobClient().isPresent());
+		assertEquals(ResultKind.SUCCESS_WITH_CONTENT, tableResult.getResultKind());
 	}
 
 	private void runQuery(String query, TableEnvironment tableEnv) throws Exception {

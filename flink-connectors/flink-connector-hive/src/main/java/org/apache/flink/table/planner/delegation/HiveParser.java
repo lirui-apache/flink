@@ -34,6 +34,7 @@ import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
 import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.table.module.hive.udf.generic.HiveGenericUDFGrouping;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
+import org.apache.flink.table.operations.ExplainOperation;
 import org.apache.flink.table.operations.Operation;
 import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.planner.calcite.CalciteParser;
@@ -77,7 +78,6 @@ import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConv
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.DDLSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.FunctionSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
 import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
@@ -116,13 +116,16 @@ public class HiveParser extends ParserImpl {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParser.class);
 
-	// need to maintain the ASTNode types for DDLs that are not handled by DDLSemanticAnalyzer
+	// need to maintain the ASTNode types for DDLs
 	private static final Set<Integer> DDL_TYPES = new HashSet<>();
 
 	static {
 		DDL_TYPES.add(HiveASTParser.TOK_CREATETABLE);
 		DDL_TYPES.add(HiveASTParser.TOK_CREATEVIEW);
 		DDL_TYPES.add(HiveASTParser.TOK_ALTERVIEW);
+		DDL_TYPES.add(HiveASTParser.TOK_CREATEFUNCTION);
+		DDL_TYPES.add(HiveASTParser.TOK_DROPFUNCTION);
+		DDL_TYPES.add(HiveASTParser.TOK_RELOADFUNCTION);
 	}
 
 	private final PlannerContext plannerContext;
@@ -182,20 +185,12 @@ public class HiveParser extends ParserImpl {
 			if (isDDL(node, hiveSemAnalyzer)) {
 				return super.parse(cmd);
 //				res = handleDDL(node, hiveAnalyzer, context);
+			} else if (node.getType() == HiveASTParser.TOK_EXPLAIN) {
+				// first child is the underlying explicandum
+				ASTNode input = (ASTNode) node.getChild(0);
+				res = new ExplainOperation(analyzeQuery(context, hiveConf, hiveShim, cmd, input));
 			} else {
-				HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(new HiveParserQueryState(hiveConf), plannerContext, catalogManager, hiveShim);
-				analyzer.initCtx(context);
-				analyzer.init(false);
-				RelNode relNode = analyzer.genLogicalPlan(node);
-				Preconditions.checkState(relNode != null,
-						String.format("%s failed to generate plan for %s", analyzer.getClass().getSimpleName(), cmd));
-
-				// if not a query, treat it as an insert
-				if (!analyzer.getQB().getIsQuery()) {
-					res = createInsertOperation(analyzer, relNode);
-				} else {
-					res = new PlannerQueryOperation(relNode);
-				}
+				res = analyzeQuery(context, hiveConf, hiveShim, cmd, node);
 			}
 			return Collections.singletonList(res);
 		} catch (ParseException e) {
@@ -211,9 +206,28 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
+	private Operation analyzeQuery(HiveParserContext context, HiveConf hiveConf, HiveShim hiveShim, String cmd, ASTNode node)
+			throws SemanticException {
+		HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(new HiveParserQueryState(hiveConf), plannerContext, catalogManager, hiveShim);
+		analyzer.initCtx(context);
+		analyzer.init(false);
+		RelNode relNode = analyzer.genLogicalPlan(node);
+		Preconditions.checkState(relNode != null,
+				String.format("%s failed to generate plan for %s", analyzer.getClass().getSimpleName(), cmd));
+
+		// if not a query, treat it as an insert
+		if (!analyzer.getQB().getIsQuery()) {
+			return createInsertOperation(analyzer, relNode);
+		} else {
+			return new PlannerQueryOperation(relNode);
+		}
+	}
+
 	private static boolean isDDL(ASTNode node, BaseSemanticAnalyzer analyzer) {
-		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof FunctionSemanticAnalyzer ||
-				analyzer instanceof MacroSemanticAnalyzer || DDL_TYPES.contains(node.getType());
+		// eventually we should only decide with ASTNode type, because different hive versions may not be able to get
+		// the correct analyzer
+		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof MacroSemanticAnalyzer ||
+				DDL_TYPES.contains(node.getType());
 	}
 
 	private Operation handleDDL(ASTNode node, BaseSemanticAnalyzer hiveAnalyzer, Context context) throws SemanticException {
