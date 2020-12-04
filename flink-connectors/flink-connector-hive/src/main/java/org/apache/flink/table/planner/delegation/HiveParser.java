@@ -77,12 +77,10 @@ import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.DDLSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
 import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
 import org.apache.hadoop.hive.ql.parse.HiveParserQB;
-import org.apache.hadoop.hive.ql.parse.MacroSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -117,15 +115,28 @@ public class HiveParser extends ParserImpl {
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParser.class);
 
 	// need to maintain the ASTNode types for DDLs
-	private static final Set<Integer> DDL_TYPES = new HashSet<>();
+	private static final Set<Integer> DDL_NODES;
 
 	static {
-		DDL_TYPES.add(HiveASTParser.TOK_CREATETABLE);
-		DDL_TYPES.add(HiveASTParser.TOK_CREATEVIEW);
-		DDL_TYPES.add(HiveASTParser.TOK_ALTERVIEW);
-		DDL_TYPES.add(HiveASTParser.TOK_CREATEFUNCTION);
-		DDL_TYPES.add(HiveASTParser.TOK_DROPFUNCTION);
-		DDL_TYPES.add(HiveASTParser.TOK_RELOADFUNCTION);
+		DDL_NODES = new HashSet<>(Arrays.asList(HiveASTParser.TOK_ALTERTABLE, HiveASTParser.TOK_ALTERVIEW,
+				HiveASTParser.TOK_CREATEDATABASE, HiveASTParser.TOK_DROPDATABASE, HiveASTParser.TOK_SWITCHDATABASE,
+				HiveASTParser.TOK_DROPTABLE, HiveASTParser.TOK_DROPVIEW, HiveASTParser.TOK_DROP_MATERIALIZED_VIEW,
+				HiveASTParser.TOK_DESCDATABASE, HiveASTParser.TOK_DESCTABLE, HiveASTParser.TOK_DESCFUNCTION,
+				HiveASTParser.TOK_MSCK, HiveASTParser.TOK_ALTERINDEX_REBUILD, HiveASTParser.TOK_ALTERINDEX_PROPERTIES,
+				HiveASTParser.TOK_SHOWDATABASES, HiveASTParser.TOK_SHOWTABLES, HiveASTParser.TOK_SHOWCOLUMNS,
+				HiveASTParser.TOK_SHOW_TABLESTATUS, HiveASTParser.TOK_SHOW_TBLPROPERTIES, HiveASTParser.TOK_SHOW_CREATEDATABASE,
+				HiveASTParser.TOK_SHOW_CREATETABLE, HiveASTParser.TOK_SHOWFUNCTIONS, HiveASTParser.TOK_SHOWPARTITIONS,
+				HiveASTParser.TOK_SHOWINDEXES, HiveASTParser.TOK_SHOWLOCKS, HiveASTParser.TOK_SHOWDBLOCKS,
+				HiveASTParser.TOK_SHOW_COMPACTIONS, HiveASTParser.TOK_SHOW_TRANSACTIONS, HiveASTParser.TOK_ABORT_TRANSACTIONS,
+				HiveASTParser.TOK_SHOWCONF, HiveASTParser.TOK_SHOWVIEWS, HiveASTParser.TOK_CREATEINDEX, HiveASTParser.TOK_DROPINDEX,
+				HiveASTParser.TOK_ALTERTABLE_CLUSTER_SORT, HiveASTParser.TOK_LOCKTABLE, HiveASTParser.TOK_UNLOCKTABLE,
+				HiveASTParser.TOK_LOCKDB, HiveASTParser.TOK_UNLOCKDB, HiveASTParser.TOK_CREATEROLE, HiveASTParser.TOK_DROPROLE,
+				HiveASTParser.TOK_GRANT, HiveASTParser.TOK_REVOKE, HiveASTParser.TOK_SHOW_GRANT, HiveASTParser.TOK_GRANT_ROLE,
+				HiveASTParser.TOK_REVOKE_ROLE, HiveASTParser.TOK_SHOW_ROLE_GRANT, HiveASTParser.TOK_SHOW_ROLE_PRINCIPALS,
+				HiveASTParser.TOK_SHOW_ROLE_PRINCIPALS, HiveASTParser.TOK_ALTERDATABASE_PROPERTIES, HiveASTParser.TOK_ALTERDATABASE_OWNER,
+				HiveASTParser.TOK_TRUNCATETABLE, HiveASTParser.TOK_SHOW_SET_ROLE, HiveASTParser.TOK_CACHE_METADATA,
+				HiveASTParser.TOK_CREATEMACRO, HiveASTParser.TOK_DROPMACRO, HiveASTParser.TOK_CREATETABLE,
+				HiveASTParser.TOK_CREATEFUNCTION, HiveASTParser.TOK_DROPFUNCTION, HiveASTParser.TOK_RELOADFUNCTION));
 	}
 
 	private final PlannerContext plannerContext;
@@ -178,11 +189,9 @@ public class HiveParser extends ParserImpl {
 			final HiveParserContext context = new HiveParserContext(hiveConf);
 			// parse statement to get AST
 			final ASTNode node = HiveASTParseUtils.parse(cmd, context);
-			final Object queryState = hiveShim.createQueryState(hiveConf);
 			// generate Calcite plan
-			BaseSemanticAnalyzer hiveSemAnalyzer = hiveShim.getAnalyzer(node, hiveConf, queryState);
 			Operation res;
-			if (isDDL(node, hiveSemAnalyzer)) {
+			if (DDL_NODES.contains(node.getType())) {
 				return super.parse(cmd);
 //				res = handleDDL(node, hiveAnalyzer, context);
 			} else if (node.getType() == HiveASTParser.TOK_EXPLAIN) {
@@ -221,13 +230,6 @@ public class HiveParser extends ParserImpl {
 		} else {
 			return new PlannerQueryOperation(relNode);
 		}
-	}
-
-	private static boolean isDDL(ASTNode node, BaseSemanticAnalyzer analyzer) {
-		// eventually we should only decide with ASTNode type, because different hive versions may not be able to get
-		// the correct analyzer
-		return analyzer instanceof DDLSemanticAnalyzer || analyzer instanceof MacroSemanticAnalyzer ||
-				DDL_TYPES.contains(node.getType());
 	}
 
 	private Operation handleDDL(ASTNode node, BaseSemanticAnalyzer hiveAnalyzer, Context context) throws SemanticException {

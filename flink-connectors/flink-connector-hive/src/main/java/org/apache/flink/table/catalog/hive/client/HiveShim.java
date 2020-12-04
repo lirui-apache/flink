@@ -38,8 +38,6 @@ import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.hadoop.hive.ql.exec.FileSinkOperator;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.udf.generic.SimpleGenericUDAFParameterInfo;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.Writable;
@@ -216,16 +214,6 @@ public interface HiveShim extends Serializable {
 	 */
 	BulkWriter.Factory<RowData> createOrcBulkWriterFactory(
 			Configuration conf, String schema, LogicalType[] fieldTypes);
-
-	/**
-	 * Get corresponding semantic analyzer for a given AST node.
-	 */
-	BaseSemanticAnalyzer getAnalyzer(ASTNode node, HiveConf hiveConf, Object queryState);
-
-	/**
-	 * Create a query state instance.
-	 */
-	Object createQueryState(HiveConf hiveConf);
 
 	/**
 	 * Checks whether a hive table is a materialized view.

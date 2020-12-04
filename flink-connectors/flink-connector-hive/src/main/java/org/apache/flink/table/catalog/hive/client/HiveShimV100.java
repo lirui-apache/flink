@@ -47,8 +47,6 @@ import org.apache.hadoop.hive.ql.exec.FileSinkOperator;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.io.HiveFileFormatUtils;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.udf.generic.SimpleGenericUDAFParameterInfo;
 import org.apache.hadoop.hive.serde2.Deserializer;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
@@ -318,16 +316,6 @@ public class HiveShimV100 implements HiveShim {
 	public BulkWriter.Factory<RowData> createOrcBulkWriterFactory(
 			Configuration conf, String schema, LogicalType[] fieldTypes) {
 		return new OrcNoHiveBulkWriterFactory(conf, schema, fieldTypes);
-	}
-
-	@Override
-	public BaseSemanticAnalyzer getAnalyzer(ASTNode node, HiveConf hiveConf, Object queryState) {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public Object createQueryState(HiveConf hiveConf) {
-		return null;
 	}
 
 	Optional<Writable> javaToWritable(@Nonnull Object value) {
