@@ -16,15 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.calcite.rex;
+package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
-import org.apache.flink.table.planner.delegation.hive.HiveParserBetween;
-import org.apache.flink.table.planner.delegation.hive.HiveParserIN;
-import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldCollation;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
+import org.apache.calcite.rex.RexWindow;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
@@ -50,7 +54,7 @@ import java.util.stream.Collectors;
 /**
  * A RexCopier that converts Hive function calls so that Flink recognizes them.
  */
-public class ConvertSqlFunctionCopier extends RexCopierExtensionBase {
+public class ConvertSqlFunctionCopier extends AbstractRexCopier {
 
 	// some HiveParserExtractDate has wrong name, map them to functions with the correct names
 	private static final Map<SqlFunction, SqlFunction> HIVE_EXTRACT_DATE_TO_NEW_NAME = new HashMap<>();
