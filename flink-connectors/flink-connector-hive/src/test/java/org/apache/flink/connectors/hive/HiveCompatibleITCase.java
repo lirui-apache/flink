@@ -91,7 +91,8 @@ public class HiveCompatibleITCase {
 			"insert into dest(y,x) select x,y from foo cluster by x",
 			"insert into dest(y) select y from foo sort by y limit 1",
 			"insert into destp select x,'0','00' from foo order by x limit 1",
-			"insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`"
+			"insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`",
+			"insert into dest select * from src"
 	};
 
 	@BeforeClass
@@ -166,7 +167,7 @@ public class HiveCompatibleITCase {
 		runExplain(tableEnv, "explain insert into dest select * from foo");
 		runExplain(tableEnv, "explain extended select * from foo");
 
-//		runUpdate("insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`", tableEnv);
+//		runUpdate("insert overwrite table dest select * from bar", tableEnv);
 //		runQuery("select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep", tableEnv);
 
 		for (String query : dqlToRun) {

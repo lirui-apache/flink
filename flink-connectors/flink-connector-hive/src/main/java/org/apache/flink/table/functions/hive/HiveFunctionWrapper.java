@@ -21,6 +21,9 @@ package org.apache.flink.table.functions.hive;
 import org.apache.flink.annotation.Internal;
 
 import org.apache.hadoop.hive.ql.exec.UDF;
+import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
+import org.apache.hadoop.hive.ql.udf.SettableUDF;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 
 import java.io.Serializable;
 
@@ -36,10 +39,18 @@ public class HiveFunctionWrapper<UDFType> implements Serializable {
 
 	private final String className;
 
+	// some hive functions need a TypeInfo
+	private final TypeInfo typeInfo;
+
 	private transient UDFType instance = null;
 
 	public HiveFunctionWrapper(String className) {
+		this(className, null);
+	}
+
+	public HiveFunctionWrapper(String className, TypeInfo typeInfo) {
 		this.className = className;
+		this.typeInfo = typeInfo;
 	}
 
 	/**
@@ -47,7 +58,7 @@ public class HiveFunctionWrapper<UDFType> implements Serializable {
 	 *
 	 * @return a Hive function instance
 	 */
-	public UDFType createFunction() {
+	public UDFType createFunction() throws UDFArgumentException {
 		if (instance != null) {
 			return instance;
 		} else {
@@ -57,6 +68,10 @@ public class HiveFunctionWrapper<UDFType> implements Serializable {
 			} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
 				throw new FlinkHiveUDFException(
 					String.format("Failed to create function from %s", className), e);
+			}
+
+			if (func instanceof SettableUDF) {
+				((SettableUDF) func).setTypeInfo(typeInfo);
 			}
 
 			if (!(func instanceof UDF)) {

@@ -39,7 +39,6 @@ import org.apache.hadoop.hive.ql.udf.UDFUnhex;
 import org.apache.hadoop.hive.ql.udf.UDFWeekOfYear;
 import org.junit.Test;
 
-import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -57,31 +56,31 @@ public class HiveSimpleUDFTest {
 	private static HiveShim hiveShim = HiveShimLoader.loadHiveShim(HiveShimLoader.getHiveVersion());
 
 	@Test
-	public void testBooleanUDF() {
+	public void testBooleanUDF() throws Exception {
 		HiveSimpleUDF udf = init(BooleanUDF.class, new DataType[]{ DataTypes.INT()});
 		assertTrue((boolean) udf.eval(1));
 	}
 
 	@Test
-	public void testFloatUDF() {
+	public void testFloatUDF() throws Exception {
 		HiveSimpleUDF udf = init(FloatUDF.class, new DataType[]{ DataTypes.FLOAT()});
 		assertEquals(3.0f, (float) udf.eval(3.0f), 0);
 	}
 
 	@Test
-	public void testIntUDF() {
+	public void testIntUDF() throws Exception {
 		HiveSimpleUDF udf = init(IntUDF.class, new DataType[]{ DataTypes.INT()});
 		assertEquals(3, (int) udf.eval(3));
 	}
 
 	@Test
-	public void testStringUDF() {
+	public void testStringUDF() throws Exception {
 		HiveSimpleUDF udf = init(StringUDF.class, new DataType[]{ DataTypes.STRING()});
 		assertEquals("test", udf.eval("test"));
 	}
 
 	@Test
-	public void testUDFRand() {
+	public void testUDFRand() throws Exception {
 		HiveSimpleUDF udf = init(UDFRand.class, new DataType[0]);
 
 		double result = (double) udf.eval();
@@ -90,14 +89,14 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFBin() {
+	public void testUDFBin() throws Exception {
 		HiveSimpleUDF udf = init(UDFBin.class, new DataType[]{ DataTypes.INT() });
 
 		assertEquals("1100", udf.eval(12));
 	}
 
 	@Test
-	public void testUDFConv() {
+	public void testUDFConv() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFConv.class,
 			new DataType[]{
@@ -111,7 +110,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFJson() {
+	public void testUDFJson() throws Exception {
 		String pattern = "$.owner";
 		String json = "{\"store\": \"test\", \"owner\": \"amy\"}";
 		String expected = "amy";
@@ -156,7 +155,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFWeekOfYear() throws FlinkHiveUDFException {
+	public void testUDFWeekOfYear() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFWeekOfYear.class,
 			new DataType[]{
@@ -170,7 +169,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFRegExpExtract() {
+	public void testUDFRegExpExtract() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFRegExpExtract.class,
 			new DataType[]{
@@ -183,7 +182,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFUnbase64() {
+	public void testUDFUnbase64() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFBase64.class,
 			new DataType[]{
@@ -194,7 +193,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFUnhex() throws UnsupportedEncodingException {
+	public void testUDFUnhex() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFUnhex.class,
 			new DataType[]{
@@ -205,7 +204,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFToInteger() {
+	public void testUDFToInteger() throws Exception {
 		HiveSimpleUDF udf = init(
 			UDFToInteger.class,
 			new DataType[]{
@@ -216,7 +215,7 @@ public class HiveSimpleUDFTest {
 	}
 
 	@Test
-	public void testUDFArray_singleArray() {
+	public void testUDFArray_singleArray() throws Exception {
 		Double[] testInputs = new Double[] { 1.1d, 2.2d };
 
 		// input arg is a single array
@@ -250,7 +249,7 @@ public class HiveSimpleUDFTest {
 		assertEquals(11, udf.eval(5, testInputs, testInputs));
 	}
 
-	protected static HiveSimpleUDF init(Class hiveUdfClass, DataType[] argTypes) {
+	protected static HiveSimpleUDF init(Class hiveUdfClass, DataType[] argTypes) throws Exception {
 		HiveSimpleUDF udf = new HiveSimpleUDF(new HiveFunctionWrapper(hiveUdfClass.getName()), hiveShim);
 
 		// Hive UDF won't have literal args

@@ -61,7 +61,7 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = "autoColumnStats_2.q";
+	private static final String START = "char_serde.q";
 	private static final String END = "except_all.q";
 
 	@HiveSQL(files = {})
@@ -138,7 +138,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "escape1.q");
+		File qfile = new File(QFILES_DIR, "char_pad_convert.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);

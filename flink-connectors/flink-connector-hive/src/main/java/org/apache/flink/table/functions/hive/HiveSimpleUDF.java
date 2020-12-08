@@ -66,7 +66,7 @@ public class HiveSimpleUDF extends HiveScalarFunction<UDF> {
 	}
 
 	@Override
-	public void openInternal() {
+	public void openInternal() throws UDFArgumentException {
 		LOG.info("Opening HiveSimpleUDF as '{}'", hiveFunctionWrapper.getClassName());
 
 		function = hiveFunctionWrapper.createFunction();

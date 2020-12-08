@@ -199,13 +199,15 @@ public class HiveParserCalcitePlanner {
 	public HiveParserCalcitePlanner(
 			HiveParserQueryState queryState,
 			PlannerContext plannerContext,
+			FlinkCalciteCatalogReader catalogReader,
+			FrameworkConfig frameworkConfig,
 			CatalogManager catalogManager,
 			HiveShim hiveShim) throws SemanticException {
 		this.catalogManager = catalogManager;
-		catalogReader = plannerContext.createCatalogReader(false, catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase());
+		this.catalogReader = catalogReader;
 		flinkPlanner = plannerContext.createFlinkPlanner(catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase());
 		this.plannerContext = plannerContext;
-		this.frameworkConfig = plannerContext.createFrameworkConfig();
+		this.frameworkConfig = frameworkConfig;
 		this.hiveAnalyzer = new HiveParserSemanticAnalyzer(queryState, hiveShim);
 	}
 

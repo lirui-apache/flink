@@ -52,7 +52,7 @@ public class HiveGenericUDF extends HiveScalarFunction<GenericUDF> {
 	}
 
 	@Override
-	public void openInternal() {
+	public void openInternal() throws UDFArgumentException {
 
 		LOG.info("Open HiveGenericUDF as {}", hiveFunctionWrapper.getClassName());
 
@@ -106,7 +106,7 @@ public class HiveGenericUDF extends HiveScalarFunction<GenericUDF> {
 				TypeInfoUtils.getTypeInfoFromObjectInspector(resultObjectInspector));
 	}
 
-	private GenericUDF createFunction() {
+	private GenericUDF createFunction() throws UDFArgumentException {
 		function = hiveFunctionWrapper.createFunction();
 		// some UDFs may need to access SessionState HiveConf, tell them not to
 		if (function instanceof GenericUDFBaseNumeric) {

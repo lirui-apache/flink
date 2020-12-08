@@ -78,7 +78,7 @@ public abstract class HiveScalarFunction<UDFType> extends ScalarFunction {
 	}
 
 	@Override
-	public void open(FunctionContext context) {
+	public void open(FunctionContext context) throws UDFArgumentException {
 		openInternal();
 
 		isArgsSingleArray = HiveFunctionUtil.isSingleBoxedArray(argTypes);
@@ -95,7 +95,7 @@ public abstract class HiveScalarFunction<UDFType> extends ScalarFunction {
 	/**
 	 * See {@link ScalarFunction#open(FunctionContext)}.
 	 */
-	protected abstract void openInternal();
+	protected abstract void openInternal() throws UDFArgumentException;
 
 	public Object eval(Object... args) {
 

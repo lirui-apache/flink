@@ -41,7 +41,6 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDFStruct;
 import org.junit.Assume;
 import org.junit.Test;
 
-import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -61,7 +60,7 @@ public class HiveGenericUDFTest {
 	private static HiveShim hiveShim = HiveShimLoader.loadHiveShim(HiveShimLoader.getHiveVersion());
 
 	@Test
-	public void testAbs() {
+	public void testAbs() throws Exception {
 		HiveGenericUDF udf = init(
 			GenericUDFAbs.class,
 			new Object[] {
@@ -154,7 +153,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testDecode() {
+	public void testDecode() throws Exception {
 		String constDecoding = "UTF-8";
 
 		HiveGenericUDF udf = init(
@@ -179,7 +178,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testCase() {
+	public void testCase() throws Exception {
 		HiveGenericUDF udf = init(
 			GenericUDFCase.class,
 			new Object[] {
@@ -201,7 +200,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testCeil() {
+	public void testCeil() throws Exception {
 		HiveGenericUDF udf = init(
 			GenericUDFCeil.class,
 			new Object[] {
@@ -228,7 +227,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testCoalesce() {
+	public void testCoalesce() throws Exception {
 		HiveGenericUDF udf = init(
 			GenericUDFCoalesce.class,
 			new Object[] {
@@ -247,7 +246,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testDateDiff() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+	public void testDateDiff() throws Exception {
 
 		String d = "1969-07-20";
 		String t1 = "1969-07-20 00:00:00";
@@ -298,7 +297,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testArray() {
+	public void testArray() throws Exception {
 		HiveGenericUDF udf = init(
 			TestGenericUDFArray.class,
 			new Object[] {
@@ -314,7 +313,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testMap() {
+	public void testMap() throws Exception {
 		// test output as map
 		String testInput = "1:1,2:2,3:3";
 
@@ -354,7 +353,7 @@ public class HiveGenericUDFTest {
 	}
 
 	@Test
-	public void testStruct() {
+	public void testStruct() throws Exception {
 		HiveGenericUDF udf = init(
 			GenericUDFStruct.class,
 			new Object[] {
@@ -390,7 +389,7 @@ public class HiveGenericUDFTest {
 		assertEquals(3, udf.eval(result));
 	}
 
-	private static HiveGenericUDF init(Class hiveUdfClass, Object[] constantArgs, DataType[] argTypes) {
+	private static HiveGenericUDF init(Class hiveUdfClass, Object[] constantArgs, DataType[] argTypes) throws Exception {
 		HiveGenericUDF udf = new HiveGenericUDF(new HiveFunctionWrapper(hiveUdfClass.getName()), hiveShim);
 
 		CallContext callContext = new HiveUDFCallContext(constantArgs, argTypes);

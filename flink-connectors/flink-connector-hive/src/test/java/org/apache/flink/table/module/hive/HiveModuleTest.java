@@ -83,7 +83,7 @@ public class HiveModuleTest {
 	}
 
 	@Test
-	public void testHiveBuiltInFunction() {
+	public void testHiveBuiltInFunction() throws Exception {
 		FunctionDefinition fd = new HiveModule().getFunctionDefinition("reverse").get();
 		HiveSimpleUDF udf = (HiveSimpleUDF) fd;
 
