@@ -18,7 +18,7 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
-import org.apache.flink.table.planner.delegation.HiveParserASTBuilder;
+import org.apache.flink.table.planner.delegation.hive.HiveParserASTBuilder;
 import org.apache.flink.util.Preconditions;
 
 import org.antlr.runtime.tree.CommonTree;

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.planner.delegation;
+package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.config.TableConfigOptions;
@@ -24,6 +24,8 @@ import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.delegation.Parser;
 import org.apache.flink.table.descriptors.DescriptorProperties;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverterFactory;
+import org.apache.flink.table.planner.delegation.BlinkParserFactory;
+import org.apache.flink.table.planner.delegation.PlannerContext;
 
 import java.util.Collections;
 import java.util.List;

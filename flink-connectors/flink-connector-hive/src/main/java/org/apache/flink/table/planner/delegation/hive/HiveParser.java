@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.planner.delegation;
+package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.api.SqlParserException;
@@ -40,8 +40,8 @@ import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.planner.calcite.CalciteParser;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverter;
-import org.apache.flink.table.planner.delegation.hive.ConvertSqlFunctionCopier;
-import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+import org.apache.flink.table.planner.delegation.ParserImpl;
+import org.apache.flink.table.planner.delegation.PlannerContext;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
 import org.apache.flink.table.planner.plan.FlinkCalciteCatalogReader;
 import org.apache.flink.table.planner.plan.nodes.hive.HiveDistribution;
@@ -166,6 +166,7 @@ public class HiveParser extends ParserImpl {
 
 	@Override
 	public List<Operation> parse(String statements) {
+		CatalogManager catalogManager = getCatalogManager();
 		Catalog currentCatalog = catalogManager.getCatalog(catalogManager.getCurrentCatalog()).orElse(null);
 		if (!(currentCatalog instanceof HiveCatalog)) {
 			LOG.warn("Current catalog is not HiveCatalog. Falling back to Flink's planner.");
@@ -235,7 +236,7 @@ public class HiveParser extends ParserImpl {
 				plannerContext,
 				catalogReader,
 				frameworkConfig,
-				catalogManager,
+				getCatalogManager(),
 				hiveShim);
 		analyzer.initCtx(context);
 		analyzer.init(false);
@@ -283,7 +284,7 @@ public class HiveParser extends ParserImpl {
 			tabName = names[1];
 		}
 		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(dbName, tabName);
-		ObjectIdentifier identifier = catalogManager.qualifyIdentifier(unresolvedIdentifier);
+		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
 		return new CreateTableOperation(identifier, catalogTable, false, false);
 	}
 
@@ -360,7 +361,7 @@ public class HiveParser extends ParserImpl {
 		// create identifier
 		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
 		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(targetTablePath);
-		ObjectIdentifier identifier = catalogManager.qualifyIdentifier(unresolvedIdentifier);
+		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
 
 		// track each target col and its expected type
 		RelDataTypeFactory typeFactory = plannerContext.getTypeFactory();

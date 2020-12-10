@@ -293,11 +293,11 @@ public class LocalExecutor implements Executor {
 		// Renew the ExecutionContext by new environment.
 		// Book keep all the session states of current ExecutionContext then
 		// re-register them into the new one.
-		ExecutionContext<?> newContext = createExecutionContextBuilder(
+		ExecutionContext<?> newContext = context.wrapClassLoader(() -> createExecutionContextBuilder(
 				context.getOriginalSessionContext())
 				.env(newEnv)
 				.sessionState(context.getSessionState())
-				.build();
+				.build());
 		this.contextMap.put(sessionId, newContext);
 	}
 
@@ -323,7 +323,7 @@ public class LocalExecutor implements Executor {
 	public Parser getSqlParser(String sessionId) {
 		final ExecutionContext<?> context = getExecutionContext(sessionId);
 		final TableEnvironment tableEnv = context.getTableEnvironment();
-		final Parser parser = ((TableEnvironmentInternal) tableEnv).getParser();
+		final Parser parser = context.wrapClassLoader(((TableEnvironmentInternal) tableEnv)::getParser);
 		return new Parser() {
 			@Override
 			public List<Operation> parse(String statement) {

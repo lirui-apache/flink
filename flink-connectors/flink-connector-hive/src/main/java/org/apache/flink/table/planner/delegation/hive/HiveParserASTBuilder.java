@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.planner.delegation;
+package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexLiteral;

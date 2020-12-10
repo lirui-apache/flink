@@ -48,7 +48,7 @@ import java.util.function.Supplier;
  */
 public class ParserImpl implements Parser {
 
-	final CatalogManager catalogManager;
+	private final CatalogManager catalogManager;
 
 	// we use supplier pattern here in order to use the most up to
 	// date configuration. Users might change the parser configuration in a TableConfig in between
@@ -93,5 +93,9 @@ public class ParserImpl implements Parser {
 		RexNode rexNode = sqlExprToRexConverter.convertToRexNode(sqlExpression);
 		LogicalType logicalType = FlinkTypeFactory.toLogicalType(rexNode.getType());
 		return new RexNodeExpression(rexNode, TypeConversions.fromLogicalToDataType(logicalType));
+	}
+
+	public CatalogManager getCatalogManager() {
+		return catalogManager;
 	}
 }
