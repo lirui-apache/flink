@@ -1,7 +1,4 @@
-EXPLAIN
-CREATE TEMPORARY FUNCTION test_translate AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
-
-CREATE TEMPORARY FUNCTION test_translate AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
+create function test_translate AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
 
 CREATE TABLE dest1(c1 STRING, c2 STRING, c3 STRING, c4 STRING, c5 STRING, c6 STRING, c7 STRING);
 
@@ -18,6 +15,6 @@ SELECT
 
 SELECT dest1.* FROM dest1 LIMIT 1;
 
-DROP TEMPORARY FUNCTION test_translate;
+drop function if exists test_translate;
 
 drop table dest1;

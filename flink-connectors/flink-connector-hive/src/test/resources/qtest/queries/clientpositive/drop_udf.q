@@ -1,6 +1,6 @@
-CREATE TEMPORARY FUNCTION test_translate AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
+create function test_translate AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
 
 EXPLAIN
-DROP TEMPORARY FUNCTION test_translate;
+drop function if exists test_translate;
 
-DROP TEMPORARY FUNCTION test_translate;
+drop function if exists test_translate;

@@ -1,5 +1,5 @@
 set hive.mapred.mode=nonstrict;
-CREATE TEMPORARY FUNCTION test_max AS 'org.apache.hadoop.hive.ql.udf.UDAFTestMax';
+create function test_max AS 'org.apache.hadoop.hive.ql.udf.UDAFTestMax';
 
 create table dest_grouped_old1 as select 1+1, 2+2 as zz, src.key, test_max(length(src.value)), count(src.value), sin(count(src.value)), count(sin(src.value)), current_timestamp(), CAST(SUM(IF(value > 10, value, 1)) AS INT), if(src.key > 1,
 1,
@@ -23,4 +23,4 @@ create table dest_grouped_new2 as select distinct src.key from src;
 describe dest_grouped_new2;
 
 -- Drop the temporary function at the end till HIVE-3160 gets fixed
-DROP TEMPORARY FUNCTION test_max;
+drop function if exists test_max;

@@ -42,6 +42,7 @@ import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlNameMatcher;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserFloorDate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 
 import java.lang.reflect.Field;
@@ -91,7 +92,7 @@ public class ConvertSqlFunctionCopier extends AbstractRexCopier {
 	public RexNode visitCall(RexCall call) {
 		SqlOperator operator = call.getOperator();
 		List<RexNode> operands = call.getOperands();
-		if (HiveParserExtractDate.ALL_FUNCTIONS.contains(operator)) {
+		if (HiveParserExtractDate.ALL_FUNCTIONS.contains(operator) || HiveParserFloorDate.ALL_FUNCTIONS.contains(operator)) {
 			// Hive adds extra operands for these functions, need to remove them
 			operands = operands.stream()
 					.filter(o -> !(o instanceof RexLiteral && ((RexLiteral) o).getTypeName() == SqlTypeName.SYMBOL))

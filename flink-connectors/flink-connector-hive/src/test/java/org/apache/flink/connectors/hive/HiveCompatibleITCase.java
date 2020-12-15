@@ -83,7 +83,8 @@ public class HiveCompatibleITCase {
 			"select sum(x) as s1 from foo group by y having s1 > 2 and avg(x) < 4",
 			"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
 			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1",
-			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep"
+			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep",
+			"select x,null as n from foo group by x,'a',null"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -168,7 +169,7 @@ public class HiveCompatibleITCase {
 		runExplain(tableEnv, "explain extended select * from foo");
 
 //		runUpdate("insert overwrite table dest select * from bar", tableEnv);
-//		runQuery("select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep", tableEnv);
+//		runQuery("select * from (select key,count(1) from src group by key union all select key+key,count(1) from src group by key+key) a", tableEnv);
 
 		for (String query : dqlToRun) {
 			runQuery(query, tableEnv);

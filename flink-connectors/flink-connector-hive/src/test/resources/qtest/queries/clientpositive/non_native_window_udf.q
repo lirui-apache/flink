@@ -1,5 +1,5 @@
 
-create temporary function mylastval as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDAFLastValue';
+create function mylastval as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDAFLastValue';
 
 select  p_mfgr,p_name, p_size, 
 sum(p_size) over (distribute by p_mfgr sort by p_name rows between current row and current row) as s2, 

@@ -15,9 +15,9 @@ DROP VIEW view13;
 DROP VIEW view14;
 DROP VIEW view15;
 DROP VIEW view16;
-DROP TEMPORARY FUNCTION test_translate;
-DROP TEMPORARY FUNCTION test_max;
-DROP TEMPORARY FUNCTION test_explode;
+drop function if exists test_translate;
+drop function if exists test_max;
+drop function if exists test_explode;
 
 
 SELECT * FROM src WHERE key=86;
@@ -109,7 +109,7 @@ SELECT * FROM view7 LIMIT 5;
 SELECT * FROM view7 LIMIT 20;
 
 -- test usage of a function within a view
-CREATE TEMPORARY FUNCTION test_translate AS
+create function test_translate AS
 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestTranslate';
 CREATE VIEW view8(c) AS
 SELECT test_translate('abc', 'a', 'b')
@@ -119,7 +119,7 @@ DESCRIBE FORMATTED view8;
 SELECT * FROM view8;
 
 -- test usage of a UDAF within a view
-CREATE TEMPORARY FUNCTION test_max AS
+create function test_max AS
 'org.apache.hadoop.hive.ql.udf.UDAFTestMax';
 set hive.map.aggr=false;
 -- disable map-side aggregation
@@ -147,7 +147,7 @@ DESCRIBE FORMATTED view10;
 SELECT * FROM view10;
 
 -- test usage of a UDTF within a view
-CREATE TEMPORARY FUNCTION test_explode AS
+create function test_explode AS
 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode';
 CREATE VIEW view11 AS
 SELECT test_explode(array(1,2,3)) AS (boom)
@@ -243,8 +243,8 @@ DROP VIEW view13;
 DROP VIEW view14;
 DROP VIEW view15;
 DROP VIEW view16;
-DROP TEMPORARY FUNCTION test_translate;
-DROP TEMPORARY FUNCTION test_max;
-DROP TEMPORARY FUNCTION test_explode;
+drop function if exists test_translate;
+drop function if exists test_max;
+drop function if exists test_explode;
 
 drop table if exists table1;

@@ -1152,7 +1152,8 @@ public class HiveParserCalcitePlanner {
 			final List<Integer> gbKeyIndices = new ArrayList<>();
 			int inputIndex = 0;
 			for (ExprNodeDesc key : gbExprs) {
-				RexNode keyRex = converter.convert(key).accept(funcConverter);
+				// also convert null literal here to support grouping by NULLs
+				RexNode keyRex = convertNullLiteral(converter.convert(key)).accept(funcConverter);
 				gbInputRexNodes.add(keyRex);
 				gbKeyIndices.add(inputIndex);
 				inputRexNodeToIndex.put(keyRex.toString(), inputIndex);
@@ -1241,17 +1242,15 @@ public class HiveParserCalcitePlanner {
 				HiveParserRowResolver inputRR, HiveParserRowResolver outputRR) {
 			if (gByExpr.getType() == HiveASTParser.DOT
 					&& gByExpr.getChild(0).getType() == HiveASTParser.TOK_TABLE_OR_COL) {
-				String tabAlias = unescapeIdentifier(gByExpr.getChild(0).getChild(0)
-						.getText().toLowerCase());
+				String tabAlias = unescapeIdentifier(gByExpr.getChild(0).getChild(0).getText().toLowerCase());
 				String colAlias = unescapeIdentifier(gByExpr.getChild(1).getText().toLowerCase());
 				outputRR.put(tabAlias, colAlias, colInfo);
 			} else if (gByExpr.getType() == HiveASTParser.TOK_TABLE_OR_COL) {
 				String colAlias = unescapeIdentifier(gByExpr.getChild(0).getText().toLowerCase());
 				String tabAlias = null;
 				/*
-				 * If the input to the GBy has a table alias for the column, then add an
-				 * entry based on that tab_alias. For e.g. this query: select b.x,
-				 * count(*) from t1 b group by x needs (tab_alias=b, col_alias=x) in the
+				 * If the input to the GBy has a table alias for the column, then add an entry based on that tab_alias.
+				 * For e.g. this query: select b.x, count(*) from t1 b group by x needs (tab_alias=b, col_alias=x) in the
 				 * GBy RR. tab_alias=b comes from looking at the HiveParserRowResolver that is the
 				 * ancestor before any GBy/ReduceSinks added for the GBY operation.
 				 */
@@ -1267,8 +1266,7 @@ public class HiveParserCalcitePlanner {
 		private void addToGBExpr(HiveParserRowResolver groupByOutputRowResolver,
 				HiveParserRowResolver groupByInputRowResolver, ASTNode grpbyExpr, ExprNodeDesc grpbyExprNDesc,
 				List<ExprNodeDesc> gbExprNDescLst, List<String> outputColumnNames) {
-			// TODO: Should we use grpbyExprNDesc.getTypeInfo()? what if expr is
-			// UDF
+			// TODO: Should we use grpbyExprNDesc.getTypeInfo()? what if expr is UDF
 			int i = gbExprNDescLst.size();
 			String field = getColumnInternalName(i);
 			outputColumnNames.add(field);
@@ -1277,8 +1275,7 @@ public class HiveParserCalcitePlanner {
 			ColumnInfo outColInfo = new ColumnInfo(field, grpbyExprNDesc.getTypeInfo(), null, false);
 			groupByOutputRowResolver.putExpression(grpbyExpr, outColInfo);
 
-			addAlternateGByKeyMappings(grpbyExpr, outColInfo, groupByInputRowResolver,
-					groupByOutputRowResolver);
+			addAlternateGByKeyMappings(grpbyExpr, outColInfo, groupByInputRowResolver, groupByOutputRowResolver);
 		}
 
 		private AggInfo getHiveAggInfo(ASTNode aggAst, int aggFnLstArgIndx, HiveParserRowResolver inputRR,
@@ -1455,8 +1452,7 @@ public class HiveParserCalcitePlanner {
 									CalciteSemanticException.UnsupportedFeature.Invalid_column_reference);
 						}
 
-						addToGBExpr(outputRR, inputRR, gbAstExpr,
-								grpbyExprNDesc, gbExprNodeDescs, outputColNames);
+						addToGBExpr(outputRR, inputRR, gbAstExpr, grpbyExprNDesc, gbExprNodeDescs, outputColNames);
 					}
 				}
 

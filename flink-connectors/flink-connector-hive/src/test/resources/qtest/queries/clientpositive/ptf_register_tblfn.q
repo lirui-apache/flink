@@ -12,7 +12,7 @@ FL_NUM string
 
 LOAD DATA LOCAL INPATH '${hiveconf:test.data.dir}/flights_tiny.txt' OVERWRITE INTO TABLE flights_tiny;
 
-create temporary function matchpathtest as 'org.apache.hadoop.hive.ql.udf.ptf.MatchPath$MatchPathResolver';
+create function matchpathtest as 'org.apache.hadoop.hive.ql.udf.ptf.MatchPath$MatchPathResolver';
 
 -- SORT_QUERY_RESULTS
 
@@ -27,6 +27,6 @@ from matchpathtest(on
     arg4('origin_city_name, fl_num, year, month, day_of_month, size(tpath) as sz, tpath[0].day_of_month as tpath') 
    );
 
-drop temporary function matchpathtest;
+drop function if exists matchpathtest;
 
 drop table if exists flights_tiny;

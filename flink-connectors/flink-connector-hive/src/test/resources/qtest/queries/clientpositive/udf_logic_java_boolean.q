@@ -1,9 +1,6 @@
 set hive.fetch.task.conversion=more;
 
-EXPLAIN
-CREATE TEMPORARY FUNCTION test_udf_get_java_boolean AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestGetJavaBoolean';
-
-CREATE TEMPORARY FUNCTION test_udf_get_java_boolean AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestGetJavaBoolean';
+create function test_udf_get_java_boolean AS 'org.apache.hadoop.hive.ql.udf.generic.GenericUDFTestGetJavaBoolean';
 
 select 1 from src where test_udf_get_java_boolean("false") and True limit 1; 
 select 1 from src where test_udf_get_java_boolean("true") and True limit 1; 
@@ -27,4 +24,4 @@ select 1 from src where not(test_udf_get_java_boolean("false")) limit 1;
 select 1 from src where not(test_udf_get_java_boolean("true")) limit 1; 
 
 
-DROP TEMPORARY FUNCTION test_udf_get_java_boolean;
+drop function if exists test_udf_get_java_boolean;

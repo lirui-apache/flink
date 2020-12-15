@@ -2516,12 +2516,10 @@ public class HiveParserSemanticAnalyzer {
 	// Process the position alias in GROUPBY and ORDERBY
 	public void processPositionAlias(ASTNode ast) throws SemanticException {
 		boolean isBothByPos = HiveConf.getBoolVar(conf, ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS);
-		boolean isGbyByPos = isBothByPos
-				|| Boolean.parseBoolean(conf.get("hive.groupby.position.alias", "false"));
-		boolean isObyByPos = isBothByPos
-				|| Boolean.parseBoolean(conf.get("hive.orderby.position.alias", "true"));
+		boolean isGbyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.groupby.position.alias", "false"));
+		boolean isObyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.orderby.position.alias", "true"));
 
-		Deque<ASTNode> stack = new ArrayDeque<ASTNode>();
+		Deque<ASTNode> stack = new ArrayDeque<>();
 		stack.push(ast);
 
 		while (!stack.isEmpty()) {

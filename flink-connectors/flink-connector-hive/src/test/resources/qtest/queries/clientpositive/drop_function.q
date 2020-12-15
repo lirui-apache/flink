@@ -1,2 +1,2 @@
 SET hive.exec.drop.ignorenonexistent=false;
-DROP TEMPORARY FUNCTION IF EXISTS UnknownFunction;
+drop function if exists IF EXISTS UnknownFunction;

@@ -350,9 +350,12 @@ public class HiveParser extends ParserImpl {
 		if (!nameToDestTable.isEmpty()) {
 			insClauseName = nameToDestTable.keySet().iterator().next();
 			destTable = nameToDestTable.values().iterator().next();
-		} else {
+		} else if (!nameToDestPart.isEmpty()) {
 			insClauseName = nameToDestPart.keySet().iterator().next();
 			destTable = nameToDestPart.values().iterator().next().getTable();
+		} else {
+			// happens for INSERT DIRECTORY
+			throw new SemanticException("INSERT DIRECTORY is not supported");
 		}
 
 		// handle dest schema, e.g. insert into dest(.,.,.) select ...

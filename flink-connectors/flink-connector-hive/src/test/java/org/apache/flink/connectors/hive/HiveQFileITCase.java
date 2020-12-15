@@ -61,8 +61,8 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = "char_serde.q";
-	private static final String END = "except_all.q";
+	private static final String START = "index_bitmap_auto.q";
+	private static final String END = null;
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;
@@ -73,12 +73,14 @@ public class HiveQFileITCase {
 	private static final String QFILES_DIR = QTEST_DIR + "/queries/clientpositive";
 	// map from conf name to its default value
 	private static final Map<String, String> ALLOWED_SETTINGS =
-			Stream.of(ConfVars.HIVE_QUOTEDID_SUPPORT, ConfVars.METASTORE_DISALLOW_INCOMPATIBLE_COL_TYPE_CHANGES)
+			Stream.of(ConfVars.HIVE_QUOTEDID_SUPPORT, ConfVars.METASTORE_DISALLOW_INCOMPATIBLE_COL_TYPE_CHANGES,
+					ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS)
 					.collect(Collectors.toMap(HiveConf.ConfVars::toString, HiveConf.ConfVars::getDefaultValue));
 	private static BufferedWriter fileWriter;
 
 	static {
 		ALLOWED_SETTINGS.put("parquet.column.index.access", "false");
+		ALLOWED_SETTINGS.put(ConfVars.HIVEMAPREDMODE.varname, "nonstrict");
 	}
 
 	private boolean verbose = false;
@@ -90,7 +92,7 @@ public class HiveQFileITCase {
 		hiveCatalog = HiveTestUtils.createHiveCatalog(hiveConf);
 		hiveCatalog.open();
 		hmsClient = HiveMetastoreClientFactory.create(hiveConf, HiveShimLoader.getHiveVersion());
-		init(QTEST_DIR);
+		init();
 		// The default SerDe doesn't work for the tests, which is inline with Hive
 		setConf(HiveConf.ConfVars.HIVEDEFAULTRCFILESERDE.varname, ColumnarSerDe.class.getCanonicalName());
 		fileWriter = new BufferedWriter(new FileWriter(new File("target/qtest-result")));
@@ -138,7 +140,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "char_pad_convert.q");
+		File qfile = new File(QFILES_DIR, "index_bitmap.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);
@@ -276,8 +278,8 @@ public class HiveQFileITCase {
 		hiveShell.execute(String.format("set %s=%s", key, val));
 	}
 
-	private static void init(String qtestDir) {
-		hiveShell.execute("set test.data.dir=" + qtestDir + "/data");
+	private static void init() {
+		hiveShell.execute("set test.data.dir=" + QTEST_DIR + "/data");
 		hiveShell.execute("DROP TABLE IF EXISTS primitives");
 		hiveShell.execute("CREATE TABLE primitives (\n" +
 				"                            id INT COMMENT 'default',\n" +
@@ -297,7 +299,7 @@ public class HiveQFileITCase {
 				"  ESCAPED BY '\\\\'\n" +
 				"STORED AS TEXTFILE");
 		String initScript = "q_test_init.sql";
-		hiveShell.execute(new File(qtestDir, initScript));
+		hiveShell.execute(new File(QTEST_DIR, initScript));
 
 		// seems these tables should be created by each qfile
 		hiveShell.execute("drop table dest1");
