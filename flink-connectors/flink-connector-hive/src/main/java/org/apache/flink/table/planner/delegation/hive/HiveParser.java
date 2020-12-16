@@ -225,7 +225,7 @@ public class HiveParser extends ParserImpl {
 			}
 		} catch (SemanticException | IOException e) {
 			// disable fallback for now
-			throw new FlinkHiveException("Failed to parse SQL statement with Hive parser.", e);
+			throw new FlinkHiveException("HiveParser failed to parse " + cmd, e);
 		}
 	}
 

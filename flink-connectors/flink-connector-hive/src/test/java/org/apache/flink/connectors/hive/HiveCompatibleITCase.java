@@ -30,11 +30,19 @@ import org.apache.flink.table.module.hive.HiveModule;
 import org.apache.flink.util.CollectionUtil;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
+import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -84,7 +92,9 @@ public class HiveCompatibleITCase {
 			"select sum(x) as s1,y as y1 from foo group by y having s1 > 2 and y1 < 4",
 			"select x,col1 from (select x,array(1,2,3) as arr from foo) f lateral view explode(arr) tbl1 as col1",
 			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep",
-			"select x,null as n from foo group by x,'a',null"
+			"select x,null as n from foo group by x,'a',null",
+			"SELECT key, value FROM (SELECT key FROM src group by key) a lateral view explode(array(1, 2)) value as value",
+			"select explode(array(1,2,3)) from foo"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -158,10 +168,12 @@ public class HiveCompatibleITCase {
 		if (HiveVersionTestUtil.HIVE_200_OR_LATER) {
 			tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
 			tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
+			tableEnv.executeSql("create function myudtf as '" + MyUDTF.class.getName() + "'");
 			dqlToRun.add("select default.hiveudf(x,y) from foo");
 			dqlToRun.add("select hiveudtf(ai) from baz");
 			dqlToRun.add("select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1");
 			dqlToRun.add("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2");
+			dqlToRun.add("select col1 from foo lateral view myudtf(x,y) tbl1 as col1");
 		}
 
 		// test explain
@@ -169,7 +181,7 @@ public class HiveCompatibleITCase {
 		runExplain(tableEnv, "explain extended select * from foo");
 
 //		runUpdate("insert overwrite table dest select * from bar", tableEnv);
-//		runQuery("select * from (select key,count(1) from src group by key union all select key+key,count(1) from src group by key+key) a", tableEnv);
+//		runQuery("select col1 from foo lateral view myudtf(x,y) tbl1 as col1", tableEnv);
 
 		for (String query : dqlToRun) {
 			runQuery(query, tableEnv);
@@ -215,5 +227,30 @@ public class HiveCompatibleITCase {
 			tableEnv.loadModule("core", coreModule);
 		}
 		return tableEnv;
+	}
+
+	/**
+	 * A test UDTF that takes multiple parameters.
+	 */
+	public static class MyUDTF extends GenericUDTF {
+
+		@Override
+		public StructObjectInspector initialize(ObjectInspector[] argOIs) throws UDFArgumentException {
+			return ObjectInspectorFactory.getStandardStructObjectInspector(
+					Collections.singletonList("col1"),
+					Collections.singletonList(PrimitiveObjectInspectorFactory.javaIntObjectInspector));
+		}
+
+		@Override
+		public void process(Object[] args) throws HiveException {
+			int x = (int) args[0];
+			for (int i = 0; i < x; i++) {
+				forward(i);
+			}
+		}
+
+		@Override
+		public void close() throws HiveException {
+		}
 	}
 }

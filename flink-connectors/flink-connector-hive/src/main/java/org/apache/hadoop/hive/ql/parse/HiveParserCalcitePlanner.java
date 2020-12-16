@@ -92,11 +92,13 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
+import org.apache.calcite.sql2rel.DeduplicateCorrelateVariables;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.util.CompositeList;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.Util;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.ObjectPair;
@@ -2537,8 +2539,7 @@ public class HiveParserCalcitePlanner {
 				argTypes.add(HiveParserUtils.toRelDataType(ci.getType(), dtFactory));
 			}
 
-			SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteOperator(genericUDTFName, genericUDTF,
-					argTypes, retType);
+			SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteOperator(genericUDTFName, genericUDTF, argTypes, retType);
 
 			RexNode rexNode = cluster.getRexBuilder().makeCall(calciteOp, operands);
 
@@ -2552,23 +2553,36 @@ public class HiveParserCalcitePlanner {
 					"Expect operator to be " + SqlUserDefinedTableFunction.class.getSimpleName() +
 							", actually got " + convertedOperator.getClass().getSimpleName());
 
-			// find correlation in the converted call
-			Pair<CorrelationId, ImmutableBitSet> correlUse = findCorrelUse(convertedCall);
-			Preconditions.checkState(correlUse != null, "Unable to find correlation ID in converted RexCall");
-
 			// TODO: how to decide this?
 			Type elementType = Object[].class;
 			// create LogicalTableFunctionScan
-			RelNode convertedTableFunctionScan = LogicalTableFunctionScan.create(input.getCluster(), Collections.emptyList(),
+			RelNode tableFunctionScan = LogicalTableFunctionScan.create(input.getCluster(), Collections.emptyList(),
 					convertedCall, elementType, retType, null);
 
-			// Add new rel & its RR to the maps
-			relToHiveColNameCalcitePosMap.put(convertedTableFunctionScan, buildHiveToCalciteColumnMap(udtfOutRR));
-			relToRowResolver.put(convertedTableFunctionScan, udtfOutRR);
-
+			RelNode correlRel;
+			RexBuilder rexBuilder = cluster.getRexBuilder();
+			// find correlation in the converted call
+			Pair<List<CorrelationId>, ImmutableBitSet> correlUse = getCorrelationUse(convertedCall);
 			// create correlate node
-			RelNode correlRel = LogicalCorrelate.create(input, convertedTableFunctionScan, correlUse.left, correlUse.right, JoinRelType.INNER);
-			HiveParserRowResolver correlRR = HiveParserRowResolver.getCombinedRR(relToRowResolver.get(input), relToRowResolver.get(convertedTableFunctionScan));
+			if (correlUse == null) {
+				correlRel = plannerContext.createRelBuilder(catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase())
+						.push(input)
+						.push(tableFunctionScan)
+						.join(JoinRelType.INNER, rexBuilder.makeLiteral(true))
+						.build();
+			} else {
+				if (correlUse.left.size() > 1) {
+					tableFunctionScan = DeduplicateCorrelateVariables.go(rexBuilder, correlUse.left.get(0),
+							Util.skip(correlUse.left), tableFunctionScan);
+				}
+				correlRel = LogicalCorrelate.create(input, tableFunctionScan, correlUse.left.get(0), correlUse.right, JoinRelType.INNER);
+			}
+
+			// Add new rel & its RR to the maps
+			relToHiveColNameCalcitePosMap.put(tableFunctionScan, buildHiveToCalciteColumnMap(udtfOutRR));
+			relToRowResolver.put(tableFunctionScan, udtfOutRR);
+
+			HiveParserRowResolver correlRR = HiveParserRowResolver.getCombinedRR(relToRowResolver.get(input), relToRowResolver.get(tableFunctionScan));
 			relToHiveColNameCalcitePosMap.put(correlRel, buildHiveToCalciteColumnMap(correlRR));
 			relToRowResolver.put(correlRel, correlRR);
 
@@ -2588,7 +2602,7 @@ public class HiveParserCalcitePlanner {
 						inputColInfo.getObjectInspector(), null, false);
 				projectRR.put(null, colAlias, colInfo);
 			}
-			RelNode projectNode = LogicalProject.create(correlRel, Collections.emptyList(), projects, convertedTableFunctionScan.getRowType());
+			RelNode projectNode = LogicalProject.create(correlRel, Collections.emptyList(), projects, tableFunctionScan.getRowType());
 			relToHiveColNameCalcitePosMap.put(projectNode, buildHiveToCalciteColumnMap(projectRR));
 			relToRowResolver.put(projectNode, projectRR);
 			return projectNode;
@@ -2807,19 +2821,17 @@ public class HiveParserCalcitePlanner {
 				Preconditions.checkArgument(lateralView.getChildCount() == 2);
 				// this is the 1st lateral view
 				if (res == null) {
-					ASTNode rightAST = (ASTNode) lateralView.getChild(1);
 					// LHS can be table or sub-query
 					res = aliasToRel.get(alias);
 				}
 				Preconditions.checkState(res != null, "Failed to decide LHS table for current lateral view");
 				HiveParserRowResolver inputRR = relToRowResolver.get(res);
-				HiveParserUtils.LateralViewInfo info = HiveParserUtils.extractLateralViewInfo(lateralView, inputRR,
-						hiveAnalyzer);
+				HiveParserUtils.LateralViewInfo info = HiveParserUtils.extractLateralViewInfo(lateralView, inputRR, hiveAnalyzer);
 				HiveParserRexNodeConverter rexNodeConverter = new HiveParserRexNodeConverter(cluster, res.getRowType(),
 						relToHiveColNameCalcitePosMap.get(res), 0, false);
 				List<RexNode> operands = new ArrayList<>(info.getOperands().size());
 				for (ExprNodeDesc exprDesc : info.getOperands()) {
-					operands.add(rexNodeConverter.convert(exprDesc));
+					operands.add(rexNodeConverter.convert(exprDesc).accept(funcConverter));
 				}
 				res = genUDTFPlan(info.getFunc(), info.getFuncName(), info.getTabAlias(), info.getColAliases(), qb,
 						operands, info.getOperandColInfos(), res, false);
@@ -2962,23 +2974,22 @@ public class HiveParserCalcitePlanner {
 		return getQB().getParseInfo().getDestSchemaForClause(clause);
 	}
 
-	private static Pair<CorrelationId, ImmutableBitSet> findCorrelUse(RexCall call) {
-		CorrelationId id = null;
+	private static Pair<List<CorrelationId>, ImmutableBitSet> getCorrelationUse(RexCall call) {
+		List<CorrelationId> correlIDs = new ArrayList<>();
 		ImmutableBitSet.Builder requiredColumns = ImmutableBitSet.builder();
 		for (RexNode operand : call.getOperands()) {
 			if (operand instanceof RexFieldAccess) {
 				RexNode expr = ((RexFieldAccess) operand).getReferenceExpr();
 				if (expr instanceof RexCorrelVariable) {
 					RexCorrelVariable correlVariable = (RexCorrelVariable) expr;
-					if (id == null) {
-						id = correlVariable.id;
-					} else {
-						Preconditions.checkState(id == correlVariable.id);
-					}
+					correlIDs.add(correlVariable.id);
 					requiredColumns.set(((RexFieldAccess) operand).getField().getIndex());
 				}
 			}
 		}
-		return id == null ? null : Pair.of(id, requiredColumns.build());
+		if (correlIDs.isEmpty()) {
+			return null;
+		}
+		return Pair.of(correlIDs, requiredColumns.build());
 	}
 }

@@ -55,18 +55,21 @@ public class ConvertTableFunctionCopier extends ConvertSqlFunctionCopier {
 		if (isHiveCalciteSqlFn(operator)) {
 			// explicitly use USER_DEFINED_TABLE_FUNCTION since Hive can set USER_DEFINED_FUNCTION for UDTF
 			SqlOperator convertedOperator = convertOperator(operator, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
-			// create RexCorrelVariable
-			CorrelationId correlId = cluster.createCorrel();
-			RelDataTypeFactory.Builder dataTypeBuilder = cluster.getTypeFactory().builder();
-			dataTypeBuilder.addAll(leftRel.getRowType().getFieldList());
-			dataTypeBuilder.addAll(call.getType().getFieldList());
-			RexNode correlRex = builder.makeCorrel(dataTypeBuilder.uniquify().build(), correlId);
-			// create RexFieldAccess
 			List<RexNode> convertedOperands = new ArrayList<>();
 			for (RexNode operand : call.getOperands()) {
 				if (operand instanceof RexInputRef) {
+					// create RexCorrelVariable
+					CorrelationId correlId = cluster.createCorrel();
+					RelDataTypeFactory.Builder dataTypeBuilder = cluster.getTypeFactory().builder();
+					dataTypeBuilder.addAll(leftRel.getRowType().getFieldList());
+					dataTypeBuilder.addAll(call.getType().getFieldList());
+					RexNode correlRex = builder.makeCorrel(dataTypeBuilder.uniquify().build(), correlId);
+					// create RexFieldAccess
 					convertedOperands.add(builder.makeFieldAccess(correlRex, ((RexInputRef) operand).getIndex()));
 				} else if (operand instanceof RexLiteral) {
+					convertedOperands.add(operand);
+				} else if (operand instanceof RexCall) {
+					// this can happen when calling UDTF with literals since hive can create literals with UDFs
 					convertedOperands.add(operand);
 				} else {
 					throw new IllegalArgumentException(String.format("RexCall %s has unsupported operand %s", call, operand));
