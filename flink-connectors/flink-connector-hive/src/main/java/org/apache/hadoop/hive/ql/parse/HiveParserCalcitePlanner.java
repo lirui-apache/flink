@@ -225,6 +225,7 @@ public class HiveParserCalcitePlanner {
 		return hiveAnalyzer.getQB();
 	}
 
+	// Given an AST, generate and return the RelNode plan. Returns null if nothing needs to be done.
 	public RelNode genLogicalPlan(ASTNode ast) throws SemanticException {
 		LOG.info("Starting generating logical plan");
 		HiveParserPreCboCtx cboCtx = new HiveParserPreCboCtx();
@@ -243,9 +244,7 @@ public class HiveParserCalcitePlanner {
 		if (cboCtx.type == HiveParserPreCboCtx.Type.CTAS || cboCtx.type == HiveParserPreCboCtx.Type.VIEW) {
 			queryForCbo = cboCtx.nodeOfInterest; // nodeOfInterest is the query
 		}
-		if (!canCBOHandleAst(queryForCbo, getQB(), cboCtx)) {
-			return null;
-		}
+		verifyCanHandleAst(queryForCbo, getQB());
 //		profilesCBO = obtainCBOProfiles(hiveAnalyzer.getQueryProperties());
 		hiveAnalyzer.disableJoinMerge = true;
 		return logicalPlan();
@@ -502,8 +501,7 @@ public class HiveParserCalcitePlanner {
 				}
 				Map<ASTNode, ExprNodeDesc> exprNodes = HiveParserUtils.genExprNode(joinCondAst, jCtx);
 				if (jCtx.getError() != null) {
-					throw new SemanticException(generateErrorMessage(jCtx.getErrorSrcNode(),
-							jCtx.getError()));
+					throw new SemanticException(generateErrorMessage(jCtx.getErrorSrcNode(), jCtx.getError()));
 				}
 				ExprNodeDesc joinCondExprNode = exprNodes.get(joinCondAst);
 				List<RelNode> inputRels = new ArrayList<>();
@@ -553,8 +551,7 @@ public class HiveParserCalcitePlanner {
 						joinCondRex, leftJoinKeys, rightJoinKeys, null, null);
 
 				if (!nonEquiConds.isAlwaysTrue()) {
-					throw new SemanticException("Non equality condition not supported in Semi-Join"
-							+ nonEquiConds);
+					throw new SemanticException("Non equality condition not supported in Semi-Join" + nonEquiConds);
 				}
 
 				RelNode[] inputRels = new RelNode[]{leftRel, rightRel};
@@ -624,8 +621,7 @@ public class HiveParserCalcitePlanner {
 		}
 
 		// Generate Join Logical Plan Relnode by walking through the join AST.
-		private RelNode genJoinLogicalPlan(ASTNode joinParseTree, Map<String, RelNode> aliasToRel)
-				throws SemanticException {
+		private RelNode genJoinLogicalPlan(ASTNode joinParseTree, Map<String, RelNode> aliasToRel) throws SemanticException {
 			RelNode leftRel = null;
 			RelNode rightRel = null;
 			JoinType hiveJoinType;
@@ -2948,7 +2944,7 @@ public class HiveParserCalcitePlanner {
 		NATIVE
 	}
 
-	private boolean canCBOHandleAst(ASTNode ast, HiveParserQB qb, HiveParserPreCboCtx cboCtx) {
+	private void verifyCanHandleAst(ASTNode ast, HiveParserQB qb) throws SemanticException {
 		QueryProperties queryProperties = hiveAnalyzer.getQueryProperties();
 		int root = ast.getToken().getType();
 		boolean isSupportedRoot = root == HiveASTParser.TOK_QUERY || root == HiveASTParser.TOK_EXPLAIN
@@ -2956,18 +2952,24 @@ public class HiveParserCalcitePlanner {
 		// To support queries without a source table
 		// If it's neither a query nor a multi-insert, consider it as an ordinary insert. Implement our own PreCboCtx to be sure.
 		boolean isSupportedType = qb.getIsQuery() || qb.isCTAS() || qb.isMaterializedView() || !queryProperties.hasMultiDestQuery();
-		boolean noBadTokens = HiveCalciteUtil.validateASTForUnsupportedTokens(ast);
-		boolean result = isSupportedRoot && isSupportedType && noBadTokens;
+		// don't call HiveCalciteUtil::validateASTForUnsupportedTokens to support TOK_CHARSETLITERAL
+		boolean noBadTokens = !HiveASTParseUtils.containsTokenOfType(ast, HiveASTParser.TOK_TABLESPLITSAMPLE);
 
-		if (!result) {
-			return false;
+		if (!isSupportedRoot) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement due to unsupported AST root type");
 		}
+		if (!isSupportedType) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement due to unsupported query type");
+		}
+		if (!noBadTokens) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement because AST contains unsupported tokens");
+		}
+
 		// Now check HiveParserQB in more detail.
 		String reason = HiveParserUtils.canHandleQbForCbo(queryProperties);
 		if (reason != null) {
-			LOG.warn("HiveParser doesn't support the SQL statement because it " + reason);
+			throw new SemanticException("HiveParser doesn't support the SQL statement because it " + reason);
 		}
-		return reason == null;
 	}
 
 	public List<String> getDestSchemaForClause(String clause) {

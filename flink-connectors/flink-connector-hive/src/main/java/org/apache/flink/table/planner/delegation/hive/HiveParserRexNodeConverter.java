@@ -259,16 +259,11 @@ public class HiveParserRexNodeConverter {
 					value = ((Decimal128) value).toBigDecimal();
 				}
 				if (value == null) {
-					// We have found an invalid decimal value while enforcing precision and
-					// scale. Ideally,
-					// we would replace it with null here, which is what Hive does. However,
-					// we need to plumb
-					// this thru up somehow, because otherwise having different expression
-					// type in AST causes
-					// the plan generation to fail after CBO, probably due to some residual
-					// state in SA/QB.
-					// For now, we will not run CBO in the presence of invalid decimal
-					// literals.
+					// We have found an invalid decimal value while enforcing precision and scale. Ideally, we would
+					// replace it with null here, which is what Hive does. However, we need to plumb this thru up
+					// somehow, because otherwise having different expression type in AST causes the plan generation
+					// to fail after CBO, probably due to some residual state in SA/QB.
+					// For now, we will not run CBO in the presence of invalid decimal literals.
 					throw new CalciteSemanticException("Expression " + literal.getExprString()
 							+ " is not a valid decimal", CalciteSemanticException.UnsupportedFeature.Invalid_decimal);
 					// TODO: return createNullLiteral(literal);
@@ -312,7 +307,10 @@ public class HiveParserRexNodeConverter {
 				calciteLiteral = rexBuilder.makeCharLiteral(asUnicodeString((String) value));
 				break;
 			case STRING:
-				calciteLiteral = rexBuilder.makeCharLiteral(asUnicodeString((String) value));
+				Object constantDescVal = literal.getValue();
+				calciteLiteral = constantDescVal instanceof NlsString ?
+						rexBuilder.makeCharLiteral((NlsString) constantDescVal) :
+						rexBuilder.makeCharLiteral(asUnicodeString((String) value));
 				break;
 			case DATE:
 				Calendar cal = new GregorianCalendar();

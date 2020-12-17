@@ -94,7 +94,8 @@ public class HiveCompatibleITCase {
 			"select dep,count(1) from employee where salary<5000 and age>=38 and dep='Sales' group by dep",
 			"select x,null as n from foo group by x,'a',null",
 			"SELECT key, value FROM (SELECT key FROM src group by key) a lateral view explode(array(1, 2)) value as value",
-			"select explode(array(1,2,3)) from foo"
+			"select explode(array(1,2,3)) from foo",
+			"select value from src where key=_UTF-8 0xE982B5E993AE"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -103,7 +104,8 @@ public class HiveCompatibleITCase {
 			"insert into dest(y) select y from foo sort by y limit 1",
 			"insert into destp select x,'0','00' from foo order by x limit 1",
 			"insert overwrite table destp partition(p='0',q) select 1,`value` from src sort by `value`",
-			"insert into dest select * from src"
+			"insert into dest select * from src",
+			"insert overwrite table destp partition (p='-1',q='-1') if not exists select x from foo"
 	};
 
 	@BeforeClass
@@ -124,6 +126,7 @@ public class HiveCompatibleITCase {
 		tableEnv.executeSql("create table employee(id int,name string,dep string,salary int,age int)");
 		tableEnv.executeSql("create table dest (x int, y int)");
 		tableEnv.executeSql("create table destp (x int) partitioned by (p string, q string)");
+		tableEnv.executeSql("alter table destp add partition (p='-1',q='-1')");
 		tableEnv.executeSql("CREATE TABLE src (key STRING, `value` STRING)");
 		tableEnv.executeSql("CREATE TABLE srcpart (key STRING, `value` STRING) PARTITIONED BY (ds STRING, hr STRING)");
 		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "foo")

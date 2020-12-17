@@ -614,6 +614,9 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
 	public String explainSql(String statement, ExplainDetail... extraDetails) {
 		List<Operation> operations = getParser().parse(statement);
 
+		if (operations.isEmpty()) {
+			return "";
+		}
 		if (operations.size() != 1) {
 			throw new TableException("Unsupported SQL query! explainSql() only accepts a single SQL query.");
 		}
@@ -655,6 +658,9 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
 	public TableResult executeSql(String statement) {
 		List<Operation> operations = getParser().parse(statement);
 
+		if (operations.isEmpty()) {
+			return TableResultImpl.TABLE_RESULT_OK;
+		}
 		if (operations.size() != 1) {
 			throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
 		}

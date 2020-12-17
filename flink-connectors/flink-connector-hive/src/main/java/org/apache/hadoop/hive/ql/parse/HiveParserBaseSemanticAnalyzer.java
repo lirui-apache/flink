@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.flink.api.java.tuple.Tuple2;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -61,8 +63,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	/**
 	 * Converts parsed key/value properties pairs into a map.
 	 *
-	 * @param prop ASTNode parent of the key/value pairs
-	 *
+	 * @param prop    ASTNode parent of the key/value pairs
 	 * @param mapProp property map which receives the mappings
 	 */
 	public static void readProps(ASTNode prop, Map<String, String> mapProp) {
@@ -86,20 +87,19 @@ public class HiveParserBaseSemanticAnalyzer {
 		if (tabNameNode.getChildCount() == 2) {
 			String dbName = unescapeIdentifier(tabNameNode.getChild(0).getText());
 			String tableName = unescapeIdentifier(tabNameNode.getChild(1).getText());
-			return new String[] {dbName, tableName};
+			return new String[]{dbName, tableName};
 		}
 		String tableName = unescapeIdentifier(tabNameNode.getChild(0).getText());
 		return Utilities.getDbTableName(tableName);
 	}
 
-	public static String charSetString(String charSetName, String charSetString)
+	public static Tuple2<String, String> charSetString(String charSetName, String charSetString)
 			throws SemanticException {
 		try {
 			// The character set name starts with a _, so strip that
 			charSetName = charSetName.substring(1);
 			if (charSetString.charAt(0) == '\'') {
-				return new String(unescapeSQLString(charSetString).getBytes(),
-						charSetName);
+				return Tuple2.of(charSetName, new String(unescapeSQLString(charSetString).getBytes(), charSetName));
 			} else {
 				assert charSetString.charAt(0) == '0';
 				assert charSetString.charAt(1) == 'x';
@@ -116,8 +116,7 @@ public class HiveParserBaseSemanticAnalyzer {
 					bArray[j++] = (byte) val;
 				}
 
-				String res = new String(bArray, charSetName);
-				return res;
+				return Tuple2.of(charSetName, new String(bArray, charSetName));
 			}
 		} catch (UnsupportedEncodingException e) {
 			throw new SemanticException(e);

@@ -165,12 +165,12 @@ public class HiveParser extends ParserImpl {
 	}
 
 	@Override
-	public List<Operation> parse(String statements) {
+	public List<Operation> parse(String statement) {
 		CatalogManager catalogManager = getCatalogManager();
 		Catalog currentCatalog = catalogManager.getCatalog(catalogManager.getCurrentCatalog()).orElse(null);
 		if (!(currentCatalog instanceof HiveCatalog)) {
 			LOG.warn("Current catalog is not HiveCatalog. Falling back to Flink's planner.");
-			return super.parse(statements);
+			return super.parse(statement);
 		}
 		HiveConf hiveConf = new HiveConf(((HiveCatalog) currentCatalog).getHiveConf());
 		hiveConf.setVar(HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
@@ -186,11 +186,7 @@ public class HiveParser extends ParserImpl {
 			SessionState.start(sessionState);
 			// We override Hive's grouping function. Refer to the implementation for more details.
 			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
-			List<Operation> operations = new ArrayList<>();
-			for (String cmd : HiveParserUtils.splitSQLStatements(statements)) {
-				operations.addAll(processCmd(cmd, hiveConf, hiveShim));
-			}
-			return operations;
+			return processCmd(statement, hiveConf, hiveShim);
 		} catch (LockException e) {
 			throw new FlinkHiveException("Failed to init SessionState", e);
 		} finally {
@@ -204,18 +200,22 @@ public class HiveParser extends ParserImpl {
 			// parse statement to get AST
 			final ASTNode node = HiveASTParseUtils.parse(cmd, context);
 			// generate Calcite plan
-			Operation res;
+			Operation operation;
 			if (DDL_NODES.contains(node.getType())) {
 				return super.parse(cmd);
-//				res = handleDDL(node, hiveAnalyzer, context);
-			} else if (node.getType() == HiveASTParser.TOK_EXPLAIN) {
-				// first child is the underlying explicandum
-				ASTNode input = (ASTNode) node.getChild(0);
-				res = new ExplainOperation(analyzeQuery(context, hiveConf, hiveShim, cmd, input));
 			} else {
-				res = analyzeQuery(context, hiveConf, hiveShim, cmd, node);
+				final boolean explain = node.getType() == HiveASTParser.TOK_EXPLAIN;
+				// first child is the underlying explicandum
+				ASTNode input = explain ? (ASTNode) node.getChild(0) : node;
+				operation = analyzeQuery(context, hiveConf, hiveShim, cmd, input);
+				if (operation == null) {
+					return Collections.emptyList();
+				}
+				if (explain) {
+					operation = new ExplainOperation(operation);
+				}
 			}
-			return Collections.singletonList(res);
+			return Collections.singletonList(operation);
 		} catch (ParseException e) {
 			// ParseException can happen for flink-specific statements, e.g. catalog DDLs
 			try {
@@ -241,8 +241,9 @@ public class HiveParser extends ParserImpl {
 		analyzer.initCtx(context);
 		analyzer.init(false);
 		RelNode relNode = analyzer.genLogicalPlan(node);
-		Preconditions.checkState(relNode != null,
-				String.format("%s failed to generate plan for %s", analyzer.getClass().getSimpleName(), cmd));
+		if (relNode == null) {
+			return null;
+		}
 
 		// if not a query, treat it as an insert
 		if (!analyzer.getQB().getIsQuery()) {

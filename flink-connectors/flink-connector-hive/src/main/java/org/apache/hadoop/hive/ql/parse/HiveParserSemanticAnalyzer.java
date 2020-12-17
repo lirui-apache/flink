@@ -972,15 +972,9 @@ public class HiveParserSemanticAnalyzer {
 	 * 4. Creates a mapping from the clause name to the select expression AST in
 	 * destToSelExpr 5. Creates a mapping from a table alias to the lateral view
 	 * AST's in aliasToLateralViews
-	 *
-	 * @param ast
-	 * @param qb
-	 * @param ctx1
-	 * @throws SemanticException
 	 */
 	@SuppressWarnings({"fallthrough", "nls"})
-	public boolean doPhase1(ASTNode ast, HiveParserQB qb, Phase1Ctx ctx1, HiveParserPlannerContext plannerCtx)
-			throws SemanticException {
+	public boolean doPhase1(ASTNode ast, HiveParserQB qb, Phase1Ctx ctx1, HiveParserPlannerContext plannerCtx) throws SemanticException {
 
 		boolean phase1Result = true;
 		HiveParserQBParseInfo qbp = qb.getParseInfo();
@@ -1016,12 +1010,10 @@ public class HiveParserSemanticAnalyzer {
 						queryProperties.setUsesScript(true);
 					}
 
-					LinkedHashMap<String, ASTNode> aggregations = doPhase1GetAggregationsFromSelect(ast,
-							qb, ctx1.dest);
+					LinkedHashMap<String, ASTNode> aggregations = doPhase1GetAggregationsFromSelect(ast, qb, ctx1.dest);
 					doPhase1GetColumnAliasesFromSelect(ast, qbp);
 					qbp.setAggregationExprsForClause(ctx1.dest, aggregations);
-					qbp.setDistinctFuncExprsForClause(ctx1.dest,
-							doPhase1GetDistinctFuncExprs(aggregations));
+					qbp.setDistinctFuncExprsForClause(ctx1.dest, doPhase1GetDistinctFuncExprs(aggregations));
 					break;
 
 				case HiveASTParser.TOK_WHERE:
@@ -1046,8 +1038,7 @@ public class HiveParserSemanticAnalyzer {
 				case HiveASTParser.TOK_FROM:
 					int childCount = ast.getChildCount();
 					if (childCount != 1) {
-						throw new SemanticException(HiveParserUtils.generateErrorMessage(ast,
-								"Multiple Children " + childCount));
+						throw new SemanticException(HiveParserUtils.generateErrorMessage(ast, "Multiple Children " + childCount));
 					}
 
 					if (!qbp.getIsSubQ()) {
@@ -1087,9 +1078,7 @@ public class HiveParserSemanticAnalyzer {
 					break;
 
 				case HiveASTParser.TOK_DISTRIBUTEBY:
-					// Get the distribute by aliases - these are aliased to the entries in
-					// the
-					// select list
+					// Get the distribute by aliases - these are aliased to the entries in the select list
 					queryProperties.setHasDistributeBy(true);
 					qbp.setDistributeByExprForClause(ctx1.dest, ast);
 					if (qbp.getClusterByForClause(ctx1.dest) != null) {
@@ -1113,7 +1102,6 @@ public class HiveParserSemanticAnalyzer {
 						throw new SemanticException(HiveParserUtils.generateErrorMessage(ast,
 								ErrorMsg.ORDERBY_SORTBY_CONFLICT.getMsg()));
 					}
-
 					break;
 
 				case HiveASTParser.TOK_ORDERBY:
@@ -1174,8 +1162,7 @@ public class HiveParserSemanticAnalyzer {
 								new Integer(ast.getChild(0).getText()),
 								new Integer(ast.getChild(1).getText()));
 					} else {
-						qbp.setDestLimit(ctx1.dest, new Integer(0),
-								new Integer(ast.getChild(0).getText()));
+						qbp.setDestLimit(ctx1.dest, 0, new Integer(ast.getChild(0).getText()));
 					}
 					break;
 
@@ -1198,8 +1185,7 @@ public class HiveParserSemanticAnalyzer {
 					if (!qbp.getIsSubQ()) {
 						// this shouldn't happen. The parser should have converted the union to be
 						// contained in a subquery. Just in case, we keep the error as a fallback.
-						throw new SemanticException(HiveParserUtils.generateErrorMessage(ast,
-								ErrorMsg.UNION_NOTIN_SUBQ.getMsg()));
+						throw new SemanticException(HiveParserUtils.generateErrorMessage(ast, ErrorMsg.UNION_NOTIN_SUBQ.getMsg()));
 					}
 					skipRecursion = false;
 					break;
@@ -1216,7 +1202,7 @@ public class HiveParserSemanticAnalyzer {
 
 						Tree partitions = tab.getChild(1);
 						int numChildren = partitions.getChildCount();
-						HashMap<String, String> partition = new HashMap<String, String>();
+						HashMap<String, String> partition = new HashMap<>();
 						for (int i = 0; i < numChildren; i++) {
 							String partitionName = partitions.getChild(i).getChild(0).getText();
 							Tree pvalue = partitions.getChild(i).getChild(1);
@@ -1273,9 +1259,7 @@ public class HiveParserSemanticAnalyzer {
 			// Iterate over the rest of the children
 			int childCount = ast.getChildCount();
 			for (int childPos = 0; childPos < childCount && phase1Result; ++childPos) {
-				// Recurse
-				phase1Result = phase1Result && doPhase1(
-						(ASTNode) ast.getChild(childPos), qb, ctx1, plannerCtx);
+				phase1Result = doPhase1((ASTNode) ast.getChild(childPos), qb, ctx1, plannerCtx);
 			}
 		}
 		return phase1Result;

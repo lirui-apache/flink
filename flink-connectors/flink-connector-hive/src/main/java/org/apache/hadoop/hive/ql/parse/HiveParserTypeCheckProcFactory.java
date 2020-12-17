@@ -18,10 +18,13 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.table.planner.delegation.hive.HiveParserTypeInfoUtils;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.util.NlsString;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.hadoop.hive.common.type.HiveChar;
@@ -388,7 +391,7 @@ public class HiveParserTypeCheckProcFactory {
 			}
 
 			ASTNode expr = (ASTNode) nd;
-			String str = null;
+			Object str = null;
 
 			switch (expr.getToken().getType()) {
 				case HiveASTParser.StringLiteral:
@@ -403,7 +406,10 @@ public class HiveParserTypeCheckProcFactory {
 					str = sb.toString();
 					break;
 				case HiveASTParser.TOK_CHARSETLITERAL:
-					str = charSetString(expr.getChild(0).getText(), expr.getChild(1).getText());
+					Tuple2<String, String> charSetAndVal = charSetString(expr.getChild(0).getText(), expr.getChild(1).getText());
+					String charSet = charSetAndVal.f0;
+					String text = charSetAndVal.f1;
+					str = new NlsString(text, charSet, SqlCollation.IMPLICIT);
 					break;
 				default:
 					// HiveASTParser.identifier | HiveParse.KW_IF | HiveParse.KW_LEFT |
