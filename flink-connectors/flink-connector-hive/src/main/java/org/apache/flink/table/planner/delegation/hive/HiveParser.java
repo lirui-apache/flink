@@ -76,7 +76,6 @@ import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
@@ -359,26 +358,6 @@ public class HiveParser extends ParserImpl {
 			throw new SemanticException("INSERT DIRECTORY is not supported");
 		}
 
-		// handle dest schema, e.g. insert into dest(.,.,.) select ...
-		queryRelNode = handleDestSchema((SingleRel) queryRelNode, destTable, analyzer.getDestSchemaForClause(insClauseName));
-
-		// create identifier
-		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
-		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(targetTablePath);
-		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
-
-		// track each target col and its expected type
-		RelDataTypeFactory typeFactory = plannerContext.getTypeFactory();
-		LinkedHashMap<String, RelDataType> targetColToCalcType = new LinkedHashMap<>();
-		List<TypeInfo> targetHiveTypes = new ArrayList<>();
-		List<FieldSchema> allCols = new ArrayList<>(destTable.getCols());
-		allCols.addAll(destTable.getPartCols());
-		for (FieldSchema col : allCols) {
-			TypeInfo hiveType = TypeInfoUtils.getTypeInfoFromTypeString(col.getType());
-			targetHiveTypes.add(hiveType);
-			targetColToCalcType.put(col.getName(), HiveParserTypeConverter.convert(hiveType, typeFactory));
-		}
-
 		// decide static partition specs
 		Map<String, String> staticPartSpec = new LinkedHashMap<>();
 		if (destTable.isPartitioned()) {
@@ -404,6 +383,27 @@ public class HiveParser extends ParserImpl {
 					}
 				}
 			}
+		}
+
+		// handle dest schema, e.g. insert into dest(.,.,.) select ...
+		queryRelNode = handleDestSchema((SingleRel) queryRelNode, destTable,
+				analyzer.getDestSchemaForClause(insClauseName), staticPartSpec.keySet());
+
+		// create identifier
+		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
+		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(targetTablePath);
+		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
+
+		// track each target col and its expected type
+		RelDataTypeFactory typeFactory = plannerContext.getTypeFactory();
+		LinkedHashMap<String, RelDataType> targetColToCalcType = new LinkedHashMap<>();
+		List<TypeInfo> targetHiveTypes = new ArrayList<>();
+		List<FieldSchema> allCols = new ArrayList<>(destTable.getCols());
+		allCols.addAll(destTable.getPartCols());
+		for (FieldSchema col : allCols) {
+			TypeInfo hiveType = TypeInfoUtils.getTypeInfoFromTypeString(col.getType());
+			targetHiveTypes.add(hiveType);
+			targetColToCalcType.put(col.getName(), HiveParserTypeConverter.convert(hiveType, typeFactory));
 		}
 
 		// add static partitions to query source
@@ -554,21 +554,27 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private RelNode handleDestSchema(SingleRel queryRelNode, Table destTable, List<String> destSchema) throws CalciteSemanticException {
+	private RelNode handleDestSchema(SingleRel queryRelNode, Table destTable, List<String> destSchema, Set<String> staticParts)
+			throws SemanticException {
 		if (destSchema == null || destSchema.isEmpty()) {
 			return queryRelNode;
 		}
-		Preconditions.checkState(!destTable.isPartitioned(), "Dest schema for partitioned table not supported yet");
-		List<FieldSchema> cols = destTable.getCols();
-		// we don't need to do anything if the dest schema is the same as table schema
-		if (destSchema.equals(cols.stream().map(FieldSchema::getName).collect(Collectors.toList()))) {
+
+		// natural schema should contain regular cols + dynamic cols
+		List<FieldSchema> naturalSchema = new ArrayList<>(destTable.getCols());
+		if (destTable.isPartitioned()) {
+			naturalSchema.addAll(destTable.getTTable().getPartitionKeys().stream()
+					.filter(f -> !staticParts.contains(f.getName())).collect(Collectors.toList()));
+		}
+		// we don't need to do anything if the dest schema is the same as natural schema
+		if (destSchema.equals(HiveCatalog.getFieldNames(naturalSchema))) {
 			return queryRelNode;
 		}
 		// build a list to create a Project on top of original Project
 		// for each col in dest table, if it's in dest schema, store its corresponding index in the
 		// dest schema, otherwise store its type and we'll create NULL for it
-		List<Object> updatedIndices = new ArrayList<>(cols.size());
-		for (FieldSchema col : cols) {
+		List<Object> updatedIndices = new ArrayList<>(naturalSchema.size());
+		for (FieldSchema col : naturalSchema) {
 			int index = destSchema.indexOf(col.getName());
 			if (index < 0) {
 				updatedIndices.add(HiveParserTypeConverter.convert(TypeInfoUtils.getTypeInfoFromTypeString(col.getType()),
@@ -606,7 +612,7 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private RelNode handleDestSchemaForDist(HiveDistribution hiveDist, List<Object> updatedIndices) {
+	private RelNode handleDestSchemaForDist(HiveDistribution hiveDist, List<Object> updatedIndices) throws SemanticException {
 		Project project = (Project) hiveDist.getInput();
 		RelNode addedProject = addProjectForDestSchema(project, updatedIndices);
 		// disconnect the original HiveDistribution
@@ -664,7 +670,12 @@ public class HiveParser extends ParserImpl {
 		return project.getNamedProjects().stream().map(p -> p.right).collect(Collectors.toList());
 	}
 
-	private RelNode addProjectForDestSchema(Project input, List<Object> updatedIndices) {
+	private RelNode addProjectForDestSchema(Project input, List<Object> updatedIndices) throws SemanticException {
+		int destSchemaSize = (int) updatedIndices.stream().filter(o -> o instanceof Integer).count();
+		if (destSchemaSize != input.getProjects().size()) {
+			throw new SemanticException(String.format("Expected %d columns, but SEL produces %d columns",
+					destSchemaSize, input.getProjects().size()));
+		}
 		List<RexNode> exprs = new ArrayList<>(updatedIndices.size());
 		RexBuilder rexBuilder = plannerContext.getCluster().getRexBuilder();
 		for (Object object : updatedIndices) {
