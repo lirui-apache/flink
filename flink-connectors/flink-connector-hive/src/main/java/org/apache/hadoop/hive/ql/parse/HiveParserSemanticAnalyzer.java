@@ -1893,9 +1893,8 @@ public class HiveParserSemanticAnalyzer {
 		 * if a columnInfo has multiple mappings; then add the column only once,
 		 * but carry the mappings forward.
 		 */
-		Map<ColumnInfo, ColumnInfo> inputColsProcessed = new HashMap<ColumnInfo, ColumnInfo>();
-		// For expr "*", aliases should be iterated in the order they are specified
-		// in the query.
+		Map<ColumnInfo, ColumnInfo> inputColsProcessed = new HashMap<>();
+		// For expr "*", aliases should be iterated in the order they are specified in the query.
 
 		if (colSrcRR.getNamedJoinInfo() != null) {
 			// We got using() clause in previous join. Need to generate select list as
@@ -1945,7 +1944,7 @@ public class HiveParserSemanticAnalyzer {
 					} else {
 						output.put(tmp[0], tmp[1], oColInfo);
 					}
-					pos = pos.intValue() + 1;
+					pos = pos + 1;
 					matched++;
 
 					if (unparseTranslator.isEnabled()) {
@@ -1964,8 +1963,7 @@ public class HiveParserSemanticAnalyzer {
 			if (fMap == null) {
 				continue;
 			}
-			// For the tab.* case, add all the columns to the fieldList
-			// from the input schema
+			// For the tab.* case, add all the columns to the fieldList from the input schema
 			for (Map.Entry<String, ColumnInfo> entry : fMap.entrySet()) {
 				ColumnInfo colInfo = entry.getValue();
 				if (colSrcRR.getNamedJoinInfo() != null && colSrcRR.getNamedJoinInfo().getNamedColumns().contains(colInfo.getAlias())) {
@@ -2038,7 +2036,7 @@ public class HiveParserSemanticAnalyzer {
 				} else {
 					output.put(tmp[0], tmp[1], oColInfo);
 				}
-				pos = Integer.valueOf(pos.intValue() + 1);
+				pos = pos.intValue() + 1;
 				matched++;
 
 				if (unparseTranslator.isEnabled()) {

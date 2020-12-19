@@ -682,6 +682,7 @@ public class HiveParser extends ParserImpl {
 			if (object instanceof Integer) {
 				exprs.add(rexBuilder.makeInputRef(input, (Integer) object));
 			} else {
+				// it's ok to call calcite to do the cast since all we cast here are nulls
 				RexNode rexNode = rexBuilder.makeNullLiteral((RelDataType) object);
 				exprs.add(rexNode);
 			}

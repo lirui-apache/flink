@@ -112,7 +112,6 @@ import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
@@ -785,41 +784,13 @@ public class HiveParserCalcitePlanner {
 				List<List<RexLiteral>> rows = new ArrayList<>();
 				// TODO: leverage Hive to read the data
 				try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(dataFile)))) {
-					QBMetaData qbMetaData = getQB().getMetaData();
-					// decide the dest table
-					Map<String, Table> nameToDestTable = qbMetaData.getNameToDestTable();
-					Map<String, Partition> nameToDestPart = qbMetaData.getNameToDestPartition();
-					// for now we only support inserting to a single table
-					Preconditions.checkState(nameToDestTable.size() <= 1 && nameToDestPart.size() <= 1,
-							"Only support inserting to 1 table");
-					Table destTable;
-					String insClauseName;
-					if (!nameToDestTable.isEmpty()) {
-						insClauseName = nameToDestTable.keySet().iterator().next();
-						destTable = nameToDestTable.values().iterator().next();
-					} else {
-						insClauseName = nameToDestPart.keySet().iterator().next();
-						destTable = nameToDestPart.values().iterator().next().getTable();
-					}
-
-					// non-part col types
-					List<TypeInfo> hiveTargetTypes = destTable.getCols().stream()
+					List<TypeInfo> tmpTableTypes = tmpTable.getCols().stream()
 							.map(f -> TypeInfoUtils.getTypeInfoFromTypeString(f.getType())).collect(Collectors.toList());
-
-					// dynamic part col types
-					if (destTable.isPartitioned() && nameToDestPart.isEmpty()) {
-						Map<String, String> spec = qbMetaData.getPartSpecForAlias(insClauseName);
-						for (FieldSchema partCol : destTable.getPartCols()) {
-							if (spec.get(partCol.getName()) == null) {
-								hiveTargetTypes.add(TypeInfoUtils.getTypeInfoFromTypeString(partCol.getType()));
-							}
-						}
-					}
 
 					RexBuilder rexBuilder = cluster.getRexBuilder();
 
-					// calcite target types for each field
-					List<RelDataType> calciteTargetTypes = hiveTargetTypes.stream()
+					// calcite types for each field
+					List<RelDataType> calciteTargetTypes = tmpTableTypes.stream()
 							.map(i -> HiveParserTypeConverter.convert((PrimitiveTypeInfo) i, rexBuilder.getTypeFactory()))
 							.collect(Collectors.toList());
 
@@ -834,8 +805,8 @@ public class HiveParserCalcitePlanner {
 					while (line != null) {
 						String[] values = line.split("\u0001");
 						List<RexLiteral> row = new ArrayList<>();
-						for (int i = 0; i < hiveTargetTypes.size(); i++) {
-							PrimitiveTypeInfo primitiveTypeInfo = (PrimitiveTypeInfo) hiveTargetTypes.get(i);
+						for (int i = 0; i < tmpTableTypes.size(); i++) {
+							PrimitiveTypeInfo primitiveTypeInfo = (PrimitiveTypeInfo) tmpTableTypes.get(i);
 							RelDataType calciteType = calciteTargetTypes.get(i);
 							if (i >= values.length || values[i].equals("\\N")) {
 								row.add(rexBuilder.makeNullLiteral(calciteType));
@@ -2422,7 +2393,7 @@ public class HiveParserCalcitePlanner {
 			if (genericUDTF != null) {
 				// The basic idea for CBO support of UDTF is to treat UDTF as a special project.
 				res = genUDTFPlan(genericUDTF, genericUDTFName, udtfTableAlias, udtfColAliases, qb, calciteColLst,
-						outRR.getColumnInfos(), srcRel, true);
+						outRR.getColumnInfos(), srcRel, true, false);
 			} else {
 				res = genSelectRelNode(calciteColLst, outRR, srcRel);
 			}
@@ -2458,7 +2429,8 @@ public class HiveParserCalcitePlanner {
 
 		private RelNode genUDTFPlan(GenericUDTF genericUDTF, String genericUDTFName, String outputTableAlias,
 				List<String> colAliases, HiveParserQB qb, List<RexNode> operands, List<ColumnInfo> opColInfos,
-				RelNode input, boolean inSelect) throws SemanticException {
+				RelNode input, boolean inSelect, boolean isOuter) throws SemanticException {
+			Preconditions.checkState(!isOuter || !inSelect, "OUTER is not supported for SELECT UDTF");
 			// No GROUP BY / DISTRIBUTE BY / SORT BY / CLUSTER BY
 			HiveParserQBParseInfo qbp = qb.getParseInfo();
 			if (inSelect && !qbp.getDestToGroupBy().isEmpty()) {
@@ -2489,6 +2461,17 @@ public class HiveParserCalcitePlanner {
 			StandardStructObjectInspector rowOI = ObjectInspectorFactory.getStandardStructObjectInspector(colNames, Arrays.asList(colOIs));
 			StructObjectInspector outputOI = genericUDTF.initialize(rowOI);
 
+			// make up a table alias if it's not present, so that we can properly generate a combined RR
+			// this should only happen for select udtf
+			if (outputTableAlias == null) {
+				Preconditions.checkState(inSelect, "Table alias not specified for lateral view");
+				String prefix = "select_" + genericUDTFName + "_alias_";
+				int i = 0;
+				while (qb.getAliases().contains(prefix + i)) {
+					i++;
+				}
+				outputTableAlias = prefix + i;
+			}
 			if (colAliases.isEmpty()) {
 				// user did not specify alias names, infer names from outputOI
 				for (StructField field : outputOI.getAllStructFieldRefs()) {
@@ -2514,8 +2497,7 @@ public class HiveParserCalcitePlanner {
 				// Since the UDTF operator feeds into a LVJ operator that will rename all the internal names,
 				// we can just use field name from the UDTF's OI as the internal name
 				ColumnInfo col = new ColumnInfo(sf.getFieldName(),
-						TypeInfoUtils.getTypeInfoFromObjectInspector(sf.getFieldObjectInspector()),
-						outputTableAlias, false);
+						TypeInfoUtils.getTypeInfoFromObjectInspector(sf.getFieldObjectInspector()), outputTableAlias, false);
 				udtfOutputCols.add(col);
 			}
 
@@ -2555,6 +2537,9 @@ public class HiveParserCalcitePlanner {
 			RelNode tableFunctionScan = LogicalTableFunctionScan.create(input.getCluster(), Collections.emptyList(),
 					convertedCall, elementType, retType, null);
 
+			// remember the table alias for the UDTF so that we can reference the cols later
+			qb.addAlias(outputTableAlias);
+
 			RelNode correlRel;
 			RexBuilder rexBuilder = cluster.getRexBuilder();
 			// find correlation in the converted call
@@ -2564,14 +2549,15 @@ public class HiveParserCalcitePlanner {
 				correlRel = plannerContext.createRelBuilder(catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase())
 						.push(input)
 						.push(tableFunctionScan)
-						.join(JoinRelType.INNER, rexBuilder.makeLiteral(true))
+						.join(isOuter ? JoinRelType.LEFT : JoinRelType.INNER, rexBuilder.makeLiteral(true))
 						.build();
 			} else {
 				if (correlUse.left.size() > 1) {
 					tableFunctionScan = DeduplicateCorrelateVariables.go(rexBuilder, correlUse.left.get(0),
 							Util.skip(correlUse.left), tableFunctionScan);
 				}
-				correlRel = LogicalCorrelate.create(input, tableFunctionScan, correlUse.left.get(0), correlUse.right, JoinRelType.INNER);
+				correlRel = LogicalCorrelate.create(input, tableFunctionScan, correlUse.left.get(0), correlUse.right,
+						isOuter ? JoinRelType.LEFT : JoinRelType.INNER);
 			}
 
 			// Add new rel & its RR to the maps
@@ -2815,6 +2801,7 @@ public class HiveParserCalcitePlanner {
 			List<ASTNode> lateralViews = entry.getValue();
 			for (ASTNode lateralView : lateralViews) {
 				Preconditions.checkArgument(lateralView.getChildCount() == 2);
+				final boolean isOuter = lateralView.getType() == HiveASTParser.TOK_LATERAL_VIEW_OUTER;
 				// this is the 1st lateral view
 				if (res == null) {
 					// LHS can be table or sub-query
@@ -2830,7 +2817,7 @@ public class HiveParserCalcitePlanner {
 					operands.add(rexNodeConverter.convert(exprDesc).accept(funcConverter));
 				}
 				res = genUDTFPlan(info.getFunc(), info.getFuncName(), info.getTabAlias(), info.getColAliases(), qb,
-						operands, info.getOperandColInfos(), res, false);
+						operands, info.getOperandColInfos(), res, false, isOuter);
 			}
 			return res;
 		}

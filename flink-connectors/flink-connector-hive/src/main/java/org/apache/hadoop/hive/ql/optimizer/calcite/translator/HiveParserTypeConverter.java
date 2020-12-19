@@ -127,8 +127,8 @@ public class HiveParserTypeConverter {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		RowSchema rs = rr.getRowSchema();
-		List<RelDataType> fieldTypes = new LinkedList<RelDataType>();
-		List<String> fieldNames = new LinkedList<String>();
+		List<RelDataType> fieldTypes = new LinkedList<>();
+		List<String> fieldNames = new LinkedList<>();
 
 		for (ColumnInfo ci : rs.getSignature()) {
 			if (neededCols == null || neededCols.contains(ci.getInternalName())) {

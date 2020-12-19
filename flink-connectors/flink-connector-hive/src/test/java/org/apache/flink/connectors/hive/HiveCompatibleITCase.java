@@ -95,7 +95,9 @@ public class HiveCompatibleITCase {
 			"select x,null as n from foo group by x,'a',null",
 			"SELECT key, value FROM (SELECT key FROM src group by key) a lateral view explode(array(1, 2)) value as value",
 			"select explode(array(1,2,3)) from foo",
-			"select value from src where key=_UTF-8 0xE982B5E993AE"
+			"select value from src where key=_UTF-8 0xE982B5E993AE",
+			"SELECT * FROM src LATERAL VIEW explode(array(1,2,3)) myTable AS myCol SORT BY key ASC, myCol ASC LIMIT 1",
+			"SELECT explode(map('key1', 100, 'key2', 200)) from src limit 2"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -108,7 +110,8 @@ public class HiveCompatibleITCase {
 			"insert overwrite table destp partition (p='-1',q='-1') if not exists select x from foo",
 			"insert into destp partition(p='1',q) (x,q) select * from bar",
 			"insert into destp partition(p='1',q) (q) select s from bar",
-			"insert into destp partition(p,q) (p,x) select s,i from bar"
+			"insert into destp partition(p,q) (p,x) select s,i from bar",
+			"insert into destp partition (p,q) (q,x) values ('a',2)"
 	};
 
 	@BeforeClass
