@@ -117,11 +117,6 @@ public class HiveParserRexNodeConverter {
 	private final Map<String, Integer> outerNameToPos;
 	private int correlatedId;
 
-	//Constructor used by HiveRexExecutorImpl
-	public HiveParserRexNodeConverter(RelOptCluster cluster) {
-		this(cluster, new ArrayList<InputCtx>(), false);
-	}
-
 	//subqueries will need outer query's row resolver
 	public HiveParserRexNodeConverter(RelOptCluster cluster, RelDataType inpDataType,
 			Map<String, Integer> outerNameToPos, Map<String, Integer> nameToPos, HiveParserRowResolver hiveRR,
@@ -143,7 +138,7 @@ public class HiveParserRexNodeConverter {
 		this.outerNameToPos = null;
 	}
 
-	public HiveParserRexNodeConverter(RelOptCluster cluster, List<InputCtx> inpCtxLst, boolean flattenExpr) {
+	private HiveParserRexNodeConverter(RelOptCluster cluster, List<InputCtx> inpCtxLst, boolean flattenExpr) {
 		this.cluster = cluster;
 		this.inputCtxs = Collections.unmodifiableList(new ArrayList<>(inpCtxLst));
 		this.flattenExpr = flattenExpr;
@@ -159,8 +154,7 @@ public class HiveParserRexNodeConverter {
 
 		int offSet = 0;
 		for (RelNode r : inputRels) {
-			inputCtxLst.add(new InputCtx(r.getRowType(), relToHiveColNameCalcitePosMap.get(r), relToHiveRR
-					.get(r), offSet));
+			inputCtxLst.add(new InputCtx(r.getRowType(), relToHiveColNameCalcitePosMap.get(r), relToHiveRR.get(r), offSet));
 			offSet += r.getRowType().getFieldCount();
 		}
 
@@ -196,7 +190,7 @@ public class HiveParserRexNodeConverter {
 		}
 	}
 
-	protected RexNode convertColumn(ExprNodeColumnDesc col) throws SemanticException {
+	private RexNode convertColumn(ExprNodeColumnDesc col) throws SemanticException {
 		//if this is co-rrelated we need to make RexCorrelVariable(with id and type)
 		// id and type should be retrieved from outerRR
 		InputCtx ic = getInputCtx(col);
@@ -217,7 +211,7 @@ public class HiveParserRexNodeConverter {
 				ic.calciteInpDataType.getFieldList().get(pos).getType(), pos + ic.offsetInCalciteSchema);
 	}
 
-	protected RexNode convertConstant(ExprNodeConstantDesc literal) throws CalciteSemanticException {
+	private RexNode convertConstant(ExprNodeConstantDesc literal) throws CalciteSemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		PrimitiveTypeInfo hiveType = (PrimitiveTypeInfo) literal.getTypeInfo();
@@ -475,22 +469,38 @@ public class HiveParserRexNodeConverter {
 				throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
 						"SubQuery can contain only 1 item in Select List."));
 			}
-			//create RexNode for LHS
-			RexNode rexNodeLhs = convert(subQueryDesc.getSubQueryLhs());
+			// need implicit type conversion here
+			ExprNodeDesc lhsDesc = subQueryDesc.getSubQueryLhs();
+			TypeInfo lhsType = lhsDesc.getTypeInfo();
+			TypeInfo rhsType = HiveParserTypeConverter.convert(subQueryDesc.getRexSubQuery().getRowType().getFieldList().get(0).getType());
+			TypeInfo commonType = FunctionRegistry.getCommonClassForComparison(lhsType, rhsType);
+			if (commonType == null) {
+				throw new SemanticException(
+						"Cannot do equality join on different types: " + lhsType.getTypeName()
+								+ " and " + rhsType.getTypeName());
+			}
+			// type conversion for LHS
+			if (TypeInfoUtils.isConversionRequiredForComparison(lhsType, commonType)) {
+				lhsDesc = HiveASTParseUtils.createConversionCast(lhsDesc, (PrimitiveTypeInfo) commonType);
+			}
+			// type conversion for RHS
+			RelNode rhsRel = HiveParser.addTypeConversions(cluster.getRexBuilder(), subQueryDesc.getRexSubQuery(),
+					Collections.singletonList(HiveParserTypeConverter.convert(commonType, cluster.getTypeFactory())),
+					Collections.singletonList(commonType), null);
+			// create RexNode for LHS
+			RexNode lhsRex = convert(lhsDesc);
 
-			//create RexSubQuery node
-			return HiveParserUtils.rexSubQueryIn(subQueryDesc.getRexSubQuery(), Collections.singletonList(rexNodeLhs));
+			// create RexSubQuery node
+			return HiveParserUtils.rexSubQueryIn(rhsRel, Collections.singletonList(lhsRex));
 		} else if (subQueryDesc.getType() == HiveParserExprNodeSubQueryDesc.SubqueryType.EXISTS) {
-			RexNode subQueryNode = RexSubQuery.exists(subQueryDesc.getRexSubQuery());
-			return subQueryNode;
+			return RexSubQuery.exists(subQueryDesc.getRexSubQuery());
 		} else if (subQueryDesc.getType() == HiveParserExprNodeSubQueryDesc.SubqueryType.SCALAR) {
 			if (subQueryDesc.getRexSubQuery().getRowType().getFieldCount() > 1) {
 				throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
 						"SubQuery can contain only 1 item in Select List."));
 			}
 			//create RexSubQuery node
-			RexNode rexSubQuery = RexSubQuery.scalar(subQueryDesc.getRexSubQuery());
-			return rexSubQuery;
+			return RexSubQuery.scalar(subQueryDesc.getRexSubQuery());
 		} else {
 			throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
 					"Invalid subquery: " + subQueryDesc.getType()));

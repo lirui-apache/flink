@@ -97,7 +97,9 @@ public class HiveCompatibleITCase {
 			"select explode(array(1,2,3)) from foo",
 			"select value from src where key=_UTF-8 0xE982B5E993AE",
 			"SELECT * FROM src LATERAL VIEW explode(array(1,2,3)) myTable AS myCol SORT BY key ASC, myCol ASC LIMIT 1",
-			"SELECT explode(map('key1', 100, 'key2', 200)) from src limit 2"
+			"SELECT explode(map('key1', 100, 'key2', 200)) from src limit 2",
+			"select key, value from src where key in (select key+18 from src) order by key",
+			"select i from foo where i in (select key from src)"
 	};
 
 	private static final String[] UPDATES = new String[]{

@@ -92,7 +92,6 @@ import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
-import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.slf4j.Logger;
@@ -149,6 +148,7 @@ public class HiveParser extends ParserImpl {
 	private final PlannerContext plannerContext;
 	private final FlinkCalciteCatalogReader catalogReader;
 	private final FrameworkConfig frameworkConfig;
+	private final ConvertSqlFunctionCopier funcConverter;
 
 	HiveParser(
 			CatalogManager catalogManager,
@@ -161,6 +161,8 @@ public class HiveParser extends ParserImpl {
 		this.catalogReader = plannerContext.createCatalogReader(
 				false, catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase());
 		this.frameworkConfig = plannerContext.createFrameworkConfig();
+		this.funcConverter = new ConvertSqlFunctionCopier(
+				plannerContext.getCluster().getRexBuilder(), frameworkConfig.getOperatorTable(), catalogReader.nameMatcher());
 	}
 
 	@Override
@@ -435,7 +437,8 @@ public class HiveParser extends ParserImpl {
 		}
 
 		// add type conversions
-		queryRelNode = addTypeConversions(queryRelNode, new ArrayList<>(targetColToCalcType.values()), targetHiveTypes);
+		queryRelNode = addTypeConversions(plannerContext.getCluster().getRexBuilder(), queryRelNode,
+				new ArrayList<>(targetColToCalcType.values()), targetHiveTypes, funcConverter);
 
 		// decide whether it's overwrite
 		boolean overwrite = topQB.getParseInfo().getInsertOverwriteTables().keySet().stream().map(String::toLowerCase).collect(Collectors.toSet())
@@ -484,20 +487,23 @@ public class HiveParser extends ParserImpl {
 		return plannerContext.getCluster().traitSet().canonize(RelCollationImpl.of(shiftedCollations));
 	}
 
-	private RelNode addTypeConversions(RelNode queryRelNode, List<RelDataType> targetCalcTypes, List<TypeInfo> targetHiveTypes)
-			throws SemanticException {
+	static RelNode addTypeConversions(RexBuilder rexBuilder, RelNode queryRelNode, List<RelDataType> targetCalcTypes,
+			List<TypeInfo> targetHiveTypes, ConvertSqlFunctionCopier funcConverter) throws SemanticException {
 		if (queryRelNode instanceof Project) {
-			return replaceProjectForTypeConversion((Project) queryRelNode, targetCalcTypes, targetHiveTypes);
+			return replaceProjectForTypeConversion(rexBuilder, (Project) queryRelNode, targetCalcTypes, targetHiveTypes, funcConverter);
 		} else {
 			// current node is not Project, we search for it in inputs
-			RelNode newInput = addTypeConversions(queryRelNode.getInput(0), targetCalcTypes, targetHiveTypes);
+			RelNode newInput = addTypeConversions(rexBuilder, queryRelNode.getInput(0), targetCalcTypes, targetHiveTypes, funcConverter);
 			queryRelNode.replaceInput(0, newInput);
 			return queryRelNode;
 		}
 	}
 
-	private RexNode createConversionCast(RexNode srcRex, PrimitiveTypeInfo targetHiveType, RelDataType targetCalType,
-			ConvertSqlFunctionCopier funcConverter) throws SemanticException {
+	private static RexNode createConversionCast(RexBuilder rexBuilder, RexNode srcRex, TypeInfo targetHiveType,
+			RelDataType targetCalType, ConvertSqlFunctionCopier funcConverter) throws SemanticException {
+		if (funcConverter == null) {
+			return rexBuilder.makeCast(targetCalType, srcRex);
+		}
 		// hive implements CAST with UDFs
 		String udfName = TypeInfoUtils.getBaseName(targetHiveType.getTypeName());
 		FunctionInfo functionInfo;
@@ -512,9 +518,9 @@ public class HiveParser extends ParserImpl {
 		if (functionInfo.getGenericUDF() instanceof SettableUDF) {
 			// For SettableUDF, we need to pass target TypeInfo to it, but we don't have a way to do that currently.
 			// Therefore just use calcite cast for these types.
-			return plannerContext.getCluster().getRexBuilder().makeCast(targetCalType, srcRex);
+			return rexBuilder.makeCast(targetCalType, srcRex);
 		} else {
-			return plannerContext.getCluster().getRexBuilder().makeCall(
+			return rexBuilder.makeCall(
 					HiveParserSqlFunctionConverter.getCalciteOperator(
 							udfName, functionInfo.getGenericUDF(), Collections.singletonList(srcRex.getType()), targetCalType),
 					srcRex
@@ -522,15 +528,12 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private RelNode replaceProjectForTypeConversion(Project project, List<RelDataType> targetCalcTypes, List<TypeInfo> targetHiveTypes)
-			throws SemanticException {
+	private static RelNode replaceProjectForTypeConversion(RexBuilder rexBuilder, Project project, List<RelDataType> targetCalcTypes,
+			List<TypeInfo> targetHiveTypes, ConvertSqlFunctionCopier funcConverter) throws SemanticException {
 		List<RexNode> exprs = project.getProjects();
 		Preconditions.checkState(exprs.size() == targetCalcTypes.size(), "Expressions and target types size mismatch");
 		List<RexNode> updatedExprs = new ArrayList<>(exprs.size());
 		boolean updated = false;
-		RexBuilder rexBuilder = plannerContext.getCluster().getRexBuilder();
-		ConvertSqlFunctionCopier funcConverter = new ConvertSqlFunctionCopier(
-				rexBuilder, frameworkConfig.getOperatorTable(), catalogReader.nameMatcher());
 		for (int i = 0; i < exprs.size(); i++) {
 			RexNode expr = exprs.get(i);
 			if (expr.getType().getSqlTypeName() != targetCalcTypes.get(i).getSqlTypeName()) {
@@ -538,7 +541,7 @@ public class HiveParser extends ParserImpl {
 				RelDataType calcType = targetCalcTypes.get(i);
 				// only support converting primitive types
 				if (hiveType.getCategory() == ObjectInspector.Category.PRIMITIVE) {
-					expr = createConversionCast(expr, (PrimitiveTypeInfo) hiveType, calcType, funcConverter);
+					expr = createConversionCast(rexBuilder, expr, hiveType, calcType, funcConverter);
 					updated = true;
 				}
 			}

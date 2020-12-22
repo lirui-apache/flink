@@ -61,7 +61,7 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = "index_bitmap_auto.q";
+	private static final String START = "limit_join_transpose.q";
 	private static final String END = null;
 
 	@HiveSQL(files = {})
@@ -140,7 +140,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "input4.q");
+		File qfile = new File(QFILES_DIR, "lineage1.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);
@@ -307,8 +307,7 @@ public class HiveQFileITCase {
 	}
 
 	private void runUpdate(TableEnvironment tableEnv, String dml) throws Exception {
-		tableEnv.sqlUpdate(dml);
-		tableEnv.execute("Run " + dml);
+		tableEnv.executeSql(dml).await();
 		if (verbose) {
 			println("Successfully executed dml: " + dml);
 		}
