@@ -69,8 +69,6 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexCorrelVariable;
-import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexFieldCollation;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -2906,12 +2904,11 @@ public class HiveParserCalcitePlanner {
 
 		private com.google.common.collect.ImmutableMap<String, Integer> buildHiveColNameToInputPosMap(
 				List<ExprNodeDesc> colList, HiveParserRowResolver inputRR) {
-			// Build a map of Hive column Names (ExprNodeColumnDesc Name)
-			// to the positions of those projections in the input
+			// Build a map of Hive column Names (ExprNodeColumnDesc Name) to the positions of those projections in the input
 			Map<Integer, ExprNodeDesc> hashCodeTocolumnDescMap = new HashMap<Integer, ExprNodeDesc>();
 			ExprNodeDescUtils.getExprNodeColumnDesc(colList, hashCodeTocolumnDescMap);
 			com.google.common.collect.ImmutableMap.Builder<String, Integer> hiveColNameToInputPosMapBuilder =
-					new com.google.common.collect.ImmutableMap.Builder<String, Integer>();
+					new com.google.common.collect.ImmutableMap.Builder<>();
 			String exprNodecolName;
 			for (ExprNodeDesc exprDesc : hashCodeTocolumnDescMap.values()) {
 				exprNodecolName = ((ExprNodeColumnDesc) exprDesc).getColumn();
@@ -2966,16 +2963,7 @@ public class HiveParserCalcitePlanner {
 	private static Pair<List<CorrelationId>, ImmutableBitSet> getCorrelationUse(RexCall call) {
 		List<CorrelationId> correlIDs = new ArrayList<>();
 		ImmutableBitSet.Builder requiredColumns = ImmutableBitSet.builder();
-		for (RexNode operand : call.getOperands()) {
-			if (operand instanceof RexFieldAccess) {
-				RexNode expr = ((RexFieldAccess) operand).getReferenceExpr();
-				if (expr instanceof RexCorrelVariable) {
-					RexCorrelVariable correlVariable = (RexCorrelVariable) expr;
-					correlIDs.add(correlVariable.id);
-					requiredColumns.set(((RexFieldAccess) operand).getField().getIndex());
-				}
-			}
-		}
+		call.accept(new HiveParserUtils.CorrelationCollector(correlIDs, requiredColumns));
 		if (correlIDs.isEmpty()) {
 			return null;
 		}

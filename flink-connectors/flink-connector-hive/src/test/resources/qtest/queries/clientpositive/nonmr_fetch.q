@@ -68,12 +68,9 @@ select key, value from (select value key,key value from src where key > 200) a w
 select key, value from (select value key,key value from src where key > 200) a where value < 250 limit 20;
 
 -- lateral view
-explain
-select key,X from srcpart lateral view explode(array(key,value)) L as x where (ds='2008-04-08' AND hr='11') limit 20;
 select key,X from srcpart lateral view explode(array(key,value)) L as x where (ds='2008-04-08' AND hr='11') limit 20;
 
 -- non deterministic func
-explain select key, value, BLOCK__OFFSET__INSIDE__FILE from srcpart where ds="2008-04-09" AND rand() > 1;
 select key, value, BLOCK__OFFSET__INSIDE__FILE from srcpart where ds="2008-04-09" AND rand() > 1;
 
 -- negative, groupby

@@ -99,7 +99,9 @@ public class HiveCompatibleITCase {
 			"SELECT * FROM src LATERAL VIEW explode(array(1,2,3)) myTable AS myCol SORT BY key ASC, myCol ASC LIMIT 1",
 			"SELECT explode(map('key1', 100, 'key2', 200)) from src limit 2",
 			"select key, value from src where key in (select key+18 from src) order by key",
-			"select i from foo where i in (select key from src)"
+			"select x from foo where x in (select key from src)",
+			"select col1 from foo lateral view explode(array(x,y)) tbl1 as col1",
+			"SELECT col1, col2 FROM nested LATERAL VIEW explode(s2.f8.f10) tbl1 AS col1 LATERAL VIEW explode(s3.f12) tbl2 AS col2"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -137,6 +139,15 @@ public class HiveCompatibleITCase {
 		tableEnv.executeSql("alter table destp add partition (p='-1',q='-1')");
 		tableEnv.executeSql("CREATE TABLE src (key STRING, `value` STRING)");
 		tableEnv.executeSql("CREATE TABLE srcpart (key STRING, `value` STRING) PARTITIONED BY (ds STRING, hr STRING)");
+		tableEnv.executeSql("CREATE TABLE nested (\n" +
+				"  a int,\n" +
+				"  s1 struct<f1: boolean, f2: string, f3: struct<f4: int, f5: double>, f6: int>,\n" +
+				"  s2 struct<f7: string, f8: struct<f9 : boolean, f10: array<int>, f11: map<string, boolean>>>,\n" +
+				"  s3 struct<f12: array<struct<f13:string, f14:int>>>,\n" +
+				"  s4 map<string, struct<f15:int>>,\n" +
+				"  s5 struct<f16: array<struct<f17:string, f18:struct<f19:int>>>>,\n" +
+				"  s6 map<string, struct<f20:array<struct<f21:struct<f22:int>>>>>\n" +
+				")");
 		HiveTestUtils.createTextTableInserter(hiveCatalog, "default", "foo")
 				.addRow(new Object[]{1, 1})
 				.addRow(new Object[]{2, 2})

@@ -9,11 +9,9 @@ create table masking_test as select cast(key as int) as key, value from default.
 
 use default;
 
-explain select * from newdb.masking_test;
 select * from newdb.masking_test;
 
-explain select * from newdb.masking_test where key > 0;
 select * from newdb.masking_test where key > 0;
 
 
-drop table if exists masking_test;
+drop database newdb cascade;

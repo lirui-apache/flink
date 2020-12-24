@@ -183,6 +183,9 @@ public class HiveParserRexNodeConverter {
 			// regular case of accessing nested field in a column
 			return cluster.getRexBuilder().makeFieldAccess(rexNode, fieldDesc.getFieldName(), true);
 		} else {
+			if (fieldDesc.getIsList()) {
+				// TODO: support this, need to create a func to create an array with fields within the origin array?
+			}
 			// This may happen for schema-less tables, where columns are dynamically
 			// supplied by serdes.
 			throw new CalciteSemanticException("Unexpected rexnode : "

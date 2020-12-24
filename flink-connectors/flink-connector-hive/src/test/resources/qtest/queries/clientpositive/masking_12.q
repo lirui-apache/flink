@@ -32,3 +32,6 @@ explain
 select `v0`.value from `v0` join `masking_test_view` on `v0`.key = `masking_test_view`.key;
 
 select `v0`.value from `v0` join `masking_test_view` on `v0`.key = `masking_test_view`.key;
+
+drop table if exists masking_test;
+drop view if exists v0;

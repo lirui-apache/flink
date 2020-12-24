@@ -31,17 +31,21 @@ import org.antlr.runtime.tree.TreeVisitor;
 import org.antlr.runtime.tree.TreeVisitorAction;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCorrelVariable;
+import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexFieldCollation;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
+import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlCollation;
@@ -959,5 +963,34 @@ public class HiveParserUtils {
 			}
 		}
 		return res;
+	}
+
+	/**
+	 * A visitor to collect correlation IDs and required columns.
+	 */
+	public static class CorrelationCollector extends RexVisitorImpl<Void> {
+		private final List<CorrelationId> correlIDs;
+		private final ImmutableBitSet.Builder requiredColumns;
+
+		public CorrelationCollector(List<CorrelationId> correlIDs, ImmutableBitSet.Builder requiredColumns) {
+			super(true);
+			this.correlIDs = correlIDs;
+			this.requiredColumns = requiredColumns;
+		}
+
+		@Override
+		public Void visitFieldAccess(RexFieldAccess fieldAccess) {
+			RexNode expr = fieldAccess.getReferenceExpr();
+			if (expr instanceof RexCorrelVariable) {
+				requiredColumns.set(fieldAccess.getField().getIndex());
+			}
+			return super.visitFieldAccess(fieldAccess);
+		}
+
+		@Override
+		public Void visitCorrelVariable(RexCorrelVariable correlVariable) {
+			correlIDs.add(correlVariable.id);
+			return null;
+		}
 	}
 }

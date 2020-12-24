@@ -61,8 +61,8 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = "limit_join_transpose.q";
-	private static final String END = null;
+	private static final String START = "orc_ppd_schema_evol_2b.q";
+	private static final String END = "smblimit.q";
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;
@@ -74,7 +74,7 @@ public class HiveQFileITCase {
 	// map from conf name to its default value
 	private static final Map<String, String> ALLOWED_SETTINGS =
 			Stream.of(ConfVars.HIVE_QUOTEDID_SUPPORT, ConfVars.METASTORE_DISALLOW_INCOMPATIBLE_COL_TYPE_CHANGES,
-					ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS)
+					ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS, ConfVars.HIVE_GROUPBY_POSITION_ALIAS, ConfVars.HIVE_ORDERBY_POSITION_ALIAS)
 					.collect(Collectors.toMap(HiveConf.ConfVars::toString, HiveConf.ConfVars::getDefaultValue));
 	private static BufferedWriter fileWriter;
 
@@ -84,7 +84,7 @@ public class HiveQFileITCase {
 	}
 
 	private boolean verbose = false;
-	private Boolean useMRReader = false;
+	private Boolean useMRReader = true;
 
 	@BeforeClass
 	public static void setup() throws Exception {
@@ -140,7 +140,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "lineage1.q");
+		File qfile = new File(QFILES_DIR, "orc_ppd_schema_evol_1a.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);

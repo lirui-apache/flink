@@ -357,8 +357,10 @@ public class HiveParserSqlFunctionConverter {
 			registerFunction("struct", SqlStdOperatorTable.ROW, hToken(HiveASTParser.Identifier, "struct"));
 			registerFunction("isnotnull", SqlStdOperatorTable.IS_NOT_NULL, hToken(HiveASTParser.TOK_ISNOTNULL, "TOK_ISNOTNULL"));
 			registerFunction("isnull", SqlStdOperatorTable.IS_NULL, hToken(HiveASTParser.TOK_ISNULL, "TOK_ISNULL"));
-			registerFunction("when", SqlStdOperatorTable.CASE, hToken(HiveASTParser.Identifier, "when"));
-			registerDuplicateFunction("case", SqlStdOperatorTable.CASE, hToken(HiveASTParser.Identifier, "when"));
+			// let's try removing 'when' for better compatibility
+//			registerFunction("when", SqlStdOperatorTable.CASE, hToken(HiveASTParser.Identifier, "when"));
+			// let's try removing 'case' for better compatibility
+//			registerDuplicateFunction("case", SqlStdOperatorTable.CASE, hToken(HiveASTParser.Identifier, "when"));
 			// timebased
 			registerFunction("year", HiveParserExtractDate.YEAR,
 					hToken(HiveASTParser.Identifier, "year"));

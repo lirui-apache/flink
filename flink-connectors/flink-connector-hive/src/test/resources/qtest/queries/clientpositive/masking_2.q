@@ -15,3 +15,5 @@ explain select a.*, b.key from masking_test a join masking_test b on a.key = b.v
 
 explain select * from masking_test a union select b.* from masking_test b where b.key > 0;
 
+drop view if exists masking_test;
+

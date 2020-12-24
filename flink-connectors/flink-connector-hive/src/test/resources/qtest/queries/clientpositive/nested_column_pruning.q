@@ -78,9 +78,6 @@ SELECT s2.f8 FROM nested_tbl_1 WHERE s1.f2 = 'foo' AND size(s2.f8.f10) > 1 AND s
 
 -- Testing lateral view
 
-EXPLAIN SELECT col1, col2 FROM nested_tbl_1
-LATERAL VIEW explode(s2.f8.f10) tbl1 AS col1
-LATERAL VIEW explode(s3.f12) tbl2 AS col2;
 SELECT col1, col2 FROM nested_tbl_1
 LATERAL VIEW explode(s2.f8.f10) tbl1 AS col1
 LATERAL VIEW explode(s3.f12) tbl2 AS col2;
@@ -162,11 +159,6 @@ GROUP BY s5.f16[0].f18.f19;
 SELECT count(s1.f6), s5.f16[0].f18.f19
 FROM nested_tbl_1
 GROUP BY s5.f16[0].f18.f19;
-
-EXPLAIN
-SELECT count(s1.f6), s5.f16.f18.f19
-FROM nested_tbl_1
-GROUP BY s5.f16.f18.f19;
 
 SELECT count(s1.f6), s5.f16.f18.f19
 FROM nested_tbl_1
