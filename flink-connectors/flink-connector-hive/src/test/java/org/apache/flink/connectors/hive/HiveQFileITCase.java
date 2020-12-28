@@ -140,7 +140,7 @@ public class HiveQFileITCase {
 
 	@Test
 	public void runSingleQTest() throws Exception {
-		File qfile = new File(QFILES_DIR, "orc_ppd_schema_evol_1a.q");
+		File qfile = new File(QFILES_DIR, "orc_ppd_schema_evol_2b.q");
 		TableEnvironment tableEnv = getTableEnvWithHiveCatalog(true);
 		verbose = true;
 		runQFile(qfile, tableEnv, true);

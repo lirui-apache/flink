@@ -63,19 +63,14 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
+import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseBinary;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseCompare;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFCase;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFIn;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFTimestamp;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToBinary;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToChar;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToDate;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToDecimal;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToUnixTimeStamp;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToVarchar;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFUnixTimeStamp;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFWhen;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
@@ -405,8 +400,7 @@ public class HiveParserRexNodeConverter {
 
 		for (ExprNodeDesc childExpr : func.getChildren()) {
 			tmpExprNode = childExpr;
-			if (tgtDT != null
-					&& TypeInfoUtils.isConversionRequiredForComparison(tgtDT, childExpr.getTypeInfo())) {
+			if (tgtDT != null && TypeInfoUtils.isConversionRequiredForComparison(tgtDT, childExpr.getTypeInfo())) {
 				if (isCompare) {
 					// For compare, we will convert requisite children
 					tmpExprNode = HiveASTParseUtils.createConversionCast(childExpr, (PrimitiveTypeInfo) tgtDT);
@@ -594,7 +588,7 @@ public class HiveParserRexNodeConverter {
 
 	private boolean castExprUsingUDFBridge(GenericUDF gUDF) {
 		boolean castExpr = false;
-		if (gUDF != null && gUDF instanceof GenericUDFBridge) {
+		if (gUDF instanceof GenericUDFBridge) {
 			String udfClassName = ((GenericUDFBridge) gUDF).getUdfClassName();
 			if (udfClassName != null) {
 				int sp = udfClassName.lastIndexOf('.');
@@ -620,16 +614,23 @@ public class HiveParserRexNodeConverter {
 
 		if (childRexNodeLst != null && childRexNodeLst.size() == 1) {
 			GenericUDF udf = func.getGenericUDF();
-			if ((udf instanceof GenericUDFToChar) || (udf instanceof GenericUDFToVarchar)
-					|| (udf instanceof GenericUDFToDecimal) || (udf instanceof GenericUDFToDate)
-					// Calcite can not specify the scale for timestamp. As a result, all
-					// the millisecond part will be lost
-					|| (udf instanceof GenericUDFTimestamp)
-					|| (udf instanceof GenericUDFToBinary) || castExprUsingUDFBridge(udf)) {
+			// we cannot handle SettableUDF at the moment so we call calcite to do the cast in that case
+			// otherwise we use hive functions to achieve better compatibility
+			if (udf instanceof SettableUDF) {
 				castExpr = cluster.getRexBuilder().makeAbstractCast(
 						HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory()),
 						childRexNodeLst.get(0));
 			}
+//			if ((udf instanceof GenericUDFToChar) || (udf instanceof GenericUDFToVarchar)
+//					|| (udf instanceof GenericUDFToDecimal) || (udf instanceof GenericUDFToDate)
+//					// Calcite can not specify the scale for timestamp. As a result, all
+//					// the millisecond part will be lost
+//					|| (udf instanceof GenericUDFTimestamp)
+//					|| (udf instanceof GenericUDFToBinary) || castExprUsingUDFBridge(udf)) {
+//				castExpr = cluster.getRexBuilder().makeAbstractCast(
+//						HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory()),
+//						childRexNodeLst.get(0));
+//			}
 		}
 
 		return castExpr;

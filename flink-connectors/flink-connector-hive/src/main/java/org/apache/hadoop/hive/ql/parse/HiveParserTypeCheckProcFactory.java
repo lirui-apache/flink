@@ -866,11 +866,10 @@ public class HiveParserTypeCheckProcFactory {
 				}
 			}
 
-			List<ExprNodeDesc> childrenList = new ArrayList<ExprNodeDesc>(children.length);
+			List<ExprNodeDesc> childrenList = new ArrayList<>(children.length);
 
 			childrenList.addAll(Arrays.asList(children));
-			return ExprNodeGenericFuncDesc.newInstance(genericUDF,
-					childrenList);
+			return ExprNodeGenericFuncDesc.newInstance(genericUDF, udfName, childrenList);
 		}
 
 		public static ExprNodeDesc getFuncExprNodeDesc(String udfName,

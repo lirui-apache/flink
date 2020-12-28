@@ -200,7 +200,7 @@ public class HiveParserTypeConverter {
 				convertedType = dtFactory.createSqlType(SqlTypeName.DATE);
 				break;
 			case TIMESTAMP:
-				convertedType = dtFactory.createSqlType(SqlTypeName.TIMESTAMP);
+				convertedType = dtFactory.createSqlType(SqlTypeName.TIMESTAMP, 9);
 				break;
 			case INTERVAL_YEAR_MONTH:
 				convertedType = dtFactory.createSqlIntervalType(
