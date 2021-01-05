@@ -19,7 +19,10 @@
 package org.apache.hadoop.hive.ql.parse;
 
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 
+import org.antlr.runtime.tree.Tree;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -31,9 +34,11 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.InvalidTableException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.PlanUtils;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
@@ -60,6 +65,187 @@ public class HiveParserBaseSemanticAnalyzer {
 	private HiveParserBaseSemanticAnalyzer() {
 	}
 
+	public static List<FieldSchema> getColumns(ASTNode ast) throws SemanticException {
+		return getColumns(ast, true);
+	}
+
+	public static List<FieldSchema> getColumns(ASTNode ast, boolean lowerCase) throws SemanticException {
+		return getColumns(ast, lowerCase, new ArrayList<>());
+	}
+
+	public static String getTypeStringFromAST(ASTNode typeNode)
+			throws SemanticException {
+		switch (typeNode.getType()) {
+			case HiveASTParser.TOK_LIST:
+				return serdeConstants.LIST_TYPE_NAME + "<"
+						+ getTypeStringFromAST((ASTNode) typeNode.getChild(0)) + ">";
+			case HiveASTParser.TOK_MAP:
+				return serdeConstants.MAP_TYPE_NAME + "<"
+						+ getTypeStringFromAST((ASTNode) typeNode.getChild(0)) + ","
+						+ getTypeStringFromAST((ASTNode) typeNode.getChild(1)) + ">";
+			case HiveASTParser.TOK_STRUCT:
+				return getStructTypeStringFromAST(typeNode);
+			case HiveASTParser.TOK_UNIONTYPE:
+				return getUnionTypeStringFromAST(typeNode);
+			default:
+				return HiveParserDDLSemanticAnalyzer.getTypeName(typeNode);
+		}
+	}
+
+	private static String getStructTypeStringFromAST(ASTNode typeNode)
+			throws SemanticException {
+		String typeStr = serdeConstants.STRUCT_TYPE_NAME + "<";
+		typeNode = (ASTNode) typeNode.getChild(0);
+		int children = typeNode.getChildCount();
+		if (children <= 0) {
+			throw new SemanticException("empty struct not allowed.");
+		}
+		StringBuilder buffer = new StringBuilder(typeStr);
+		for (int i = 0; i < children; i++) {
+			ASTNode child = (ASTNode) typeNode.getChild(i);
+			buffer.append(unescapeIdentifier(child.getChild(0).getText())).append(":");
+			buffer.append(getTypeStringFromAST((ASTNode) child.getChild(1)));
+			if (i < children - 1) {
+				buffer.append(",");
+			}
+		}
+
+		buffer.append(">");
+		return buffer.toString();
+	}
+
+	private static String getUnionTypeStringFromAST(ASTNode typeNode)
+			throws SemanticException {
+		String typeStr = serdeConstants.UNION_TYPE_NAME + "<";
+		typeNode = (ASTNode) typeNode.getChild(0);
+		int children = typeNode.getChildCount();
+		if (children <= 0) {
+			throw new SemanticException("empty union not allowed.");
+		}
+		StringBuilder buffer = new StringBuilder(typeStr);
+		for (int i = 0; i < children; i++) {
+			buffer.append(getTypeStringFromAST((ASTNode) typeNode.getChild(i)));
+			if (i < children - 1) {
+				buffer.append(",");
+			}
+		}
+		buffer.append(">");
+		typeStr = buffer.toString();
+		return typeStr;
+	}
+
+	public static List<FieldSchema> getColumns(ASTNode ast, boolean lowerCase,
+			List<PrimaryKey> primaryKeys) throws SemanticException {
+		List<FieldSchema> colList = new ArrayList<>();
+		int numCh = ast.getChildCount();
+		List<PKInfo> pkInfos = new ArrayList<>();
+		Map<String, FieldSchema> nametoFS = new HashMap<>();
+		Tree parent = ast.getParent();
+
+		for (int i = 0; i < numCh; i++) {
+			FieldSchema col = new FieldSchema();
+			ASTNode child = (ASTNode) ast.getChild(i);
+			if (child.getToken().getType() == HiveASTParser.TOK_PRIMARY_KEY) {
+				processPrimaryKeyInfos(child, pkInfos);
+			} else if (child.getToken().getType() == HiveASTParser.TOK_FOREIGN_KEY) {
+				throw new SemanticException("FOREIGN KEY is not supported.");
+			} else {
+				Tree grandChild = child.getChild(0);
+				if (grandChild != null) {
+					String name = grandChild.getText();
+					if (lowerCase) {
+						name = name.toLowerCase();
+					}
+					checkColumnName(name);
+					// child 0 is the name of the column
+					col.setName(unescapeIdentifier(name));
+					// child 1 is the type of the column
+					ASTNode typeChild = (ASTNode) (child.getChild(1));
+					col.setType(getTypeStringFromAST(typeChild));
+
+					// child 2 is the optional comment of the column
+					if (child.getChildCount() == 3) {
+						col.setComment(unescapeSQLString(child.getChild(2).getText()));
+					}
+				}
+				nametoFS.put(col.getName(), col);
+				colList.add(col);
+			}
+		}
+		if (!pkInfos.isEmpty()) {
+			processPrimaryKeys((ASTNode) parent, pkInfos, primaryKeys, nametoFS);
+		}
+		return colList;
+	}
+
+	private static void processPrimaryKeys(ASTNode parent, List<PKInfo> pkInfos,
+			List<PrimaryKey> primaryKeys, Map<String, FieldSchema> nametoFS) throws SemanticException {
+		int cnt = 1;
+		String[] qualifiedTabName = getQualifiedTableName((ASTNode) parent.getChild(0));
+
+		for (PKInfo pkInfo : pkInfos) {
+			String pk = pkInfo.colName;
+			if (nametoFS.containsKey(pk)) {
+				PrimaryKey currPrimaryKey = new PrimaryKey(
+						qualifiedTabName[0], qualifiedTabName[1], pk, pkInfo.constraintName,
+						false, false, pkInfo.rely);
+				primaryKeys.add(currPrimaryKey);
+			} else {
+				throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(pk));
+			}
+		}
+	}
+
+	private static void processPrimaryKeyInfos(
+			ASTNode child, List<PKInfo> pkInfos) throws SemanticException {
+		if (child.getChildCount() < 4) {
+			throw new SemanticException("Invalid Primary Key syntax");
+		}
+		// The ANTLR grammar looks like :
+		// 1. KW_CONSTRAINT idfr=identifier KW_PRIMARY KW_KEY pkCols=columnParenthesesList
+		//  enableSpec=enableSpecification validateSpec=validateSpecification relySpec=relySpecification
+		// -> ^(TOK_PRIMARY_KEY $pkCols $idfr $relySpec $enableSpec $validateSpec)
+		// when the user specifies the constraint name (i.e. child.getChildCount() == 5)
+		// 2.  KW_PRIMARY KW_KEY columnParenthesesList
+		// enableSpec=enableSpecification validateSpec=validateSpecification relySpec=relySpecification
+		// -> ^(TOK_PRIMARY_KEY columnParenthesesList $relySpec $enableSpec $validateSpec)
+		// when the user does not specify the constraint name (i.e. child.getChildCount() == 4)
+		boolean userSpecifiedConstraintName = child.getChildCount() == 5;
+		int relyIndex = child.getChildCount() == 5 ? 2 : 1;
+		for (int j = 0; j < child.getChild(0).getChildCount(); j++) {
+			Tree grandChild = child.getChild(0).getChild(j);
+			boolean rely = child.getChild(relyIndex).getType() == HiveASTParser.TOK_VALIDATE;
+			boolean enable = child.getChild(relyIndex + 1).getType() == HiveASTParser.TOK_ENABLE;
+			boolean validate = child.getChild(relyIndex + 2).getType() == HiveASTParser.TOK_VALIDATE;
+			if (enable) {
+				throw new SemanticException("Invalid Primary Key syntax ENABLE feature not supported yet");
+			}
+			if (validate) {
+				throw new SemanticException("Invalid Primary Key syntax VALIDATE feature not supported yet");
+			}
+			checkColumnName(grandChild.getText());
+			pkInfos.add(new PKInfo(
+					unescapeIdentifier(grandChild.getText().toLowerCase()),
+					(userSpecifiedConstraintName ?
+							unescapeIdentifier(child.getChild(1).getText().toLowerCase()) : null),
+					rely));
+		}
+	}
+
+	private static void checkColumnName(String columnName) throws SemanticException {
+		if (VirtualColumn.VIRTUAL_COLUMN_NAMES.contains(columnName.toUpperCase())) {
+			throw new SemanticException("Invalid column name " + columnName);
+		}
+	}
+
+	public static String getDotName(String[] qname) throws SemanticException {
+		String genericName = StringUtils.join(qname, ".");
+		if (qname.length != 2) {
+			throw new SemanticException(ErrorMsg.INVALID_TABLE_NAME, genericName);
+		}
+		return genericName;
+	}
+
 	/**
 	 * Converts parsed key/value properties pairs into a map.
 	 *
@@ -69,8 +255,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	public static void readProps(ASTNode prop, Map<String, String> mapProp) {
 
 		for (int propChild = 0; propChild < prop.getChildCount(); propChild++) {
-			String key = unescapeSQLString(prop.getChild(propChild).getChild(0)
-					.getText());
+			String key = unescapeSQLString(prop.getChild(propChild).getChild(0).getText());
 			String value = null;
 			if (prop.getChild(propChild).getChild(1) != null) {
 				value = unescapeSQLString(prop.getChild(propChild).getChild(1).getText());
@@ -435,10 +620,9 @@ public class HiveParserBaseSemanticAnalyzer {
 			return;
 		}
 
-		Map<ASTNode, ExprNodeDesc> astExprNodeMap = new HashMap<ASTNode, ExprNodeDesc>();
+		Map<ASTNode, ExprNodeDesc> astExprNodeMap = new HashMap<>();
 		if (!getPartExprNodeDesc(astNode, conf, astExprNodeMap)) {
-			LOG.warn("Dynamic partitioning is used; only validating "
-					+ astExprNodeMap.size() + " columns");
+			LOG.warn("Dynamic partitioning is used; only validating " + astExprNodeMap.size() + " columns");
 		}
 
 		if (astExprNodeMap.isEmpty()) {
@@ -446,7 +630,7 @@ public class HiveParserBaseSemanticAnalyzer {
 		}
 
 		List<FieldSchema> parts = tbl.getPartitionKeys();
-		Map<String, String> partCols = new HashMap<String, String>(parts.size());
+		Map<String, String> partCols = new HashMap<>(parts.size());
 		for (FieldSchema col : parts) {
 			partCols.put(col.getName(), col.getType().toLowerCase());
 		}
@@ -749,5 +933,17 @@ public class HiveParserBaseSemanticAnalyzer {
 			this.colType = colType;
 		}
 
+	}
+
+	private static class PKInfo {
+		public String colName;
+		public String constraintName;
+		public boolean rely;
+
+		public PKInfo(String colName, String constraintName, boolean rely) {
+			this.colName = colName;
+			this.constraintName = constraintName;
+			this.rely = rely;
+		}
 	}
 }

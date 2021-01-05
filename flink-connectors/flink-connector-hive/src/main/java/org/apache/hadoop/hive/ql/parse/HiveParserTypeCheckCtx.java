@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.flink.table.planner.delegation.hive.HiveParserUnparseTranslator;
+
 import org.apache.calcite.rel.RelNode;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.slf4j.Logger;
@@ -58,7 +60,7 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 	/**
 	 * Receives translations which will need to be applied during unparse.
 	 */
-	private UnparseTranslator unparseTranslator;
+	private HiveParserUnparseTranslator unparseTranslator;
 
 	/**
 	 * Potential typecheck error reason.
@@ -168,14 +170,14 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 	/**
 	 * @param unparseTranslator the unparseTranslator to set
 	 */
-	public void setUnparseTranslator(UnparseTranslator unparseTranslator) {
+	public void setUnparseTranslator(HiveParserUnparseTranslator unparseTranslator) {
 		this.unparseTranslator = unparseTranslator;
 	}
 
 	/**
 	 * @return the unparseTranslator
 	 */
-	public UnparseTranslator getUnparseTranslator() {
+	public HiveParserUnparseTranslator getUnparseTranslator() {
 		return unparseTranslator;
 	}
 

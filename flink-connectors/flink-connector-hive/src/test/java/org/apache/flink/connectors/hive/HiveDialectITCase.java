@@ -155,7 +155,7 @@ public class HiveDialectITCase {
 		assertEquals("v1", hiveTable.getParameters().get("k1"));
 		assertFalse(hiveTable.getParameters().containsKey(SqlCreateHiveTable.TABLE_LOCATION_URI));
 
-		tableEnv.executeSql("create table tbl2 (s struct<ts:timestamp,bin:binary>) stored as orc");
+		tableEnv.executeSql("create table default.tbl2 (s struct<ts:timestamp,bin:binary>) stored as orc");
 		hiveTable = hiveCatalog.getHiveTable(new ObjectPath("default", "tbl2"));
 		assertEquals(TableType.MANAGED_TABLE.toString(), hiveTable.getTableType());
 		assertEquals(OrcSerde.class.getName(), hiveTable.getSd().getSerdeInfo().getSerializationLib());
@@ -211,10 +211,10 @@ public class HiveDialectITCase {
 		// non-partitioned dest table
 		tableEnv.executeSql("create table dest (x int)");
 		tableEnv.executeSql("insert into dest select x from src").await();
-		List<Row> results = queryResult(tableEnv.sqlQuery("select * from dest"));
+		List<Row> results = queryResult(tableEnv.sqlQuery("select * from dest order by x"));
 		assertEquals("[1, 2, 3]", results.toString());
 		tableEnv.executeSql("insert overwrite dest values (3),(4),(5)").await();
-		results = queryResult(tableEnv.sqlQuery("select * from dest"));
+		results = queryResult(tableEnv.sqlQuery("select * from dest order by x"));
 		assertEquals("[3, 4, 5]", results.toString());
 
 		// partitioned dest table

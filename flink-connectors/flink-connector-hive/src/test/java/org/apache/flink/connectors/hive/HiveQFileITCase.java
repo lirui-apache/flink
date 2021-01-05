@@ -74,13 +74,15 @@ public class HiveQFileITCase {
 	// map from conf name to its default value
 	private static final Map<String, String> ALLOWED_SETTINGS =
 			Stream.of(ConfVars.HIVE_QUOTEDID_SUPPORT, ConfVars.METASTORE_DISALLOW_INCOMPATIBLE_COL_TYPE_CHANGES,
-					ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS, ConfVars.HIVE_GROUPBY_POSITION_ALIAS, ConfVars.HIVE_ORDERBY_POSITION_ALIAS)
+					ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS)
 					.collect(Collectors.toMap(HiveConf.ConfVars::toString, HiveConf.ConfVars::getDefaultValue));
 	private static BufferedWriter fileWriter;
 
 	static {
 		ALLOWED_SETTINGS.put("parquet.column.index.access", "false");
 		ALLOWED_SETTINGS.put(ConfVars.HIVEMAPREDMODE.varname, "nonstrict");
+		ALLOWED_SETTINGS.put("hive.groupby.position.alias", "false");
+		ALLOWED_SETTINGS.put("hive.orderby.position.alias", "true");
 	}
 
 	private boolean verbose = false;

@@ -26,6 +26,7 @@ import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
 
 import org.antlr.runtime.CommonToken;
+import org.antlr.runtime.TokenRewriteStream;
 import org.antlr.runtime.tree.Tree;
 import org.antlr.runtime.tree.TreeVisitor;
 import org.antlr.runtime.tree.TreeVisitorAction;
@@ -58,6 +59,7 @@ import org.apache.calcite.util.Pair;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.QueryProperties;
@@ -68,6 +70,7 @@ import org.apache.hadoop.hive.ql.exec.FunctionTask;
 import org.apache.hadoop.hive.ql.exec.FunctionUtils;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserJoinCondTypeCheckProcFactory;
@@ -80,6 +83,7 @@ import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
 import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckCtx;
 import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory;
+import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -963,6 +967,101 @@ public class HiveParserUtils {
 			}
 		}
 		return res;
+	}
+
+	public static List<FieldSchema> convertRowSchemaToResultSetSchema(HiveParserRowResolver rr,
+			boolean useTabAliasIfAvailable) {
+		List<FieldSchema> fieldSchemas = new ArrayList<>();
+		String[] qualifiedColName;
+		String colName;
+
+		for (ColumnInfo colInfo : rr.getColumnInfos()) {
+			if (colInfo.isHiddenVirtualCol()) {
+				continue;
+			}
+
+			qualifiedColName = rr.reverseLookup(colInfo.getInternalName());
+			if (useTabAliasIfAvailable && qualifiedColName[0] != null && !qualifiedColName[0].isEmpty()) {
+				colName = qualifiedColName[0] + "." + qualifiedColName[1];
+			} else {
+				colName = qualifiedColName[1];
+			}
+			fieldSchemas.add(new FieldSchema(colName, colInfo.getType().getTypeName(), null));
+		}
+		return fieldSchemas;
+	}
+
+	public static void saveViewDefinition(List<FieldSchema> resultSchema, HiveParserCreateViewDesc desc,
+			TokenRewriteStream tokenRewriteStream, HiveParserUnparseTranslator unparseTranslator, HiveConf conf) throws SemanticException {
+		// Make a copy of the statement's result schema, since we may
+		// modify it below as part of imposing view column names.
+		List<FieldSchema> derivedSchema = new ArrayList<>(resultSchema);
+		ParseUtils.validateColumnNameUniqueness(derivedSchema);
+
+		List<FieldSchema> imposedSchema = desc.getSchema();
+		if (imposedSchema != null) {
+			int explicitColCount = imposedSchema.size();
+			int derivedColCount = derivedSchema.size();
+			if (explicitColCount != derivedColCount) {
+				throw new SemanticException(generateErrorMessage(
+						desc.getQuery(),
+						ErrorMsg.VIEW_COL_MISMATCH.getMsg()));
+			}
+		}
+
+		// Preserve the original view definition as specified by the user.
+		if (desc.getOriginalText() == null) {
+			String originalText = tokenRewriteStream.toString(
+					desc.getQuery().getTokenStartIndex(), desc.getQuery().getTokenStopIndex());
+			desc.setOriginalText(originalText);
+		}
+
+		// Now expand the view definition with extras such as explicit column
+		// references; this expanded form is what we'll re-parse when the view is
+		// referenced later.
+		unparseTranslator.applyTranslations(tokenRewriteStream);
+		String expandedText = tokenRewriteStream.toString(
+				desc.getQuery().getTokenStartIndex(), desc.getQuery().getTokenStopIndex());
+
+		if (imposedSchema != null) {
+			// Merge the names from the imposed schema into the types
+			// from the derived schema.
+			StringBuilder sb = new StringBuilder();
+			sb.append("SELECT ");
+			int n = derivedSchema.size();
+			for (int i = 0; i < n; ++i) {
+				if (i > 0) {
+					sb.append(", ");
+				}
+				FieldSchema fieldSchema = derivedSchema.get(i);
+				// Modify a copy, not the original
+				fieldSchema = new FieldSchema(fieldSchema);
+				// TODO: there's a potential problem here if some table uses external schema like Avro,
+				//       with a very large type name. It seems like the view does not derive the SerDe from
+				//       the table, so it won't be able to just get the type from the deserializer like the
+				//       table does; we won't be able to properly store the type in the RDBMS metastore.
+				//       Not sure if these large cols could be in resultSchema. Ignore this for now 0_o
+				derivedSchema.set(i, fieldSchema);
+				sb.append(HiveUtils.unparseIdentifier(fieldSchema.getName(), conf));
+				sb.append(" AS ");
+				String imposedName = imposedSchema.get(i).getName();
+				sb.append(HiveUtils.unparseIdentifier(imposedName, conf));
+				fieldSchema.setName(imposedName);
+				// We don't currently allow imposition of a type
+				fieldSchema.setComment(imposedSchema.get(i).getComment());
+			}
+			sb.append(" FROM (");
+			sb.append(expandedText);
+			sb.append(") ");
+			sb.append(HiveUtils.unparseIdentifier(desc.getCompoundName(), conf));
+			expandedText = sb.toString();
+		}
+
+		desc.setSchema(derivedSchema);
+		if (!desc.isMaterialized()) {
+			// materialized views don't store the expanded text as they won't be rewritten at query time.
+			desc.setExpandedText(expandedText);
+		}
 	}
 
 	/**

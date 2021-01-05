@@ -103,7 +103,8 @@ public class HiveCompatibleITCase {
 			"select col1 from foo lateral view explode(array(x,y)) tbl1 as col1",
 			"SELECT col1, col2 FROM nested LATERAL VIEW explode(s2.f8.f10) tbl1 AS col1 LATERAL VIEW explode(s3.f12) tbl2 AS col2",
 			"select * from foo where cast(x as double)<=0 order by cast(x as double)",
-			"select (case when i>1 then 100 else split(s,',')[0] end) as a from bar"
+			"select (case when i>1 then 100 else split(s,',')[0] end) as a from bar",
+			"select if(i>1,s,null) from bar"
 	};
 
 	private static final String[] UPDATES = new String[]{

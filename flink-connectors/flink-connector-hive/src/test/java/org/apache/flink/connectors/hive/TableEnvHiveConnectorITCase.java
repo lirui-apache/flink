@@ -276,8 +276,8 @@ public class TableEnvHiveConnectorITCase {
 			String location = hiveTable.getSd().getLocation();
 			tableEnv.executeSql(String.format("create table db1.t2 (y int,x int) stored as parquet location '%s'", location));
 			tableEnv.getConfig().getConfiguration().setBoolean(HiveOptions.TABLE_EXEC_HIVE_FALLBACK_MAPRED_READER, true);
-			assertEquals("[1, 2]", CollectionUtil.iteratorToList(tableEnv.sqlQuery("select x from db1.t1").execute().collect()).toString());
-			assertEquals("[1, 2]", CollectionUtil.iteratorToList(tableEnv.sqlQuery("select x from db1.t2").execute().collect()).toString());
+			assertEquals("[1, 2]", CollectionUtil.iteratorToList(tableEnv.sqlQuery("select x from db1.t1 order by x").execute().collect()).toString());
+			assertEquals("[1, 2]", CollectionUtil.iteratorToList(tableEnv.sqlQuery("select x from db1.t2 order by x").execute().collect()).toString());
 		} finally {
 			tableEnv.executeSql("drop database db1 cascade");
 		}

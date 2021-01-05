@@ -31,6 +31,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
@@ -70,7 +71,13 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseCompare;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFCase;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFIn;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFTimestamp;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToBinary;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToChar;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToDate;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToDecimal;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToUnixTimeStamp;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFToVarchar;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFUnixTimeStamp;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFWhen;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
@@ -106,6 +113,7 @@ public class HiveParserRexNodeConverter {
 	private final RelOptCluster cluster;
 	private final List<InputCtx> inputCtxs;
 	private final boolean flattenExpr;
+	private final ConvertSqlFunctionCopier funcConverter;
 
 	//outerRR belongs to outer query and is required to resolve correlated references
 	private final HiveParserRowResolver outerRR;
@@ -113,37 +121,42 @@ public class HiveParserRexNodeConverter {
 	private int correlatedId;
 
 	//subqueries will need outer query's row resolver
-	public HiveParserRexNodeConverter(RelOptCluster cluster, RelDataType inpDataType,
-			Map<String, Integer> outerNameToPos, Map<String, Integer> nameToPos, HiveParserRowResolver hiveRR,
-			HiveParserRowResolver outerRR, int offset, boolean flattenExpr, int correlatedId) {
+	public HiveParserRexNodeConverter(RelOptCluster cluster, RelDataType inpDataType, Map<String, Integer> outerNameToPos,
+			Map<String, Integer> nameToPos, HiveParserRowResolver hiveRR, HiveParserRowResolver outerRR, int offset,
+			boolean flattenExpr, int correlatedId, ConvertSqlFunctionCopier funcConverter) {
 		this.cluster = cluster;
 		this.inputCtxs = Collections.singletonList(new InputCtx(inpDataType, nameToPos, hiveRR, offset));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = outerRR;
 		this.outerNameToPos = outerNameToPos;
 		this.correlatedId = correlatedId;
+		this.funcConverter = funcConverter;
 	}
 
 	public HiveParserRexNodeConverter(RelOptCluster cluster, RelDataType inpDataType,
-			Map<String, Integer> nameToPosMap, int offset, boolean flattenExpr) {
+			Map<String, Integer> nameToPosMap, int offset, boolean flattenExpr, ConvertSqlFunctionCopier funcConverter) {
 		this.cluster = cluster;
 		this.inputCtxs = Collections.singletonList(new InputCtx(inpDataType, nameToPosMap, null, offset));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = null;
 		this.outerNameToPos = null;
+		this.funcConverter = funcConverter;
 	}
 
-	private HiveParserRexNodeConverter(RelOptCluster cluster, List<InputCtx> inpCtxLst, boolean flattenExpr) {
+	private HiveParserRexNodeConverter(RelOptCluster cluster, List<InputCtx> inpCtxLst, boolean flattenExpr,
+			ConvertSqlFunctionCopier funcConverter) {
 		this.cluster = cluster;
 		this.inputCtxs = Collections.unmodifiableList(new ArrayList<>(inpCtxLst));
 		this.flattenExpr = flattenExpr;
 		this.outerRR = null;
 		this.outerNameToPos = null;
+		this.funcConverter = funcConverter;
 	}
 
 	public static RexNode convert(RelOptCluster cluster, ExprNodeDesc joinCondnExprNode,
 			List<RelNode> inputRels, LinkedHashMap<RelNode, HiveParserRowResolver> relToHiveRR,
-			Map<RelNode, Map<String, Integer>> relToHiveColNameCalcitePosMap, boolean flattenExpr)
+			Map<RelNode, Map<String, Integer>> relToHiveColNameCalcitePosMap, boolean flattenExpr,
+			ConvertSqlFunctionCopier funcConverter)
 			throws SemanticException {
 		List<InputCtx> inputCtxLst = new ArrayList<>();
 
@@ -153,7 +166,7 @@ public class HiveParserRexNodeConverter {
 			offSet += r.getRowType().getFieldCount();
 		}
 
-		return (new HiveParserRexNodeConverter(cluster, inputCtxLst, flattenExpr)).convert(joinCondnExprNode);
+		return (new HiveParserRexNodeConverter(cluster, inputCtxLst, flattenExpr, funcConverter)).convert(joinCondnExprNode);
 	}
 
 	public RexNode convert(ExprNodeDesc expr) throws SemanticException {
@@ -419,29 +432,27 @@ public class HiveParserRexNodeConverter {
 			childRexNodeLst.add(tmpRN);
 		}
 
-		// See if this is an explicit cast.
-		RexNode expr = null;
-		RelDataType retType = null;
-		expr = handleExplicitCast(func, childRexNodeLst);
+		// process the function
+		RelDataType retType = HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory());
+		SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteOperator(func.getFuncText(),
+				func.getGenericUDF(), argTypes, retType);
+		if (calciteOp.getKind() == SqlKind.CASE) {
+			// If it is a case operator, we need to rewrite it
+			childRexNodeLst = rewriteCaseChildren(func, childRexNodeLst);
+		} else if (HiveParserExtractDate.ALL_FUNCTIONS.contains(calciteOp)) {
+			// If it is a extract operator, we need to rewrite it
+			childRexNodeLst = rewriteExtractDateChildren(calciteOp, childRexNodeLst);
+		} else if (HiveParserFloorDate.ALL_FUNCTIONS.contains(calciteOp)) {
+			// If it is a floor <date> operator, we need to rewrite it
+			childRexNodeLst = rewriteFloorDateChildren(calciteOp, childRexNodeLst);
+		}
+		RexNode expr = cluster.getRexBuilder().makeCall(calciteOp, childRexNodeLst);
 
-		if (expr == null) {
-			// This is not a cast; process the function.
-			retType = HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory());
-			SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteOperator(func.getFuncText(),
-					func.getGenericUDF(), argTypes, retType);
-			if (calciteOp.getKind() == SqlKind.CASE) {
-				// If it is a case operator, we need to rewrite it
-				childRexNodeLst = rewriteCaseChildren(func, childRexNodeLst);
-			} else if (HiveParserExtractDate.ALL_FUNCTIONS.contains(calciteOp)) {
-				// If it is a extract operator, we need to rewrite it
-				childRexNodeLst = rewriteExtractDateChildren(calciteOp, childRexNodeLst);
-			} else if (HiveParserFloorDate.ALL_FUNCTIONS.contains(calciteOp)) {
-				// If it is a floor <date> operator, we need to rewrite it
-				childRexNodeLst = rewriteFloorDateChildren(calciteOp, childRexNodeLst);
-			}
-			expr = cluster.getRexBuilder().makeCall(calciteOp, childRexNodeLst);
-		} else {
-			retType = expr.getType();
+		// check whether we need a calcite cast
+		RexNode cast = handleExplicitCast(func, childRexNodeLst, ((RexCall) expr).getOperator());
+		if (cast != null) {
+			expr = cast;
+			retType = cast.getType();
 		}
 
 		// TODO: Cast Function in Calcite have a bug where it infer type on cast throws
@@ -608,32 +619,25 @@ public class HiveParserRexNodeConverter {
 		return castExpr;
 	}
 
-	private RexNode handleExplicitCast(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst)
+	private RexNode handleExplicitCast(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst, SqlOperator operator)
 			throws CalciteSemanticException {
-		RexNode castExpr = null;
-
-		if (childRexNodeLst != null && childRexNodeLst.size() == 1) {
-			GenericUDF udf = func.getGenericUDF();
+		GenericUDF udf = func.getGenericUDF();
+		if (isExplicitCast(udf) && childRexNodeLst != null && childRexNodeLst.size() == 1) {
 			// we cannot handle SettableUDF at the moment so we call calcite to do the cast in that case
 			// otherwise we use hive functions to achieve better compatibility
-			if (udf instanceof SettableUDF) {
-				castExpr = cluster.getRexBuilder().makeAbstractCast(
+			if (udf instanceof SettableUDF || !funcConverter.hasOverloadedOp(operator, SqlFunctionCategory.USER_DEFINED_FUNCTION)) {
+				return cluster.getRexBuilder().makeAbstractCast(
 						HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory()),
 						childRexNodeLst.get(0));
 			}
-//			if ((udf instanceof GenericUDFToChar) || (udf instanceof GenericUDFToVarchar)
-//					|| (udf instanceof GenericUDFToDecimal) || (udf instanceof GenericUDFToDate)
-//					// Calcite can not specify the scale for timestamp. As a result, all
-//					// the millisecond part will be lost
-//					|| (udf instanceof GenericUDFTimestamp)
-//					|| (udf instanceof GenericUDFToBinary) || castExprUsingUDFBridge(udf)) {
-//				castExpr = cluster.getRexBuilder().makeAbstractCast(
-//						HiveParserTypeConverter.convert(func.getTypeInfo(), cluster.getTypeFactory()),
-//						childRexNodeLst.get(0));
-//			}
 		}
+		return null;
+	}
 
-		return castExpr;
+	private boolean isExplicitCast(GenericUDF udf) {
+		return udf instanceof GenericUDFToChar || udf instanceof GenericUDFToVarchar || udf instanceof GenericUDFToDecimal
+				|| udf instanceof GenericUDFToDate || udf instanceof GenericUDFTimestamp ||
+				udf instanceof GenericUDFToBinary || castExprUsingUDFBridge(udf);
 	}
 
 	private InputCtx getInputCtx(ExprNodeColumnDesc col) throws SemanticException {

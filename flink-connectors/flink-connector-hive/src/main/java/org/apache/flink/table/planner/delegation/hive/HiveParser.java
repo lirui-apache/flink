@@ -59,7 +59,9 @@ import org.apache.calcite.rel.logical.LogicalSort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -83,6 +85,7 @@ import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
 import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
+import org.apache.hadoop.hive.ql.parse.HiveParserDDLSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveParserQB;
 import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
@@ -98,6 +101,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -142,7 +146,8 @@ public class HiveParser extends ParserImpl {
 				HiveASTParser.TOK_SHOW_ROLE_PRINCIPALS, HiveASTParser.TOK_ALTERDATABASE_PROPERTIES, HiveASTParser.TOK_ALTERDATABASE_OWNER,
 				HiveASTParser.TOK_TRUNCATETABLE, HiveASTParser.TOK_SHOW_SET_ROLE, HiveASTParser.TOK_CACHE_METADATA,
 				HiveASTParser.TOK_CREATEMACRO, HiveASTParser.TOK_DROPMACRO, HiveASTParser.TOK_CREATETABLE,
-				HiveASTParser.TOK_CREATEFUNCTION, HiveASTParser.TOK_DROPFUNCTION, HiveASTParser.TOK_RELOADFUNCTION));
+				HiveASTParser.TOK_CREATEFUNCTION, HiveASTParser.TOK_DROPFUNCTION, HiveASTParser.TOK_RELOADFUNCTION,
+				HiveASTParser.TOK_CREATEVIEW));
 	}
 
 	private final PlannerContext plannerContext;
@@ -187,7 +192,7 @@ public class HiveParser extends ParserImpl {
 			SessionState.start(sessionState);
 			// We override Hive's grouping function. Refer to the implementation for more details.
 			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
-			return processCmd(statement, hiveConf, hiveShim);
+			return processCmd(statement, hiveConf, hiveShim, (HiveCatalog) currentCatalog);
 		} catch (LockException e) {
 			throw new FlinkHiveException("Failed to init SessionState", e);
 		} finally {
@@ -195,7 +200,7 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private List<Operation> processCmd(String cmd, HiveConf hiveConf, HiveShim hiveShim) {
+	private List<Operation> processCmd(String cmd, HiveConf hiveConf, HiveShim hiveShim, HiveCatalog hiveCatalog) {
 		try {
 			final HiveParserContext context = new HiveParserContext(hiveConf);
 			// parse statement to get AST
@@ -203,12 +208,24 @@ public class HiveParser extends ParserImpl {
 			// generate Calcite plan
 			Operation operation;
 			if (DDL_NODES.contains(node.getType())) {
-				return super.parse(cmd);
+				HiveParserQueryState queryState = new HiveParserQueryState(hiveConf);
+				HiveParserDDLSemanticAnalyzer ddlAnalyzer = new HiveParserDDLSemanticAnalyzer(
+						queryState, context, hiveCatalog, getCatalogManager().getCurrentDatabase());
+				Serializable work = ddlAnalyzer.analyzeInternal(node);
+				if (work == null) {
+					return super.parse(cmd);
+				} else {
+					if (work instanceof HiveParserCreateViewDesc) {
+						// analyze and expand the view query
+						analyzeCreateView((HiveParserCreateViewDesc) work, context, queryState, hiveShim);
+					}
+					return Collections.singletonList(new DDLOperationConverter(getCatalogManager()).convert(work));
+				}
 			} else {
 				final boolean explain = node.getType() == HiveASTParser.TOK_EXPLAIN;
 				// first child is the underlying explicandum
 				ASTNode input = explain ? (ASTNode) node.getChild(0) : node;
-				operation = analyzeQuery(context, hiveConf, hiveShim, cmd, input);
+				operation = analyzeQuery(context, hiveConf, hiveShim, input);
 				if (operation == null) {
 					return Collections.emptyList();
 				}
@@ -230,7 +247,28 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private Operation analyzeQuery(HiveParserContext context, HiveConf hiveConf, HiveShim hiveShim, String cmd, ASTNode node)
+	private HiveParserCalcitePlanner createCalcitePlanner(HiveParserContext context,
+			HiveParserQueryState queryState, HiveShim hiveShim) throws SemanticException {
+		HiveParserCalcitePlanner calciteAnalyzer = new HiveParserCalcitePlanner(
+				queryState,
+				plannerContext,
+				catalogReader,
+				frameworkConfig,
+				getCatalogManager(),
+				hiveShim);
+		calciteAnalyzer.initCtx(context);
+		calciteAnalyzer.init(false);
+		return calciteAnalyzer;
+	}
+
+	private void analyzeCreateView(HiveParserCreateViewDesc desc, HiveParserContext context,
+			HiveParserQueryState queryState, HiveShim hiveShim) throws SemanticException {
+		HiveParserCalcitePlanner calciteAnalyzer = createCalcitePlanner(context, queryState, hiveShim);
+		calciteAnalyzer.setCreateViewDesc(desc);
+		calciteAnalyzer.genLogicalPlan(desc.getQuery());
+	}
+
+	private Operation analyzeQuery(HiveParserContext context, HiveConf hiveConf, HiveShim hiveShim, ASTNode node)
 			throws SemanticException {
 		HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(
 				new HiveParserQueryState(hiveConf),
@@ -520,11 +558,17 @@ public class HiveParser extends ParserImpl {
 			// Therefore just use calcite cast for these types.
 			return rexBuilder.makeCast(targetCalType, srcRex);
 		} else {
-			return rexBuilder.makeCall(
+			RexCall cast = (RexCall) rexBuilder.makeCall(
 					HiveParserSqlFunctionConverter.getCalciteOperator(
 							udfName, functionInfo.getGenericUDF(), Collections.singletonList(srcRex.getType()), targetCalType),
 					srcRex
-			).accept(funcConverter);
+			);
+			if (!funcConverter.hasOverloadedOp(cast.getOperator(), SqlFunctionCategory.USER_DEFINED_FUNCTION)) {
+				// we can't convert the cast operator, it can happen when hive module is not loaded, in which case fall
+				// back to calcite cast
+				return rexBuilder.makeCast(targetCalType, srcRex);
+			}
+			return cast.accept(funcConverter);
 		}
 	}
 

@@ -27,6 +27,7 @@ import org.apache.flink.table.planner.delegation.hive.ConvertSqlFunctionCopier;
 import org.apache.flink.table.planner.delegation.hive.ConvertTableFunctionCopier;
 import org.apache.flink.table.planner.delegation.hive.HiveParserASTBuilder;
 import org.apache.flink.table.planner.delegation.hive.HiveParserConstants;
+import org.apache.flink.table.planner.delegation.hive.HiveParserCreateViewDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserRexNodeConverter;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.flink.table.planner.plan.FlinkCalciteCatalogReader;
@@ -195,6 +196,8 @@ public class HiveParserCalcitePlanner {
 	private final PlannerContext plannerContext;
 	private final FrameworkConfig frameworkConfig;
 
+	private HiveParserCreateViewDesc createViewDesc;
+
 	public HiveParserCalcitePlanner(
 			HiveParserQueryState queryState,
 			PlannerContext plannerContext,
@@ -208,6 +211,13 @@ public class HiveParserCalcitePlanner {
 		this.plannerContext = plannerContext;
 		this.frameworkConfig = frameworkConfig;
 		this.hiveAnalyzer = new HiveParserSemanticAnalyzer(queryState, hiveShim);
+	}
+
+	public void setCreateViewDesc(HiveParserCreateViewDesc createViewDesc) {
+		if (createViewDesc != null) {
+			hiveAnalyzer.unparseTranslator.enable();
+		}
+		this.createViewDesc = createViewDesc;
 	}
 
 	public void initCtx(HiveParserContext context) {
@@ -334,7 +344,13 @@ public class HiveParserCalcitePlanner {
 
 			// 1. Gen Calcite Plan
 			try {
-				return genLogicalPlan(getQB(), true, null, null);
+				RelNode plan = genLogicalPlan(getQB(), true, null, null);
+				if (createViewDesc != null) {
+					hiveAnalyzer.resultSchema = HiveParserUtils.convertRowSchemaToResultSetSchema(relToRowResolver.get(plan), false);
+					HiveParserUtils.saveViewDefinition(hiveAnalyzer.resultSchema, createViewDesc, hiveAnalyzer.ctx.getTokenRewriteStream(),
+							hiveAnalyzer.unparseTranslator, hiveAnalyzer.getConf());
+				}
+				return plan;
 			} catch (SemanticException e) {
 				throw new RuntimeException(e);
 			}
@@ -505,7 +521,7 @@ public class HiveParserCalcitePlanner {
 				inputRels.add(leftRel);
 				inputRels.add(rightRel);
 				joinCondRex = HiveParserRexNodeConverter.convert(cluster, joinCondExprNode, inputRels,
-						relToRowResolver, relToHiveColNameCalcitePosMap, false).accept(funcConverter);
+						relToRowResolver, relToHiveColNameCalcitePosMap, false, funcConverter).accept(funcConverter);
 			} else {
 				joinCondRex = cluster.getRexBuilder().makeLiteral(true);
 			}
@@ -887,7 +903,7 @@ public class HiveParserCalcitePlanner {
 			Map<String, Integer> hiveColNameToCalcitePos = relToHiveColNameCalcitePosMap.get(srcRel);
 			RexNode convertedFilterExpr = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
 					outerNameToPosMap, hiveColNameToCalcitePos, relToRowResolver.get(srcRel), outerRR,
-					0, true, subqueryId).convert(filterCond);
+					0, true, subqueryId, funcConverter).convert(filterCond);
 			RexNode factoredFilterExpr = RexUtil.pullFactors(cluster.getRexBuilder(), convertedFilterExpr).accept(funcConverter);
 			RelNode filterRel = LogicalFilter.create(srcRel, factoredFilterExpr);
 //			RelNode filterRel = new HiveFilter(cluster, cluster.traitSetOf(HiveRelNode.CONVENTION),
@@ -1025,7 +1041,7 @@ public class HiveParserCalcitePlanner {
 				Map<String, Integer> hiveColNameToCalcitePos = relToHiveColNameCalcitePosMap.get(srcRel);
 				RexNode convertedFilterLHS = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
 						outerNameToPosMap, hiveColNameToCalcitePos, relToRowResolver.get(srcRel),
-						outerRR, 0, true, subqueryId).convert(subQueryExpr).accept(funcConverter);
+						outerRR, 0, true, subqueryId, funcConverter).convert(subQueryExpr).accept(funcConverter);
 
 				RelNode filterRel = LogicalFilter.create(srcRel, convertedFilterLHS);
 //				RelNode filterRel = new HiveFilter(cluster, cluster.traitSetOf(HiveRelNode.CONVENTION),
@@ -1111,7 +1127,8 @@ public class HiveParserCalcitePlanner {
 		private RelNode genGBRelNode(List<ExprNodeDesc> gbExprs, List<AggInfo> aggInfos,
 				List<Integer> groupSets, RelNode srcRel) throws SemanticException {
 			Map<String, Integer> colNameToPos = relToHiveColNameCalcitePosMap.get(srcRel);
-			HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(), colNameToPos, 0, false);
+			HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(
+					cluster, srcRel.getRowType(), colNameToPos, 0, false, funcConverter);
 
 			final boolean hasGroupSets = groupSets != null && !groupSets.isEmpty();
 			final List<RexNode> gbInputRexNodes = new ArrayList<>();
@@ -1526,7 +1543,7 @@ public class HiveParserCalcitePlanner {
 
 				HiveParserRowResolver inputRR = relToRowResolver.get(srcRel);
 				HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
-						relToHiveColNameCalcitePosMap.get(srcRel), 0, false);
+						relToHiveColNameCalcitePosMap.get(srcRel), 0, false, funcConverter);
 				int numSrcFields = srcRel.getRowType().getFieldCount();
 
 				// handle cluster by
@@ -1718,7 +1735,7 @@ public class HiveParserCalcitePlanner {
 				HiveParserRowResolver outputRR = new HiveParserRowResolver();
 
 				HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
-						relToHiveColNameCalcitePosMap.get(srcRel), 0, false);
+						relToHiveColNameCalcitePosMap.get(srcRel), 0, false, funcConverter);
 				int numSrcFields = srcRel.getRowType().getFieldCount();
 
 				for (Node node : obASTExprLst) {
@@ -1972,7 +1989,8 @@ public class HiveParserCalcitePlanner {
 
 				// 4. Convert Agg Fn args to Calcite
 				Map<String, Integer> posMap = relToHiveColNameCalcitePosMap.get(srcRel);
-				HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(), posMap, 0, false);
+				HiveParserRexNodeConverter converter = new HiveParserRexNodeConverter(
+						cluster, srcRel.getRowType(), posMap, 0, false, funcConverter);
 				com.google.common.collect.ImmutableList.Builder<RexNode> calciteAggFnArgsBldr =
 						com.google.common.collect.ImmutableList.builder();
 				com.google.common.collect.ImmutableList.Builder<RelDataType> calciteAggFnArgsTypeBldr =
@@ -2379,7 +2397,7 @@ public class HiveParserCalcitePlanner {
 
 			HiveParserRexNodeConverter rexNodeConverter = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
 					outerNameToPos, buildHiveColNameToInputPosMap(exprNodeDescs, inputRR), relToRowResolver.get(srcRel),
-					outerRR, 0, false, subqueryId);
+					outerRR, 0, false, subqueryId, funcConverter);
 			for (ExprNodeDesc colExpr : exprNodeDescs) {
 				RexNode calciteCol = rexNodeConverter.convert(colExpr);
 				calciteCol = convertNullLiteral(calciteCol).accept(funcConverter);
@@ -2809,7 +2827,7 @@ public class HiveParserCalcitePlanner {
 				HiveParserRowResolver inputRR = relToRowResolver.get(res);
 				HiveParserUtils.LateralViewInfo info = HiveParserUtils.extractLateralViewInfo(lateralView, inputRR, hiveAnalyzer);
 				HiveParserRexNodeConverter rexNodeConverter = new HiveParserRexNodeConverter(cluster, res.getRowType(),
-						relToHiveColNameCalcitePosMap.get(res), 0, false);
+						relToHiveColNameCalcitePosMap.get(res), 0, false, funcConverter);
 				List<RexNode> operands = new ArrayList<>(info.getOperands().size());
 				for (ExprNodeDesc exprDesc : info.getOperands()) {
 					operands.add(rexNodeConverter.convert(exprDesc).accept(funcConverter));

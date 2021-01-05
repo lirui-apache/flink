@@ -25,13 +25,37 @@ import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.une
 /**
  * Counterpart of hive's RowFormatParams.
  */
-class HiveParserRowFormatParams {
+public class HiveParserRowFormatParams {
 	String fieldDelim = null;
 	String fieldEscape = null;
 	String collItemDelim = null;
 	String mapKeyDelim = null;
 	String lineDelim = null;
 	String nullFormat = null;
+
+	public String getFieldDelim() {
+		return fieldDelim;
+	}
+
+	public String getFieldEscape() {
+		return fieldEscape;
+	}
+
+	public String getCollItemDelim() {
+		return collItemDelim;
+	}
+
+	public String getMapKeyDelim() {
+		return mapKeyDelim;
+	}
+
+	public String getLineDelim() {
+		return lineDelim;
+	}
+
+	public String getNullFormat() {
+		return nullFormat;
+	}
 
 	protected void analyzeRowFormat(ASTNode child) throws SemanticException {
 		child = (ASTNode) child.getChild(0);

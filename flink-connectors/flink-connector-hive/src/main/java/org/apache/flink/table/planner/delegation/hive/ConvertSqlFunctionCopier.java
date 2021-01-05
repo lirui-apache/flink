@@ -149,6 +149,10 @@ public class ConvertSqlFunctionCopier extends AbstractRexCopier {
 		return operator;
 	}
 
+	public boolean hasOverloadedOp(SqlOperator operator, SqlFunctionCategory functionType) {
+		return operator != convertOperator(operator, functionType);
+	}
+
 	SqlOperator convertOperator(SqlOperator operator, SqlFunctionCategory functionType) {
 		List<SqlOperator> overloads = new ArrayList<>();
 		opTable.lookupOperatorOverloads(operator.getNameAsId(), functionType, SqlSyntax.FUNCTION, overloads, nameMatcher);

@@ -423,9 +423,9 @@ public class HiveRunnerITCase {
 			hiveShell.execute("create view db1.v3 as select k.key,k.name,count(*) from db1.src s join db1.keys k on s.key=k.key group by k.key,k.name order by k.key");
 			List<Row> results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select count(v) from db1.v1").execute().collect());
 			assertEquals("[2]", results.toString());
-			results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from db1.v2").execute().collect());
+			results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from db1.v2 order by key").execute().collect());
 			assertEquals("[1,3, 3,2]", results.toString());
-			results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from db1.v3").execute().collect());
+			results = CollectionUtil.iteratorToList(tableEnv.sqlQuery("select * from db1.v3 order by key").execute().collect());
 			assertEquals("[1,key1,3, 2,key2,1, 3,key3,2]", results.toString());
 		} finally {
 			tableEnv.executeSql("drop database db1 cascade");
