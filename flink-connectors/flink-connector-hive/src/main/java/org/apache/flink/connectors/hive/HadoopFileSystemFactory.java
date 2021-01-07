@@ -22,11 +22,15 @@ import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.runtime.fs.hdfs.HadoopFileSystem;
 import org.apache.flink.table.filesystem.FileSystemFactory;
 
+import org.apache.flink.util.StringUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.security.UserGroupInformation;
 
 import java.io.IOException;
 import java.net.URI;
+import java.security.PrivilegedExceptionAction;
 
 /** Hive {@link FileSystemFactory}, hive need use job conf to create file system. */
 public class HadoopFileSystemFactory implements FileSystemFactory {
@@ -41,6 +45,27 @@ public class HadoopFileSystemFactory implements FileSystemFactory {
 
     @Override
     public FileSystem create(URI uri) throws IOException {
-        return new HadoopFileSystem(new Path(uri).getFileSystem(jobConfWrapper.conf()));
+        UserGroupInformation ugi = getUGI(jobConfWrapper.conf());
+        try {
+            return ugi.doAs(
+                    (PrivilegedExceptionAction<HadoopFileSystem>)
+                            () ->
+                                    new HadoopFileSystem(
+                                            new Path(uri).getFileSystem(jobConfWrapper.conf())));
+        } catch (InterruptedException e) {
+            throw new FlinkHiveException(e);
+        }
+    }
+
+    public static UserGroupInformation getUGI(Configuration conf) {
+        String userName = conf.get(HiveOptions.HIVE_USER_NAME.key());
+        try {
+            return StringUtils.isNullOrWhitespaceOnly(userName)
+                    ? UserGroupInformation.getCurrentUser()
+                    : UserGroupInformation.createProxyUser(
+                            userName, UserGroupInformation.getCurrentUser());
+        } catch (IOException e) {
+            throw new FlinkHiveException("Failed to create UGI", e);
+        }
     }
 }

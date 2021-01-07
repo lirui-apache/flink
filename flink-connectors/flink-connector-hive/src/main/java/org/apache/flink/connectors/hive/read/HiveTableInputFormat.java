@@ -24,6 +24,7 @@ import org.apache.flink.api.common.io.LocatableInputSplitAssigner;
 import org.apache.flink.api.common.io.statistics.BaseStatistics;
 import org.apache.flink.api.java.hadoop.common.HadoopInputFormatCommonBase;
 import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.connectors.hive.HadoopFileSystemFactory;
 import org.apache.flink.connectors.hive.HiveTablePartition;
 import org.apache.flink.core.io.InputSplitAssigner;
 import org.apache.flink.table.catalog.CatalogTable;
@@ -50,6 +51,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -101,6 +103,8 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<RowData, H
 
     @VisibleForTesting protected transient SplitReader reader;
 
+    private transient UserGroupInformation ugi;
+
     public HiveTableInputFormat(
             JobConf jobConf,
             CatalogTable catalogTable,
@@ -122,6 +126,7 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<RowData, H
         selectedFields =
                 projectedFields != null ? projectedFields : IntStream.range(0, rowArity).toArray();
         this.useMapRedReader = useMapRedReader;
+        this.ugi = HadoopFileSystemFactory.getUGI(this.jobConf);
     }
 
     public JobConf getJobConf() {
@@ -134,25 +139,42 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<RowData, H
     @Override
     public void open(HiveTableInputSplit split) throws IOException {
         HiveTablePartition partition = split.getHiveTablePartition();
-        if (!useMapRedReader && useOrcVectorizedRead(partition)) {
+        try {
             this.reader =
-                    new HiveVectorizedOrcSplitReader(
-                            hiveVersion, jobConf, fieldNames, fieldTypes, selectedFields, split);
-        } else if (!useMapRedReader && useParquetVectorizedRead(partition)) {
-            this.reader =
-                    new HiveVectorizedParquetSplitReader(
-                            hiveVersion, jobConf, fieldNames, fieldTypes, selectedFields, split);
-        } else {
-            JobConf clonedConf = new JobConf(jobConf);
-            addSchemaToConf(clonedConf);
-            this.reader =
-                    new HiveMapredSplitReader(
-                            clonedConf,
-                            partitionKeys,
-                            fieldTypes,
-                            selectedFields,
-                            split,
-                            HiveShimLoader.loadHiveShim(hiveVersion));
+                    ugi.doAs(
+                            (PrivilegedExceptionAction<SplitReader>)
+                                    () -> {
+                                        if (!useMapRedReader && useOrcVectorizedRead(partition)) {
+                                            return new HiveVectorizedOrcSplitReader(
+                                                    hiveVersion,
+                                                    jobConf,
+                                                    fieldNames,
+                                                    fieldTypes,
+                                                    selectedFields,
+                                                    split);
+                                        } else if (!useMapRedReader
+                                                && useParquetVectorizedRead(partition)) {
+                                            return new HiveVectorizedParquetSplitReader(
+                                                    hiveVersion,
+                                                    jobConf,
+                                                    fieldNames,
+                                                    fieldTypes,
+                                                    selectedFields,
+                                                    split);
+                                        } else {
+                                            JobConf clonedConf = new JobConf(jobConf);
+                                            addSchemaToConf(clonedConf);
+                                            return new HiveMapredSplitReader(
+                                                    clonedConf,
+                                                    partitionKeys,
+                                                    fieldTypes,
+                                                    selectedFields,
+                                                    split,
+                                                    HiveShimLoader.loadHiveShim(hiveVersion));
+                                        }
+                                    });
+        } catch (InterruptedException e) {
+            throw new IOException(e);
         }
         currentReadCount = 0L;
     }
@@ -308,7 +330,13 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<RowData, H
 
     @Override
     public HiveTableInputSplit[] createInputSplits(int minNumSplits) throws IOException {
-        return createInputSplits(minNumSplits, partitions, jobConf);
+        try {
+            return ugi.doAs(
+                    (PrivilegedExceptionAction<HiveTableInputSplit[]>)
+                            () -> createInputSplits(minNumSplits, partitions, jobConf));
+        } catch (InterruptedException e) {
+            throw new IOException(e);
+        }
     }
 
     public static HiveTableInputSplit[] createInputSplits(
@@ -401,5 +429,6 @@ public class HiveTableInputFormat extends HadoopInputFormatCommonBase<RowData, H
         limit = (long) in.readObject();
         hiveVersion = (String) in.readObject();
         useMapRedReader = in.readBoolean();
+        ugi = HadoopFileSystemFactory.getUGI(jobConf);
     }
 }

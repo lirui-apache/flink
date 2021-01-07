@@ -51,4 +51,7 @@ public class HiveOptions {
                     .withDescription(
                             "If it is false, using flink native writer to write parquet and orc files; "
                                     + "If it is true, using hadoop mapred record writer to write parquet and orc files.");
+
+    public static final ConfigOption<String> HIVE_USER_NAME =
+            key("flink.hive.user.name").stringType().noDefaultValue();
 }

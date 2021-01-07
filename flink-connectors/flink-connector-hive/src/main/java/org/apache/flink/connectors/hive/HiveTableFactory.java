@@ -29,6 +29,7 @@ import org.apache.flink.table.sinks.TableSink;
 import org.apache.flink.table.sources.TableSource;
 import org.apache.flink.util.Preconditions;
 
+import org.apache.flink.util.StringUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.mapred.JobConf;
 
@@ -63,10 +64,15 @@ public class HiveTableFactory implements TableSourceFactory<RowData>, TableSinkF
 
         boolean isGeneric =
                 Boolean.parseBoolean(table.getProperties().get(CatalogConfig.IS_GENERIC));
+        JobConf jobConf = new JobConf(hiveConf);
+        String userName = context.getConfiguration().get(HiveOptions.HIVE_USER_NAME);
+        if (!StringUtils.isNullOrWhitespaceOnly(userName)) {
+            jobConf.set(HiveOptions.HIVE_USER_NAME.key(), userName);
+        }
 
         if (!isGeneric) {
             return new HiveTableSource(
-                    new JobConf(hiveConf),
+                    jobConf,
                     context.getConfiguration(),
                     context.getObjectIdentifier().toObjectPath(),
                     table);
@@ -82,13 +88,18 @@ public class HiveTableFactory implements TableSourceFactory<RowData>, TableSinkF
 
         boolean isGeneric =
                 Boolean.parseBoolean(table.getProperties().get(CatalogConfig.IS_GENERIC));
+        JobConf jobConf = new JobConf(hiveConf);
+        String userName = context.getConfiguration().get(HiveOptions.HIVE_USER_NAME);
+        if (!StringUtils.isNullOrWhitespaceOnly(userName)) {
+            jobConf.set(HiveOptions.HIVE_USER_NAME.key(), userName);
+        }
 
         if (!isGeneric) {
             return new HiveTableSink(
                     context.getConfiguration()
                             .get(HiveOptions.TABLE_EXEC_HIVE_FALLBACK_MAPRED_WRITER),
                     context.isBounded(),
-                    new JobConf(hiveConf),
+                    jobConf,
                     context.getObjectIdentifier(),
                     table);
         } else {

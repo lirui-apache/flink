@@ -19,6 +19,7 @@
 package org.apache.flink.connectors.hive.write;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.connectors.hive.HadoopFileSystemFactory;
 import org.apache.flink.connectors.hive.JobConfWrapper;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
@@ -50,9 +51,11 @@ import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.SequenceFileOutputFormat;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.ReflectionUtils;
 
 import java.io.Serializable;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -148,13 +151,17 @@ public class HiveWriterFactory implements Serializable {
                 }
             }
 
-            return hiveShim.getHiveRecordWriter(
-                    conf,
-                    hiveOutputFormatClz,
-                    recordSerDe.getSerializedClass(),
-                    isCompressed,
-                    tableProperties,
-                    path);
+            UserGroupInformation ugi = HadoopFileSystemFactory.getUGI(conf);
+            return ugi.doAs(
+                    (PrivilegedAction<RecordWriter>)
+                            () ->
+                                    hiveShim.getHiveRecordWriter(
+                                            conf,
+                                            hiveOutputFormatClz,
+                                            recordSerDe.getSerializedClass(),
+                                            isCompressed,
+                                            tableProperties,
+                                            path));
         } catch (Exception e) {
             throw new FlinkHiveException(e);
         }

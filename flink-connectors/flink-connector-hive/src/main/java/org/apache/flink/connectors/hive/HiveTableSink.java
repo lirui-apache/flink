@@ -68,6 +68,7 @@ import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.orc.TypeDescription;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
@@ -75,6 +76,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.security.PrivilegedExceptionAction;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,9 +131,14 @@ public class HiveTableSink
         String[] partitionColumns = getPartitionKeys().toArray(new String[0]);
         String dbName = identifier.getDatabaseName();
         String tableName = identifier.getObjectName();
+        UserGroupInformation ugi = HadoopFileSystemFactory.getUGI(jobConf);
         try (HiveMetastoreClientWrapper client =
-                HiveMetastoreClientFactory.create(
-                        new HiveConf(jobConf, HiveConf.class), hiveVersion)) {
+                ugi.doAs(
+                        (PrivilegedExceptionAction<HiveMetastoreClientWrapper>)
+                                () ->
+                                        HiveMetastoreClientFactory.create(
+                                                new HiveConf(jobConf, HiveConf.class),
+                                                hiveVersion))) {
             Table table = client.getTable(dbName, tableName);
             StorageDescriptor sd = table.getSd();
             HiveTableMetaStoreFactory msFactory =
@@ -253,7 +260,7 @@ public class HiveTableSink
                         fsFactory,
                         conf.get(SINK_ROLLING_POLICY_CHECK_INTERVAL).toMillis());
             }
-        } catch (TException e) {
+        } catch (TException | InterruptedException e) {
             throw new CatalogException("Failed to query Hive metaStore", e);
         } catch (IOException e) {
             throw new FlinkRuntimeException("Failed to create staging dir", e);

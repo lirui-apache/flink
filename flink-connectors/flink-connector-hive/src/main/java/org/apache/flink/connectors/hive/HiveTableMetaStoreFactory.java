@@ -29,8 +29,10 @@ import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.thrift.TException;
 
+import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -58,7 +60,8 @@ public class HiveTableMetaStoreFactory implements TableMetaStoreFactory {
 
     @Override
     public HiveTableMetaStore createTableMetaStore() throws Exception {
-        return new HiveTableMetaStore();
+        UserGroupInformation ugi = HadoopFileSystemFactory.getUGI(conf.conf());
+        return ugi.doAs((PrivilegedExceptionAction<HiveTableMetaStore>) HiveTableMetaStore::new);
     }
 
     private class HiveTableMetaStore implements TableMetaStore {
