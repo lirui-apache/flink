@@ -661,11 +661,15 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
 		if (operations.isEmpty()) {
 			return TableResultImpl.TABLE_RESULT_OK;
 		}
-		if (operations.size() != 1) {
-			throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
+		if (operations.size() == 1) {
+			return executeOperation(operations.get(0));
+		} else if (operations.size() == 2) {
+			if (operations.get(0) instanceof CreateTableOperation) {
+				executeOperation(operations.get(0));
+				return executeOperation(operations.get(1));
+			}
 		}
-
-		return executeOperation(operations.get(0));
+		throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
 	}
 
 	@Override
