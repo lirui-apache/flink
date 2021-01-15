@@ -23,20 +23,15 @@ import org.apache.flink.table.api.SqlParserException;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogManager;
-import org.apache.flink.table.catalog.CatalogTable;
-import org.apache.flink.table.catalog.CatalogTableImpl;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.UnresolvedIdentifier;
-import org.apache.flink.table.catalog.config.CatalogConfig;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
-import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.table.module.hive.udf.generic.HiveGenericUDFGrouping;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
 import org.apache.flink.table.operations.ExplainOperation;
 import org.apache.flink.table.operations.Operation;
-import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.planner.calcite.CalciteParser;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverter;
@@ -67,21 +62,16 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.HiveParserContext;
 import org.apache.hadoop.hive.ql.HiveParserQueryState;
-import org.apache.hadoop.hive.ql.exec.DDLTask;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.exec.Task;
-import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
 import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
@@ -90,8 +80,6 @@ import org.apache.hadoop.hive.ql.parse.HiveParserQB;
 import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
-import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -102,12 +90,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -218,6 +203,21 @@ public class HiveParser extends ParserImpl {
 					if (work instanceof HiveParserCreateViewDesc) {
 						// analyze and expand the view query
 						analyzeCreateView((HiveParserCreateViewDesc) work, context, queryState, hiveShim);
+					} else if (work instanceof CTASDesc) {
+						// analyze the query
+						CTASDesc ctasDesc = (CTASDesc) work;
+						HiveParserCalcitePlanner calcitePlanner = createCalcitePlanner(context, queryState, hiveShim);
+						calcitePlanner.setCtasDesc(ctasDesc);
+						RelNode queryRelNode = calcitePlanner.genLogicalPlan(ctasDesc.getQuery());
+						// create a table to represent the dest table
+						HiveParserCreateTableDesc createTableDesc = ctasDesc.getCreateTableDesc();
+						String[] dbTblName = createTableDesc.getCompoundName().split("\\.");
+						Table destTable = new Table(Table.getEmptyTable(dbTblName[0], dbTblName[1]));
+						destTable.getSd().setCols(createTableDesc.getCols());
+						// create the insert operation
+						Operation insertOperation = createInsertOperation(queryRelNode, destTable, Collections.emptyMap(), Collections.emptyList(), false);
+						Operation createTableOperation = new DDLOperationConverter(getCatalogManager()).convert(((CTASDesc) work).getCreateTableDesc());
+						return Arrays.asList(createTableOperation, insertOperation);
 					}
 					return Collections.singletonList(new DDLOperationConverter(getCatalogManager()).convert(work));
 				}
@@ -225,7 +225,7 @@ public class HiveParser extends ParserImpl {
 				final boolean explain = node.getType() == HiveASTParser.TOK_EXPLAIN;
 				// first child is the underlying explicandum
 				ASTNode input = explain ? (ASTNode) node.getChild(0) : node;
-				operation = analyzeQuery(context, hiveConf, hiveShim, input);
+				operation = analyzeSql(context, hiveConf, hiveShim, input);
 				if (operation == null) {
 					return Collections.emptyList();
 				}
@@ -268,17 +268,9 @@ public class HiveParser extends ParserImpl {
 		calciteAnalyzer.genLogicalPlan(desc.getQuery());
 	}
 
-	private Operation analyzeQuery(HiveParserContext context, HiveConf hiveConf, HiveShim hiveShim, ASTNode node)
+	private Operation analyzeSql(HiveParserContext context, HiveConf hiveConf, HiveShim hiveShim, ASTNode node)
 			throws SemanticException {
-		HiveParserCalcitePlanner analyzer = new HiveParserCalcitePlanner(
-				new HiveParserQueryState(hiveConf),
-				plannerContext,
-				catalogReader,
-				frameworkConfig,
-				getCatalogManager(),
-				hiveShim);
-		analyzer.initCtx(context);
-		analyzer.init(false);
+		HiveParserCalcitePlanner analyzer = createCalcitePlanner(context, new HiveParserQueryState(hiveConf), hiveShim);
 		RelNode relNode = analyzer.genLogicalPlan(node);
 		if (relNode == null) {
 			return null;
@@ -290,58 +282,6 @@ public class HiveParser extends ParserImpl {
 		} else {
 			return new PlannerQueryOperation(relNode);
 		}
-	}
-
-	private Operation handleDDL(ASTNode node, BaseSemanticAnalyzer hiveAnalyzer, Context context) throws SemanticException {
-		hiveAnalyzer.analyze(node, context);
-		DDLTask ddlTask = retrieveDDLTask(hiveAnalyzer);
-		// this can happen, e.g. table already exists and "if not exists" is specified
-		if (ddlTask == null) {
-			return null;
-		}
-		DDLWork ddlWork = ddlTask.getWork();
-		if (ddlWork.getCreateTblDesc() != null) {
-			return handleCreateTable(ddlWork.getCreateTblDesc());
-		}
-		throw new UnsupportedOperationException("Unsupported DDL");
-	}
-
-	private Operation handleCreateTable(CreateTableDesc createTableDesc) throws SemanticException {
-		// TODO: support NOT NULL and PK
-		TableSchema tableSchema = HiveTableUtil.createTableSchema(
-				createTableDesc.getCols(), createTableDesc.getPartCols(), Collections.emptySet(), null);
-		List<String> partitionCols = HiveCatalog.getFieldNames(createTableDesc.getPartCols());
-		// TODO: add more properties like SerDe, location, etc
-		Map<String, String> tableProps = new HashMap<>(createTableDesc.getTblProps());
-		tableProps.putAll(createTableDesc.getSerdeProps());
-		tableProps.put(CatalogConfig.IS_GENERIC, "false");
-		CatalogTable catalogTable = new CatalogTableImpl(tableSchema, partitionCols, tableProps, createTableDesc.getComment());
-		String dbName = createTableDesc.getDatabaseName();
-		String tabName = createTableDesc.getTableName();
-		if (dbName == null || tabName.contains(".")) {
-			String[] names = Utilities.getDbTableName(tabName);
-			dbName = names[0];
-			tabName = names[1];
-		}
-		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(dbName, tabName);
-		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
-		return new CreateTableOperation(identifier, catalogTable, false, false);
-	}
-
-	private DDLTask retrieveDDLTask(BaseSemanticAnalyzer hiveAnalyzer) {
-		Set<DDLTask> set = new HashSet<>();
-		Deque<Task<?>> queue = new ArrayDeque<>(hiveAnalyzer.getRootTasks());
-		while (!queue.isEmpty()) {
-			Task<?> hiveTask = queue.remove();
-			if (hiveTask instanceof DDLTask) {
-				set.add((DDLTask) hiveTask);
-			}
-			if (hiveTask.getChildTasks() != null) {
-				queue.addAll(hiveTask.getChildTasks());
-			}
-		}
-		Preconditions.checkState(set.size() <= 1, "Expect at most 1 DDLTask, actually get " + set.size());
-		return set.isEmpty() ? null : set.iterator().next();
 	}
 
 	private void clearSessionState(HiveConf hiveConf) {
@@ -362,7 +302,8 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private Operation createInsertOperation(HiveParserCalcitePlanner analyzer, RelNode queryRelNode) throws SemanticException {
+	private Operation createInsertOperation(RelNode queryRelNode, Table destTable, Map<String, String> staticPartSpec,
+			List<String> destSchema, boolean overwrite) throws SemanticException {
 		// sanity check
 		Preconditions.checkArgument(queryRelNode instanceof Project || queryRelNode instanceof Sort || queryRelNode instanceof HiveDistribution,
 				"Expect top RelNode to be Project, Sort, or HiveDistribution, actually got " + queryRelNode);
@@ -377,6 +318,63 @@ public class HiveParser extends ParserImpl {
 						"Expect input of HiveDistribution to be a Project, actually got " + grandParent);
 			}
 		}
+
+		// handle dest schema, e.g. insert into dest(.,.,.) select ...
+		queryRelNode = handleDestSchema((SingleRel) queryRelNode, destTable, destSchema, staticPartSpec.keySet());
+
+		// track each target col and its expected type
+		RelDataTypeFactory typeFactory = plannerContext.getTypeFactory();
+		LinkedHashMap<String, RelDataType> targetColToCalcType = new LinkedHashMap<>();
+		List<TypeInfo> targetHiveTypes = new ArrayList<>();
+		List<FieldSchema> allCols = new ArrayList<>(destTable.getCols());
+		allCols.addAll(destTable.getPartCols());
+		for (FieldSchema col : allCols) {
+			TypeInfo hiveType = TypeInfoUtils.getTypeInfoFromTypeString(col.getType());
+			targetHiveTypes.add(hiveType);
+			targetColToCalcType.put(col.getName(), HiveParserTypeConverter.convert(hiveType, typeFactory));
+		}
+
+		// add static partitions to query source
+		if (!staticPartSpec.isEmpty()) {
+			if (queryRelNode instanceof Project) {
+				queryRelNode = replaceProjectForStaticPart((Project) queryRelNode, staticPartSpec, destTable, targetColToCalcType);
+			} else if (queryRelNode instanceof Sort) {
+				Sort sort = (Sort) queryRelNode;
+				RelNode oldInput = sort.getInput();
+				RelNode newInput;
+				if (oldInput instanceof HiveDistribution) {
+					newInput = replaceDistForStaticParts((HiveDistribution) oldInput, destTable, staticPartSpec, targetColToCalcType);
+				} else {
+					newInput = replaceProjectForStaticPart((Project) oldInput, staticPartSpec, destTable, targetColToCalcType);
+					// we may need to shift the field collations
+					final int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
+					if (!sort.getCollation().getFieldCollations().isEmpty() && numDynmPart > 0) {
+						sort.replaceInput(0, null);
+						sort = LogicalSort.create(newInput,
+								shiftRelCollation(sort.getCollation(), (Project) oldInput, staticPartSpec.size(), numDynmPart),
+								sort.offset, sort.fetch);
+					}
+				}
+				sort.replaceInput(0, newInput);
+				queryRelNode = sort;
+			} else {
+				queryRelNode = replaceDistForStaticParts((HiveDistribution) queryRelNode, destTable, staticPartSpec, targetColToCalcType);
+			}
+		}
+
+		// add type conversions
+		queryRelNode = addTypeConversions(plannerContext.getCluster().getRexBuilder(), queryRelNode,
+				new ArrayList<>(targetColToCalcType.values()), targetHiveTypes, funcConverter);
+
+		// create identifier
+		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
+		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(targetTablePath);
+		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
+
+		return new CatalogSinkModifyOperation(identifier, new PlannerQueryOperation(queryRelNode), staticPartSpec, overwrite, Collections.emptyMap());
+	}
+
+	private Operation createInsertOperation(HiveParserCalcitePlanner analyzer, RelNode queryRelNode) throws SemanticException {
 		HiveParserQB topQB = analyzer.getQB();
 		QBMetaData qbMetaData = topQB.getMetaData();
 		// decide the dest table
@@ -425,64 +423,11 @@ public class HiveParser extends ParserImpl {
 			}
 		}
 
-		// handle dest schema, e.g. insert into dest(.,.,.) select ...
-		queryRelNode = handleDestSchema((SingleRel) queryRelNode, destTable,
-				analyzer.getDestSchemaForClause(insClauseName), staticPartSpec.keySet());
-
-		// create identifier
-		List<String> targetTablePath = Arrays.asList(destTable.getDbName(), destTable.getTableName());
-		UnresolvedIdentifier unresolvedIdentifier = UnresolvedIdentifier.of(targetTablePath);
-		ObjectIdentifier identifier = getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
-
-		// track each target col and its expected type
-		RelDataTypeFactory typeFactory = plannerContext.getTypeFactory();
-		LinkedHashMap<String, RelDataType> targetColToCalcType = new LinkedHashMap<>();
-		List<TypeInfo> targetHiveTypes = new ArrayList<>();
-		List<FieldSchema> allCols = new ArrayList<>(destTable.getCols());
-		allCols.addAll(destTable.getPartCols());
-		for (FieldSchema col : allCols) {
-			TypeInfo hiveType = TypeInfoUtils.getTypeInfoFromTypeString(col.getType());
-			targetHiveTypes.add(hiveType);
-			targetColToCalcType.put(col.getName(), HiveParserTypeConverter.convert(hiveType, typeFactory));
-		}
-
-		// add static partitions to query source
-		if (!staticPartSpec.isEmpty()) {
-			if (queryRelNode instanceof Project) {
-				queryRelNode = replaceProjectForStaticPart((Project) queryRelNode, staticPartSpec, destTable, targetColToCalcType);
-			} else if (queryRelNode instanceof Sort) {
-				Sort sort = (Sort) queryRelNode;
-				RelNode oldInput = sort.getInput();
-				RelNode newInput;
-				if (oldInput instanceof HiveDistribution) {
-					newInput = replaceDistForStaticParts((HiveDistribution) oldInput, destTable, staticPartSpec, targetColToCalcType);
-				} else {
-					newInput = replaceProjectForStaticPart((Project) oldInput, staticPartSpec, destTable, targetColToCalcType);
-					// we may need to shift the field collations
-					final int numDynmPart = destTable.getTTable().getPartitionKeys().size() - staticPartSpec.size();
-					if (!sort.getCollation().getFieldCollations().isEmpty() && numDynmPart > 0) {
-						sort.replaceInput(0, null);
-						sort = LogicalSort.create(newInput,
-								shiftRelCollation(sort.getCollation(), (Project) oldInput, staticPartSpec.size(), numDynmPart),
-								sort.offset, sort.fetch);
-					}
-				}
-				sort.replaceInput(0, newInput);
-				queryRelNode = sort;
-			} else {
-				queryRelNode = replaceDistForStaticParts((HiveDistribution) queryRelNode, destTable, staticPartSpec, targetColToCalcType);
-			}
-		}
-
-		// add type conversions
-		queryRelNode = addTypeConversions(plannerContext.getCluster().getRexBuilder(), queryRelNode,
-				new ArrayList<>(targetColToCalcType.values()), targetHiveTypes, funcConverter);
-
 		// decide whether it's overwrite
 		boolean overwrite = topQB.getParseInfo().getInsertOverwriteTables().keySet().stream().map(String::toLowerCase).collect(Collectors.toSet())
 				.contains(destTable.getDbName() + "." + destTable.getTableName());
 
-		return new CatalogSinkModifyOperation(identifier, new PlannerQueryOperation(queryRelNode), staticPartSpec, overwrite, Collections.emptyMap());
+		return createInsertOperation(queryRelNode, destTable, staticPartSpec, analyzer.getDestSchemaForClause(insClauseName), overwrite);
 	}
 
 	private RelNode replaceDistForStaticParts(HiveDistribution hiveDist, Table destTable,

@@ -23,6 +23,7 @@ import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.delegation.PlannerContext;
+import org.apache.flink.table.planner.delegation.hive.CTASDesc;
 import org.apache.flink.table.planner.delegation.hive.ConvertSqlFunctionCopier;
 import org.apache.flink.table.planner.delegation.hive.ConvertTableFunctionCopier;
 import org.apache.flink.table.planner.delegation.hive.HiveParserASTBuilder;
@@ -197,6 +198,7 @@ public class HiveParserCalcitePlanner {
 	private final FrameworkConfig frameworkConfig;
 
 	private HiveParserCreateViewDesc createViewDesc;
+	private CTASDesc ctasDesc;
 
 	public HiveParserCalcitePlanner(
 			HiveParserQueryState queryState,
@@ -211,6 +213,10 @@ public class HiveParserCalcitePlanner {
 		this.plannerContext = plannerContext;
 		this.frameworkConfig = frameworkConfig;
 		this.hiveAnalyzer = new HiveParserSemanticAnalyzer(queryState, hiveShim);
+	}
+
+	public void setCtasDesc(CTASDesc ctasDesc) {
+		this.ctasDesc = ctasDesc;
 	}
 
 	public void setCreateViewDesc(HiveParserCreateViewDesc createViewDesc) {
@@ -349,6 +355,10 @@ public class HiveParserCalcitePlanner {
 					hiveAnalyzer.resultSchema = HiveParserUtils.convertRowSchemaToResultSetSchema(relToRowResolver.get(plan), false);
 					HiveParserUtils.saveViewDefinition(hiveAnalyzer.resultSchema, createViewDesc, hiveAnalyzer.ctx.getTokenRewriteStream(),
 							hiveAnalyzer.unparseTranslator, hiveAnalyzer.getConf());
+				} else if (ctasDesc != null) {
+					// CTAS doesn't allow specifying col list, so we set it according to result schema
+					hiveAnalyzer.resultSchema = HiveParserUtils.convertRowSchemaToResultSetSchema(relToRowResolver.get(plan), false);
+					ctasDesc.getCreateTableDesc().getCols().addAll(hiveAnalyzer.resultSchema);
 				}
 				return plan;
 			} catch (SemanticException e) {

@@ -99,6 +99,24 @@ public class HiveDialectITCase {
 	}
 
 	@Test
+	public void testCreateTableAs() throws Exception {
+		tableEnv.executeSql("create table src (x int,y string)");
+		tableEnv.executeSql("create table tbl1 as select x from src group by x");
+		Table hiveTable = hiveCatalog.getHiveTable(new ObjectPath("default", "tbl1"));
+		assertEquals(1, hiveTable.getSd().getCols().size());
+		assertEquals("x", hiveTable.getSd().getCols().get(0).getName());
+		assertEquals("int", hiveTable.getSd().getCols().get(0).getType());
+		tableEnv.executeSql("create table default.tbl2 stored as orc as select x,max(y) as m from src group by x order by x limit 1");
+		hiveTable = hiveCatalog.getHiveTable(new ObjectPath("default", "tbl2"));
+		assertEquals(2, hiveTable.getSd().getCols().size());
+		assertEquals("x", hiveTable.getSd().getCols().get(0).getName());
+		assertEquals("m", hiveTable.getSd().getCols().get(1).getName());
+		assertEquals(OrcSerde.class.getName(), hiveTable.getSd().getSerdeInfo().getSerializationLib());
+		assertEquals(OrcInputFormat.class.getName(), hiveTable.getSd().getInputFormat());
+		assertEquals(OrcOutputFormat.class.getName(), hiveTable.getSd().getOutputFormat());
+	}
+
+	@Test
 	public void testCreateDatabase() throws Exception {
 		tableEnv.executeSql("create database db1 comment 'db1 comment'");
 		Database db = hiveCatalog.getHiveDatabase("db1");
