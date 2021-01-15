@@ -48,6 +48,7 @@ import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
+import org.apache.flink.table.operations.DescribeTableOperation;
 import org.apache.flink.table.operations.Operation;
 import org.apache.flink.table.operations.ShowDatabasesOperation;
 import org.apache.flink.table.operations.ShowFunctionsOperation;
@@ -84,6 +85,7 @@ import org.apache.hadoop.hive.ql.plan.AlterDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
+import org.apache.hadoop.hive.ql.plan.DescTableDesc;
 import org.apache.hadoop.hive.ql.plan.DropDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.FunctionWork;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
@@ -159,6 +161,8 @@ public class DDLOperationConverter {
 				return convertShowPartitions(ddlWork.getShowPartsDesc());
 			} else if (ddlWork.getShowFuncsDesc() != null) {
 				return convertShowFunctions(ddlWork.getShowFuncsDesc());
+			} else if (ddlWork.getDescTblDesc() != null) {
+				return convertDescTable(ddlWork.getDescTblDesc());
 			} else {
 				throw new FlinkHiveException("Unsupported DDLWork");
 			}
@@ -199,6 +203,11 @@ public class DDLOperationConverter {
 		} else {
 			throw new FlinkHiveException("Unsupported work class " + work.getClass().getName());
 		}
+	}
+
+	private Operation convertDescTable(DescTableDesc desc) {
+		ObjectIdentifier tableIdentifier = parseObjectIdentifier(desc.getTableName());
+		return new DescribeTableOperation(tableIdentifier, desc.isExt() || desc.isFormatted());
 	}
 
 	private Operation convertShowFunctions(ShowFunctionsDesc desc) {

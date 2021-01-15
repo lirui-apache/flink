@@ -456,7 +456,7 @@ public class HiveParserDDLSemanticAnalyzer {
 		boolean ifExists = (ast.getFirstChildWithType(HiveASTParser.TOK_IFEXISTS) != null);
 		// we want to signal an error if the function doesn't exist and we're
 		// configured not to ignore this
-		boolean isExists = ifExists || HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
+//		boolean isExists = ifExists || HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
 //		boolean throwException =
 //				!ifExists && !HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
 
@@ -1247,24 +1247,24 @@ public class HiveParserDDLSemanticAnalyzer {
 		ASTNode tableTypeExpr = (ASTNode) ast.getChild(0);
 
 		String dbName = null;
-		String tableName = null;
-		String colPath = null;
-		Map<String, String> partSpec = null;
+		String tableName;
+		String colPath;
+		Map<String, String> partSpec;
 
-		ASTNode tableNode = null;
+		ASTNode tableNode;
 
 		// process the first node to extract tablename
 		// tablename is either TABLENAME or DBNAME.TABLENAME if db is given
-		if (((ASTNode) tableTypeExpr.getChild(0)).getType() == HiveASTParser.TOK_TABNAME) {
+		if (tableTypeExpr.getChild(0).getType() == HiveASTParser.TOK_TABNAME) {
 			tableNode = (ASTNode) tableTypeExpr.getChild(0);
 			if (tableNode.getChildCount() == 1) {
-				tableName = ((ASTNode) tableNode.getChild(0)).getText();
+				tableName = tableNode.getChild(0).getText();
 			} else {
-				dbName = ((ASTNode) tableNode.getChild(0)).getText();
-				tableName = dbName + "." + ((ASTNode) tableNode.getChild(1)).getText();
+				dbName = tableNode.getChild(0).getText();
+				tableName = dbName + "." + tableNode.getChild(1).getText();
 			}
 		} else {
-			throw new SemanticException(((ASTNode) tableTypeExpr.getChild(0)).getText() + " is not an expected token type");
+			throw new SemanticException(tableTypeExpr.getChild(0).getText() + " is not an expected token type");
 		}
 
 		// process the second child,if exists, node to get partition spec(s)
@@ -1658,8 +1658,7 @@ public class HiveParserDDLSemanticAnalyzer {
 
 	private Serializable analyzeAlterTableDropParts(String[] qualified, ASTNode ast, boolean expectView) throws SemanticException {
 
-		boolean ifExists = (ast.getFirstChildWithType(HiveASTParser.TOK_IFEXISTS) != null)
-				|| HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
+		boolean ifExists = ast.getFirstChildWithType(HiveASTParser.TOK_IFEXISTS) != null;
 		// If the drop has to fail on non-existent partitions, we cannot batch expressions.
 		// That is because we actually have to check each separate expression for existence.
 		// We could do a small optimization for the case where expr has all columns and all
