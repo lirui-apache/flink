@@ -104,7 +104,11 @@ public class HiveCompatibleITCase {
 			"SELECT col1, col2 FROM nested LATERAL VIEW explode(s2.f8.f10) tbl1 AS col1 LATERAL VIEW explode(s3.f12) tbl2 AS col2",
 			"select * from foo where cast(x as double)<=0 order by cast(x as double)",
 			"select (case when i>1 then 100 else split(s,',')[0] end) as a from bar",
-			"select if(i>1,s,null) from bar"
+			"select if(i>1,s,null) from bar",
+			"select temp_add(x,y) from foo",
+			"select default.temp_max(i) from bar",
+			"select temp_explode(ai) from baz",
+			"select col1 from baz lateral view default.temp_explode(ai) tbl1 as col1"
 	};
 
 	private static final String[] UPDATES = new String[]{
@@ -200,13 +204,17 @@ public class HiveCompatibleITCase {
 			dqlToRun.add("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2");
 			dqlToRun.add("select col1 from foo lateral view myudtf(x,y) tbl1 as col1");
 		}
+		// create temp functions
+		tableEnv.executeSql("create temporary function temp_add as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
+		tableEnv.executeSql("create temporary function temp_explode as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
+		tableEnv.executeSql("create temporary function temp_max as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDAFMax'");
 
 		// test explain
 		runExplain(tableEnv, "explain insert into dest select * from foo");
 		runExplain(tableEnv, "explain extended select * from foo");
 
 //		runUpdate("insert overwrite table dest select * from bar", tableEnv);
-//		runQuery("select * from foo where cast(x as double)<=0 order by cast(x as double)", tableEnv);
+//		runQuery("select x,count(y),max(y) from foo group by x", tableEnv);
 
 		for (String query : dqlToRun) {
 			runQuery(query, tableEnv);

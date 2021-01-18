@@ -141,7 +141,7 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 		@Override
 		protected List<String> getReferenceableColumnAliases(HiveParserTypeCheckCtx ctx) {
 			HiveParserJoinTypeCheckCtx jCtx = (HiveParserJoinTypeCheckCtx) ctx;
-			List<String> possibleColumnNames = new ArrayList<String>();
+			List<String> possibleColumnNames = new ArrayList<>();
 			for (HiveParserRowResolver rr : jCtx.getInputRRList()) {
 				possibleColumnNames.addAll(rr.getReferenceableColumnAliases(null, -1));
 			}
@@ -152,8 +152,7 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 		@Override
 		protected ExprNodeColumnDesc processQualifiedColRef(HiveParserTypeCheckCtx ctx, ASTNode expr,
 				Object... nodeOutputs) throws SemanticException {
-			String tableAlias = unescapeIdentifier(expr.getChild(0).getChild(0)
-					.getText());
+			String tableAlias = unescapeIdentifier(expr.getChild(0).getChild(0).getText());
 			// NOTE: tableAlias must be a valid non-ambiguous table alias,
 			// because we've checked that in TOK_TABLE_OR_COL's process method.
 			ColumnInfo colInfo = getColInfo((HiveParserJoinTypeCheckCtx) ctx, tableAlias,

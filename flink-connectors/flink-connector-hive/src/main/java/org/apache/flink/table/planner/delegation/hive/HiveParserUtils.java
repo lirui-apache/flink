@@ -22,6 +22,15 @@ import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.catalog.hive.client.HiveMetastoreClientWrapper;
 import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
+import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
+import org.apache.flink.table.functions.FunctionKind;
+import org.apache.flink.table.functions.hive.HiveGenericUDAF;
+import org.apache.flink.table.functions.hive.HiveGenericUDTF;
+import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
+import org.apache.flink.table.planner.functions.utils.HiveAggSqlFunction;
+import org.apache.flink.table.planner.functions.utils.HiveTableSqlFunction;
+import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
 
@@ -48,10 +57,22 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.sql.ExplicitOperatorBinding;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.SqlOperatorBinding;
+import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSyntax;
+import org.apache.calcite.sql.SqlTableFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.SqlReturnTypeInference;
+import org.apache.calcite.sql.validate.SqlNameMatchers;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.NlsString;
@@ -92,7 +113,6 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.GroupByDesc;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.ListTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.MapTypeInfo;
@@ -107,6 +127,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -462,8 +483,7 @@ public class HiveParserUtils {
 	 * @throws SemanticException when the UDAF is not found or has problems.
 	 */
 	public static SemanticAnalyzer.GenericUDAFInfo getGenericUDAFInfo(GenericUDAFEvaluator evaluator,
-			GenericUDAFEvaluator.Mode emode, ArrayList<ExprNodeDesc> aggParameters)
-			throws SemanticException {
+			GenericUDAFEvaluator.Mode emode, ArrayList<ExprNodeDesc> aggParameters) throws SemanticException {
 
 		SemanticAnalyzer.GenericUDAFInfo res = new SemanticAnalyzer.GenericUDAFInfo();
 
@@ -501,23 +521,27 @@ public class HiveParserUtils {
 		return result;
 	}
 
-	/**
-	 * Returns the GenericUDAFEvaluator for the aggregation. This is called once
-	 * for each GroupBy aggregation.
-	 */
-	public static GenericUDAFEvaluator getGenericUDAFEvaluator(String aggName,
-			ArrayList<ExprNodeDesc> aggParameters, ASTNode aggTree,
-			boolean isDistinct, boolean isAllColumns)
+	// Returns the GenericUDAFEvaluator for the aggregation. This is called once for each GroupBy aggregation.
+	// TODO: Requiring a GenericUDAFEvaluator means we only support hive UDAFs. Need to avoid this to support flink UDAFs.
+	public static GenericUDAFEvaluator getGenericUDAFEvaluator(String aggName, ArrayList<ExprNodeDesc> aggParameters,
+			ASTNode aggTree, boolean isDistinct, boolean isAllColumns, SqlOperatorTable opTable)
 			throws SemanticException {
-		ArrayList<ObjectInspector> originalParameterTypeInfos =
-				getWritableObjectInspector(aggParameters);
+		ArrayList<ObjectInspector> originalParameterTypeInfos = getWritableObjectInspector(aggParameters);
 		GenericUDAFEvaluator result = FunctionRegistry.getGenericUDAFEvaluator(
 				aggName, originalParameterTypeInfos, isDistinct, isAllColumns);
+		if (result == null) {
+			// this happens for temp functions
+			SqlOperator sqlOperator = getSqlOperator(aggName, opTable, SqlFunctionCategory.USER_DEFINED_FUNCTION);
+			if (sqlOperator instanceof HiveAggSqlFunction) {
+				HiveGenericUDAF hiveGenericUDAF = (HiveGenericUDAF) ((HiveAggSqlFunction) sqlOperator).makeFunction(
+						new Object[0], new LogicalType[0]);
+				result = hiveGenericUDAF.createEvaluator(originalParameterTypeInfos.toArray(new ObjectInspector[0]));
+			}
+		}
 		if (null == result) {
 			String reason = "Looking for UDAF Evaluator\"" + aggName
 					+ "\" with parameters " + originalParameterTypeInfos;
-			throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg(
-					(ASTNode) aggTree.getChild(0), reason));
+			throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((ASTNode) aggTree.getChild(0), reason));
 		}
 		return result;
 	}
@@ -672,9 +696,76 @@ public class HiveParserUtils {
 		return newTargetNode;
 	}
 
+	public static SqlOperator getAnySqlOperator(String funcName, SqlOperatorTable opTable) {
+		try {
+			SqlOperator sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_FUNCTION);
+			if (sqlOperator == null) {
+				sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
+			}
+			return sqlOperator;
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	public static SqlOperator getSqlOperator(String funcName, SqlOperatorTable opTable, SqlFunctionCategory category) {
+		String[] names = funcName.split("\\.");
+		SqlIdentifier identifier = new SqlIdentifier(Arrays.asList(names), SqlParserPos.ZERO);
+		List<SqlOperator> operators = new ArrayList<>();
+		opTable.lookupOperatorOverloads(identifier, category, SqlSyntax.FUNCTION, operators, SqlNameMatchers.withCaseSensitive(false));
+		if (operators.isEmpty()) {
+			return null;
+		} else {
+			return operators.get(0);
+		}
+	}
+
+	public static RelDataType inferReturnTypeForArgTypes(SqlOperator sqlOperator, List<RelDataType> argTypes, RelDataTypeFactory dataTypeFactory) {
+		if (sqlOperator instanceof BridgingSqlFunction || sqlOperator instanceof HiveAggSqlFunction) {
+			SqlReturnTypeInference returnTypeInference = sqlOperator.getReturnTypeInference();
+			SqlOperatorBinding operatorBinding = new ArgTypesOperatorBinding(dataTypeFactory, sqlOperator, argTypes);
+			return returnTypeInference.inferReturnType(operatorBinding);
+		} else if (sqlOperator instanceof HiveTableSqlFunction) {
+			HiveGenericUDTF hiveGenericUDTF = (HiveGenericUDTF) ((HiveTableSqlFunction) sqlOperator).makeFunction(new Object[0], new LogicalType[0]);
+			DataType dataType = hiveGenericUDTF.getHiveResultType(
+					new Object[argTypes.size()],
+					argTypes.stream().map(HiveParserUtils::toDataType).toArray(DataType[]::new));
+			return toRelDataType(dataType, dataTypeFactory);
+		} else {
+			throw new FlinkHiveException("Unsupported SqlOperator class " + sqlOperator.getClass().getName());
+		}
+	}
+
+	public static RelDataType inferReturnTypeForArgs(SqlOperator sqlOperator, List<RexNode> operands, RelDataTypeFactory dataTypeFactory) {
+		return inferReturnTypeForArgTypes(
+				sqlOperator,
+				operands.stream().map(RexNode::getType).collect(Collectors.toList()),
+				dataTypeFactory);
+	}
+
+	private static LogicalType[] toLogicalTypes(RelDataType[] relDataTypes) {
+		LogicalType[] res = new LogicalType[relDataTypes.length];
+		for (int i = 0; i < res.length; i++) {
+			res[i] = toDataType(relDataTypes[i]).getLogicalType();
+		}
+		return res;
+	}
+
+	public static RelDataType toRelDataType(DataType dataType, RelDataTypeFactory dtFactory) {
+		try {
+			return toRelDataType(HiveTypeUtil.toHiveTypeInfo(dataType, false), dtFactory);
+		} catch (CalciteSemanticException e) {
+			throw new FlinkHiveException(e);
+		}
+	}
+
+	public static DataType toDataType(RelDataType relDataType) {
+		return HiveTypeUtil.toFlinkType(HiveParserTypeConverter.convert(relDataType));
+	}
+
 	// extracts useful information for a given lateral view node
 	public static LateralViewInfo extractLateralViewInfo(ASTNode lateralView, HiveParserRowResolver inputRR,
-			HiveParserSemanticAnalyzer hiveAnalyzer) throws SemanticException {
+			HiveParserSemanticAnalyzer hiveAnalyzer, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 		// checks the left sub-tree
 		ASTNode sel = (ASTNode) lateralView.getChild(0);
 		Preconditions.checkArgument(sel.getToken().getType() == HiveASTParser.TOK_SELECT);
@@ -685,13 +776,12 @@ public class HiveParserUtils {
 		ASTNode func = (ASTNode) selExpr.getChild(0);
 		Preconditions.checkArgument(func.getToken().getType() == HiveASTParser.TOK_FUNCTION);
 		String funcName = getFunctionText(func, true);
-		FunctionInfo fi = getFunctionInfo(funcName);
-		GenericUDTF udtf = fi.getGenericUDTF();
-		Preconditions.checkArgument(udtf != null, funcName + " is not a valid UDTF");
+		SqlOperator sqlOperator = getSqlOperator(funcName, frameworkConfig.getOperatorTable(), SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
+		Preconditions.checkArgument(isUDTF(sqlOperator), funcName + " is not a valid UDTF");
 		// decide operands
 		List<ExprNodeDesc> operands = new ArrayList<>(func.getChildCount() - 1);
 		List<ColumnInfo> operandColInfos = new ArrayList<>(func.getChildCount() - 1);
-		HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(inputRR);
+		HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(inputRR, frameworkConfig, cluster);
 		for (int i = 1; i < func.getChildCount(); i++) {
 			ExprNodeDesc exprDesc = hiveAnalyzer.genExprNodeDesc((ASTNode) func.getChild(i), inputRR, typeCheckCtx);
 			operands.add(exprDesc);
@@ -708,7 +798,24 @@ public class HiveParserUtils {
 			Preconditions.checkArgument(child.getToken().getType() == HiveASTParser.Identifier);
 			colAliases.add(unescapeIdentifier(child.getText().toLowerCase()));
 		}
-		return new LateralViewInfo(funcName, udtf, operands, operandColInfos, colAliases, tabAlias);
+		return new LateralViewInfo(funcName, sqlOperator, operands, operandColInfos, colAliases, tabAlias);
+	}
+
+	public static boolean isUDAF(SqlOperator sqlOperator) {
+		return sqlOperator instanceof SqlAggFunction;
+	}
+
+	public static boolean isUDTF(SqlOperator sqlOperator) {
+		if (sqlOperator instanceof BridgingSqlFunction) {
+			return ((BridgingSqlFunction) sqlOperator).getDefinition().getKind() == FunctionKind.TABLE;
+		} else {
+			return sqlOperator instanceof SqlTableFunction;
+		}
+	}
+
+	// TODO: we need a way to tell whether a function is built-in, for now just return false so that the unparser will quote them
+	public static boolean isNative(SqlOperator sqlOperator) {
+		return false;
 	}
 
 	/**
@@ -716,7 +823,7 @@ public class HiveParserUtils {
 	 */
 	public static class LateralViewInfo {
 		private final String funcName;
-		private final GenericUDTF func;
+		private final SqlOperator sqlOperator;
 		// operands to the UDTF
 		private final List<ExprNodeDesc> operands;
 		private final List<ColumnInfo> operandColInfos;
@@ -725,10 +832,10 @@ public class HiveParserUtils {
 		// alias of the logical table
 		private final String tabAlias;
 
-		public LateralViewInfo(String funcName, GenericUDTF func, List<ExprNodeDesc> operands,
+		public LateralViewInfo(String funcName, SqlOperator sqlOperator, List<ExprNodeDesc> operands,
 				List<ColumnInfo> operandColInfos, List<String> colAliases, String tabAlias) {
 			this.funcName = funcName;
-			this.func = func;
+			this.sqlOperator = sqlOperator;
 			this.operands = operands;
 			this.operandColInfos = operandColInfos;
 			this.colAliases = colAliases;
@@ -739,8 +846,8 @@ public class HiveParserUtils {
 			return funcName;
 		}
 
-		public GenericUDTF getFunc() {
-			return func;
+		public SqlOperator getSqlOperator() {
+			return sqlOperator;
 		}
 
 		public List<ExprNodeDesc> getOperands() {
@@ -1090,6 +1197,21 @@ public class HiveParserUtils {
 		public Void visitCorrelVariable(RexCorrelVariable correlVariable) {
 			correlIDs.add(correlVariable.id);
 			return null;
+		}
+	}
+
+	/**
+	 * A sub-class of ExplicitOperatorBinding that overrides methods to avoid exceptions.
+	 */
+	private static class ArgTypesOperatorBinding extends ExplicitOperatorBinding {
+
+		public ArgTypesOperatorBinding(RelDataTypeFactory typeFactory, SqlOperator operator, List<RelDataType> types) {
+			super(typeFactory, operator, types);
+		}
+
+		@Override
+		public boolean isOperandLiteral(int ordinal, boolean allowCast) {
+			return false;
 		}
 	}
 }

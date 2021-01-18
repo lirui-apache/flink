@@ -34,10 +34,8 @@ import org.apache.flink.table.planner.delegation.hive.HiveParserCreateViewDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserDropFunctionDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserDropTableDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserShowTablesDesc;
-import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.antlr.runtime.tree.Tree;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.TableType;
@@ -49,7 +47,6 @@ import org.apache.hadoop.hive.metastore.api.SkewedInfo;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.HiveParserContext;
 import org.apache.hadoop.hive.ql.HiveParserQueryState;
-import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.FunctionUtils;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
@@ -70,10 +67,6 @@ import org.apache.hadoop.hive.ql.plan.DescFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.DescTableDesc;
 import org.apache.hadoop.hive.ql.plan.DropDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.DropFunctionDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.FunctionWork;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
@@ -87,23 +80,15 @@ import org.apache.hadoop.hive.ql.plan.ShowPartitionsDesc;
 import org.apache.hadoop.hive.ql.plan.ShowTableStatusDesc;
 import org.apache.hadoop.hive.ql.plan.ShowTblPropertiesDesc;
 import org.apache.hadoop.hive.ql.plan.SwitchDatabaseDesc;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNotEqual;
 import org.apache.hadoop.hive.serde.serdeConstants;
-import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
 import org.apache.hadoop.hive.serde2.typeinfo.CharTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.DecimalTypeInfo;
-import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.hive.serde2.typeinfo.VarcharTypeInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -118,7 +103,6 @@ import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.get
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.getTypeStringFromAST;
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.getUnescapedName;
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.readProps;
-import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.stripIdentifierQuotes;
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.stripQuotes;
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
 import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.unescapeSQLString;
@@ -1821,104 +1805,104 @@ public class HiveParserDDLSemanticAnalyzer {
 	 * @return Map of partitions by prefix length. Most of the time prefix length will
 	 * be the same for all partition specs, so we can just OR the expressions.
 	 */
-	private Map<Integer, List<ExprNodeGenericFuncDesc>> getFullPartitionSpecs(
-			CommonTree ast, Table tab, boolean canGroupExprs) throws SemanticException {
-		String defaultPartitionName = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
-		Map<String, String> colTypes = new HashMap<>();
-		for (FieldSchema fs : tab.getPartitionKeys()) {
-			colTypes.put(fs.getName().toLowerCase(), fs.getType());
-		}
+//	private Map<Integer, List<ExprNodeGenericFuncDesc>> getFullPartitionSpecs(
+//			CommonTree ast, Table tab, boolean canGroupExprs) throws SemanticException {
+//		String defaultPartitionName = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
+//		Map<String, String> colTypes = new HashMap<>();
+//		for (FieldSchema fs : tab.getPartitionKeys()) {
+//			colTypes.put(fs.getName().toLowerCase(), fs.getType());
+//		}
+//
+//		Map<Integer, List<ExprNodeGenericFuncDesc>> result = new HashMap<>();
+//		for (int childIndex = 0; childIndex < ast.getChildCount(); childIndex++) {
+//			Tree partSpecTree = ast.getChild(childIndex);
+//			if (partSpecTree.getType() != HiveASTParser.TOK_PARTSPEC) {
+//				continue;
+//			}
+//			ExprNodeGenericFuncDesc expr = null;
+//			HashSet<String> names = new HashSet<>(partSpecTree.getChildCount());
+//			for (int i = 0; i < partSpecTree.getChildCount(); ++i) {
+//				CommonTree partSpecSingleKey = (CommonTree) partSpecTree.getChild(i);
+//				assert (partSpecSingleKey.getType() == HiveASTParser.TOK_PARTVAL);
+//				String key = stripIdentifierQuotes(partSpecSingleKey.getChild(0).getText()).toLowerCase();
+//				String operator = partSpecSingleKey.getChild(1).getText();
+//				ASTNode partValNode = (ASTNode) partSpecSingleKey.getChild(2);
+//				HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(null);
+//				ExprNodeConstantDesc valExpr = (ExprNodeConstantDesc) HiveParserTypeCheckProcFactory
+//						.genExprNode(partValNode, typeCheckCtx).get(partValNode);
+//				Object val = valExpr.getValue();
+//
+//				boolean isDefaultPartitionName = val.equals(defaultPartitionName);
+//
+//				String type = colTypes.get(key);
+//				PrimitiveTypeInfo pti = TypeInfoFactory.getPrimitiveTypeInfo(type);
+//				if (type == null) {
+//					throw new SemanticException("Column " + key + " not found");
+//				}
+//				// Create the corresponding hive expression to filter on partition columns.
+//				if (!isDefaultPartitionName) {
+//					if (!valExpr.getTypeString().equals(type)) {
+//						ObjectInspectorConverters.Converter converter = ObjectInspectorConverters.getConverter(
+//								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(valExpr.getTypeInfo()),
+//								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(pti));
+//						val = converter.convert(valExpr.getValue());
+//					}
+//				}
+//
+//				ExprNodeColumnDesc column = new ExprNodeColumnDesc(pti, key, null, true);
+//				ExprNodeGenericFuncDesc op;
+//				if (!isDefaultPartitionName) {
+//					op = makeBinaryPredicate(operator, column, new ExprNodeConstantDesc(pti, val));
+//				} else {
+//					GenericUDF originalOp = HiveParserUtils.getFunctionInfo(operator).getGenericUDF();
+//					String fnName;
+//					if (originalOp instanceof GenericUDFOPEqual) {
+//						fnName = "isnull";
+//					} else if (originalOp instanceof GenericUDFOPNotEqual) {
+//						fnName = "isnotnull";
+//					} else {
+//						throw new SemanticException("Cannot use " + operator
+//								+ " in a default partition spec; only '=' and '!=' are allowed.");
+//					}
+//					op = makeUnaryPredicate(fnName, column);
+//				}
+//				// If it's multi-expr filter (e.g. a='5', b='2012-01-02'), AND with previous exprs.
+//				expr = (expr == null) ? op : makeBinaryPredicate("and", expr, op);
+//				names.add(key);
+//			}
+//			if (expr == null) {
+//				continue;
+//			}
+//			// We got the expr for one full partition spec. Determine the prefix length.
+//			int prefixLength = calculatePartPrefix(tab, names);
+//			List<ExprNodeGenericFuncDesc> orExpr = result.get(prefixLength);
+//			// We have to tell apart partitions resulting from spec with different prefix lengths.
+//			// So, if we already have smth for the same prefix length, we can OR the two.
+//			// If we don't, create a new separate filter. In most cases there will only be one.
+//			if (orExpr == null) {
+//				List<ExprNodeGenericFuncDesc> spec = new ArrayList<>();
+//				spec.add(expr);
+//				result.put(prefixLength, spec);
+//			} else if (canGroupExprs) {
+//				orExpr.set(0, makeBinaryPredicate("or", expr, orExpr.get(0)));
+//			} else {
+//				orExpr.add(expr);
+//			}
+//		}
+//		return result;
+//	}
 
-		Map<Integer, List<ExprNodeGenericFuncDesc>> result = new HashMap<>();
-		for (int childIndex = 0; childIndex < ast.getChildCount(); childIndex++) {
-			Tree partSpecTree = ast.getChild(childIndex);
-			if (partSpecTree.getType() != HiveASTParser.TOK_PARTSPEC) {
-				continue;
-			}
-			ExprNodeGenericFuncDesc expr = null;
-			HashSet<String> names = new HashSet<>(partSpecTree.getChildCount());
-			for (int i = 0; i < partSpecTree.getChildCount(); ++i) {
-				CommonTree partSpecSingleKey = (CommonTree) partSpecTree.getChild(i);
-				assert (partSpecSingleKey.getType() == HiveASTParser.TOK_PARTVAL);
-				String key = stripIdentifierQuotes(partSpecSingleKey.getChild(0).getText()).toLowerCase();
-				String operator = partSpecSingleKey.getChild(1).getText();
-				ASTNode partValNode = (ASTNode) partSpecSingleKey.getChild(2);
-				HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(null);
-				ExprNodeConstantDesc valExpr = (ExprNodeConstantDesc) HiveParserTypeCheckProcFactory
-						.genExprNode(partValNode, typeCheckCtx).get(partValNode);
-				Object val = valExpr.getValue();
-
-				boolean isDefaultPartitionName = val.equals(defaultPartitionName);
-
-				String type = colTypes.get(key);
-				PrimitiveTypeInfo pti = TypeInfoFactory.getPrimitiveTypeInfo(type);
-				if (type == null) {
-					throw new SemanticException("Column " + key + " not found");
-				}
-				// Create the corresponding hive expression to filter on partition columns.
-				if (!isDefaultPartitionName) {
-					if (!valExpr.getTypeString().equals(type)) {
-						ObjectInspectorConverters.Converter converter = ObjectInspectorConverters.getConverter(
-								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(valExpr.getTypeInfo()),
-								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(pti));
-						val = converter.convert(valExpr.getValue());
-					}
-				}
-
-				ExprNodeColumnDesc column = new ExprNodeColumnDesc(pti, key, null, true);
-				ExprNodeGenericFuncDesc op;
-				if (!isDefaultPartitionName) {
-					op = makeBinaryPredicate(operator, column, new ExprNodeConstantDesc(pti, val));
-				} else {
-					GenericUDF originalOp = HiveParserUtils.getFunctionInfo(operator).getGenericUDF();
-					String fnName;
-					if (originalOp instanceof GenericUDFOPEqual) {
-						fnName = "isnull";
-					} else if (originalOp instanceof GenericUDFOPNotEqual) {
-						fnName = "isnotnull";
-					} else {
-						throw new SemanticException("Cannot use " + operator
-								+ " in a default partition spec; only '=' and '!=' are allowed.");
-					}
-					op = makeUnaryPredicate(fnName, column);
-				}
-				// If it's multi-expr filter (e.g. a='5', b='2012-01-02'), AND with previous exprs.
-				expr = (expr == null) ? op : makeBinaryPredicate("and", expr, op);
-				names.add(key);
-			}
-			if (expr == null) {
-				continue;
-			}
-			// We got the expr for one full partition spec. Determine the prefix length.
-			int prefixLength = calculatePartPrefix(tab, names);
-			List<ExprNodeGenericFuncDesc> orExpr = result.get(prefixLength);
-			// We have to tell apart partitions resulting from spec with different prefix lengths.
-			// So, if we already have smth for the same prefix length, we can OR the two.
-			// If we don't, create a new separate filter. In most cases there will only be one.
-			if (orExpr == null) {
-				List<ExprNodeGenericFuncDesc> spec = new ArrayList<>();
-				spec.add(expr);
-				result.put(prefixLength, spec);
-			} else if (canGroupExprs) {
-				orExpr.set(0, makeBinaryPredicate("or", expr, orExpr.get(0)));
-			} else {
-				orExpr.add(expr);
-			}
-		}
-		return result;
-	}
-
-	public static ExprNodeGenericFuncDesc makeBinaryPredicate(
-			String fn, ExprNodeDesc left, ExprNodeDesc right) throws SemanticException {
-		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
-				HiveParserUtils.getFunctionInfo(fn).getGenericUDF(), Arrays.asList(left, right));
-	}
-
-	public static ExprNodeGenericFuncDesc makeUnaryPredicate(
-			String fn, ExprNodeDesc arg) throws SemanticException {
-		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
-				FunctionRegistry.getFunctionInfo(fn).getGenericUDF(), Collections.singletonList(arg));
-	}
+//	public static ExprNodeGenericFuncDesc makeBinaryPredicate(
+//			String fn, ExprNodeDesc left, ExprNodeDesc right) throws SemanticException {
+//		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
+//				HiveParserUtils.getFunctionInfo(fn).getGenericUDF(), Arrays.asList(left, right));
+//	}
+//
+//	public static ExprNodeGenericFuncDesc makeUnaryPredicate(
+//			String fn, ExprNodeDesc arg) throws SemanticException {
+//		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
+//				FunctionRegistry.getFunctionInfo(fn).getGenericUDF(), Collections.singletonList(arg));
+//	}
 
 	/**
 	 * Calculates the partition prefix length based on the drop spec.
@@ -1929,16 +1913,16 @@ public class HiveParserDDLSemanticAnalyzer {
 	 * @param tbl          Table
 	 * @param partSpecKeys Keys present in drop partition spec.
 	 */
-	private int calculatePartPrefix(Table tbl, HashSet<String> partSpecKeys) {
-		int partPrefixToDrop = 0;
-		for (FieldSchema fs : tbl.getPartCols()) {
-			if (!partSpecKeys.contains(fs.getName())) {
-				break;
-			}
-			++partPrefixToDrop;
-		}
-		return partPrefixToDrop;
-	}
+//	private int calculatePartPrefix(Table tbl, HashSet<String> partSpecKeys) {
+//		int partPrefixToDrop = 0;
+//		for (FieldSchema fs : tbl.getPartCols()) {
+//			if (!partSpecKeys.contains(fs.getName())) {
+//				break;
+//			}
+//			++partPrefixToDrop;
+//		}
+//		return partPrefixToDrop;
+//	}
 
 	/**
 	 * Certain partition values are are used by hive. e.g. the default partition

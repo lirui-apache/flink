@@ -64,6 +64,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
+import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
 import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseBinary;
@@ -180,9 +181,19 @@ public class HiveParserRexNodeConverter {
 			return convertField((ExprNodeFieldDesc) expr);
 		} else if (expr instanceof HiveParserExprNodeSubQueryDesc) {
 			return convertSubQuery((HiveParserExprNodeSubQueryDesc) expr);
+		} else if (expr instanceof SqlOperatorExprNodeDesc) {
+			return convertSqlOperator((SqlOperatorExprNodeDesc) expr);
 		} else {
 			throw new RuntimeException("Unsupported Expression");
 		}
+	}
+
+	private RexNode convertSqlOperator(SqlOperatorExprNodeDesc desc) throws SemanticException {
+		List<RexNode> operands = new ArrayList<>(desc.getChildren().size());
+		for (ExprNodeDesc child : desc.getChildren()) {
+			operands.add(convert(child));
+		}
+		return cluster.getRexBuilder().makeCall(desc.getSqlOperator(), operands);
 	}
 
 	private RexNode convertField(final ExprNodeFieldDesc fieldDesc) throws SemanticException {

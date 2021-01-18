@@ -22,6 +22,8 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 
 import org.antlr.runtime.tree.Tree;
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -48,7 +50,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -570,13 +571,13 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	public static void validatePartSpec(Table tbl, Map<String, String> partSpec,
-			ASTNode astNode, HiveConf conf, boolean shouldBeFull) throws SemanticException {
+			ASTNode astNode, HiveConf conf, boolean shouldBeFull, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 		tbl.validatePartColumnNames(partSpec, shouldBeFull);
-		validatePartColumnType(tbl, partSpec, astNode, conf);
+		validatePartColumnType(tbl, partSpec, astNode, conf, frameworkConfig, cluster);
 	}
 
 	private static boolean getPartExprNodeDesc(ASTNode astNode, HiveConf conf,
-			Map<ASTNode, ExprNodeDesc> astExprNodeMap) throws SemanticException {
+			Map<ASTNode, ExprNodeDesc> astExprNodeMap, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 
 		if (astNode == null) {
 			return true;
@@ -584,14 +585,14 @@ public class HiveParserBaseSemanticAnalyzer {
 			return astNode.getType() != HiveASTParser.TOK_PARTVAL;
 		}
 
-		HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(null);
+		HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(null, frameworkConfig, cluster);
 		String defaultPartitionName = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
 		boolean result = true;
 		for (Node childNode : astNode.getChildren()) {
 			ASTNode childASTNode = (ASTNode) childNode;
 
 			if (childASTNode.getType() != HiveASTParser.TOK_PARTVAL) {
-				result = getPartExprNodeDesc(childASTNode, conf, astExprNodeMap) && result;
+				result = getPartExprNodeDesc(childASTNode, conf, astExprNodeMap, frameworkConfig, cluster) && result;
 			} else {
 				boolean isDynamicPart = childASTNode.getChildren().size() <= 1;
 				result = !isDynamicPart && result;
@@ -614,14 +615,14 @@ public class HiveParserBaseSemanticAnalyzer {
 		return val;
 	}
 
-	public static void validatePartColumnType(Table tbl, Map<String, String> partSpec,
-			ASTNode astNode, HiveConf conf) throws SemanticException {
+	private static void validatePartColumnType(Table tbl, Map<String, String> partSpec,
+			ASTNode astNode, HiveConf conf, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 		if (!HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_TYPE_CHECK_ON_INSERT)) {
 			return;
 		}
 
 		Map<ASTNode, ExprNodeDesc> astExprNodeMap = new HashMap<>();
-		if (!getPartExprNodeDesc(astNode, conf, astExprNodeMap)) {
+		if (!getPartExprNodeDesc(astNode, conf, astExprNodeMap, frameworkConfig, cluster)) {
 			LOG.warn("Dynamic partitioning is used; only validating " + astExprNodeMap.size() + " columns");
 		}
 
@@ -714,44 +715,12 @@ public class HiveParserBaseSemanticAnalyzer {
 
 		public TableSpec.SpecType specType;
 
-		public TableSpec(Hive db, HiveConf conf, ASTNode ast)
-				throws SemanticException {
-			this(db, conf, ast, true, false);
-		}
-
-		public TableSpec(Hive db, HiveConf conf, String tableName, Map<String, String> partSpec)
-				throws HiveException {
-			this.tableName = tableName;
-			this.partSpec = partSpec;
-			this.tableHandle = db.getTable(tableName);
-			if (partSpec != null) {
-				this.specType = TableSpec.SpecType.STATIC_PARTITION;
-				this.partHandle = db.getPartition(tableHandle, partSpec, false);
-				this.partitions = Arrays.asList(partHandle);
-			} else {
-				this.specType = TableSpec.SpecType.TABLE_ONLY;
-			}
-		}
-
-		public TableSpec(Table tableHandle, List<Partition> partitions)
-				throws HiveException {
-			this.tableHandle = tableHandle;
-			this.tableName = tableHandle.getTableName();
-			if (partitions != null && !partitions.isEmpty()) {
-				this.specType = TableSpec.SpecType.STATIC_PARTITION;
-				this.partitions = partitions;
-				List<FieldSchema> partCols = this.tableHandle.getPartCols();
-				this.partSpec = new LinkedHashMap<>();
-				for (FieldSchema partCol : partCols) {
-					partSpec.put(partCol.getName(), null);
-				}
-			} else {
-				this.specType = TableSpec.SpecType.TABLE_ONLY;
-			}
+		public TableSpec(Hive db, HiveConf conf, ASTNode ast, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
+			this(db, conf, ast, true, false, frameworkConfig, cluster);
 		}
 
 		public TableSpec(Hive db, HiveConf conf, ASTNode ast, boolean allowDynamicPartitionsSpec,
-				boolean allowPartialPartitionsSpec) throws SemanticException {
+				boolean allowPartialPartitionsSpec, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 			assert (ast.getToken().getType() == HiveASTParser.TOK_TAB
 					|| ast.getToken().getType() == HiveASTParser.TOK_TABLE_PARTITION
 					|| ast.getToken().getType() == HiveASTParser.TOK_TABTYPE
@@ -805,7 +774,7 @@ public class HiveParserBaseSemanticAnalyzer {
 				}
 
 				// check if the columns, as well as value types in the partition() clause are valid
-				validatePartSpec(tableHandle, tmpPartSpec, ast, conf, false);
+				validatePartSpec(tableHandle, tmpPartSpec, ast, conf, false, frameworkConfig, cluster);
 
 				List<FieldSchema> parts = tableHandle.getPartitionKeys();
 				partSpec = new LinkedHashMap<String, String>(partspec.getChildCount());

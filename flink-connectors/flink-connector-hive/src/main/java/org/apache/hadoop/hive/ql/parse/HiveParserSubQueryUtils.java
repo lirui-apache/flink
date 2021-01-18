@@ -19,6 +19,8 @@
 package org.apache.hadoop.hive.ql.parse;
 
 import org.antlr.runtime.tree.CommonTreeAdaptor;
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.HiveParserContext;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
@@ -222,7 +224,9 @@ public class HiveParserSubQueryUtils {
 			int sqIdx,
 			ASTNode sqAST,
 			ASTNode originalSQAST,
-			HiveParserContext ctx) throws SemanticException {
+			HiveParserContext ctx,
+			FrameworkConfig frameworkConfig,
+			RelOptCluster cluster) throws SemanticException {
 		ASTNode sqOp = (ASTNode) sqAST.getChild(0);
 		ASTNode sq = (ASTNode) sqAST.getChild(1);
 		ASTNode outerQueryExpr = (ASTNode) sqAST.getChild(2);
@@ -239,7 +243,9 @@ public class HiveParserSubQueryUtils {
 		return new HiveParserQBSubQuery(outerQueryId, sqIdx, sq, outerQueryExpr,
 				buildSQOperator(sqOp),
 				originalSQAST,
-				ctx);
+				ctx,
+				frameworkConfig,
+				cluster);
 	}
 
 	static HiveParserQBSubQuery.SubQueryTypeDef buildSQOperator(ASTNode astSQOp) throws SemanticException {

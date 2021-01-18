@@ -56,11 +56,9 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNegative;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPPositive;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -88,8 +86,7 @@ public class HiveParserSqlFunctionConverter {
 	}
 
 	public static SqlOperator getCalciteOperator(String funcTextName, GenericUDF hiveUDF,
-			List<RelDataType> calciteArgTypes, RelDataType retType)
-			throws SemanticException {
+			List<RelDataType> calciteArgTypes, RelDataType retType) throws SemanticException {
 		// handle overloaded methods first
 		if (hiveUDF instanceof GenericUDFOPNegative) {
 			return SqlStdOperatorTable.UNARY_MINUS;
@@ -98,9 +95,7 @@ public class HiveParserSqlFunctionConverter {
 		} // do generic lookup
 		String name = null;
 		if (StringUtils.isEmpty(funcTextName)) {
-			name = getName(hiveUDF); // this should probably never happen, see
-			// getName
-			// comment
+			name = getName(hiveUDF); // this should probably never happen, see getName comment
 			LOG.warn("The function text was empty, name from annotation is " + name);
 		} else {
 			// We could just do toLowerCase here and let SA qualify it, but
@@ -110,7 +105,7 @@ public class HiveParserSqlFunctionConverter {
 		return getCalciteFn(name, calciteArgTypes, retType, FunctionRegistry.isDeterministic(hiveUDF));
 	}
 
-	public static SqlOperator getCalciteOperator(String funcTextName, GenericUDTF hiveUDTF,
+	public static SqlOperator getCalciteOperator(String funcTextName,
 			List<RelDataType> calciteArgTypes, RelDataType retType) throws SemanticException {
 		// We could just do toLowerCase here and let SA qualify it, but
 		// let's be proper...
@@ -298,11 +293,10 @@ public class HiveParserSqlFunctionConverter {
 			udfName = ((GenericUDFBridge) hiveUDF).getUdfName();
 		} else {
 			Class<? extends GenericUDF> udfClass = hiveUDF.getClass();
-			Annotation udfAnnotation = udfClass.getAnnotation(Description.class);
+			Description udfAnnotation = udfClass.getAnnotation(Description.class);
 
-			if (udfAnnotation != null && udfAnnotation instanceof Description) {
-				Description udfDescription = (Description) udfAnnotation;
-				udfName = udfDescription.name();
+			if (udfAnnotation instanceof Description) {
+				udfName = udfAnnotation.name();
 				if (udfName != null) {
 					String[] aliases = udfName.split(",");
 					if (aliases.length > 0) {
@@ -435,9 +429,9 @@ public class HiveParserSqlFunctionConverter {
 	public static class CalciteUDAF extends SqlAggFunction implements CanAggregateDistinct {
 		private final boolean isDistinct;
 
-		public CalciteUDAF(boolean isDistinct, String opName, SqlReturnTypeInference returnTypeInference,
+		public CalciteUDAF(boolean isDistinct, String opName, SqlIdentifier identifier, SqlReturnTypeInference returnTypeInference,
 				SqlOperandTypeInference operandTypeInference, SqlOperandTypeChecker operandTypeChecker) {
-			super(opName, SqlKind.OTHER_FUNCTION, returnTypeInference, operandTypeInference,
+			super(opName, identifier, SqlKind.OTHER_FUNCTION, returnTypeInference, operandTypeInference,
 					operandTypeChecker, SqlFunctionCategory.USER_DEFINED_FUNCTION);
 			this.isDistinct = isDistinct;
 		}
@@ -560,6 +554,7 @@ public class HiveParserSqlFunctionConverter {
 					calciteAggFn = new CalciteUDAF(
 							isDistinct,
 							udfInfo.udfName,
+							udfInfo.identifier,
 							udfInfo.returnTypeInference,
 							udfInfo.operandTypeInference,
 							udfInfo.operandTypeChecker);

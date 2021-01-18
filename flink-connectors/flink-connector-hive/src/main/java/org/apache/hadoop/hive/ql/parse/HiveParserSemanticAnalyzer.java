@@ -25,7 +25,10 @@ import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.antlr.runtime.ClassicToken;
 import org.antlr.runtime.Token;
 import org.antlr.runtime.tree.Tree;
+import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -42,7 +45,6 @@ import org.apache.hadoop.hive.ql.HiveParserContext;
 import org.apache.hadoop.hive.ql.HiveParserQueryState;
 import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
-import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
@@ -199,7 +201,11 @@ public class HiveParserSemanticAnalyzer {
 
 	private final HiveParserQueryState queryState;
 
-	public HiveParserSemanticAnalyzer(HiveParserQueryState queryState, HiveShim hiveShim) throws SemanticException {
+	private final FrameworkConfig frameworkConfig;
+	private final RelOptCluster cluster;
+
+	public HiveParserSemanticAnalyzer(HiveParserQueryState queryState, HiveShim hiveShim, FrameworkConfig frameworkConfig,
+			RelOptCluster cluster) throws SemanticException {
 		this.queryState = queryState;
 		this.conf = queryState.getConf();
 		this.hiveShim = hiveShim;
@@ -221,6 +227,8 @@ public class HiveParserSemanticAnalyzer {
 		tabNameToTabObject = new HashMap<>();
 		defaultJoinMerge = !Boolean.parseBoolean(conf.get("hive.merge.nway.joins", "true"));
 		disableJoinMerge = defaultJoinMerge;
+		this.frameworkConfig = frameworkConfig;
+		this.cluster = cluster;
 	}
 
 	public HiveConf getConf() {
@@ -324,8 +332,8 @@ public class HiveParserSemanticAnalyzer {
 
 		// Iterate over the selects search for aggregation Trees.
 		// Use String as keys to eliminate duplicate trees.
-		LinkedHashMap<String, ASTNode> aggregationTrees = new LinkedHashMap<String, ASTNode>();
-		List<ASTNode> wdwFns = new ArrayList<ASTNode>();
+		LinkedHashMap<String, ASTNode> aggregationTrees = new LinkedHashMap<>();
+		List<ASTNode> wdwFns = new ArrayList<>();
 		for (int i = 0; i < selExpr.getChildCount(); ++i) {
 			ASTNode function = (ASTNode) selExpr.getChild(i);
 			if (function.getType() == HiveASTParser.TOK_SELEXPR ||
@@ -386,33 +394,30 @@ public class HiveParserSemanticAnalyzer {
 				|| exprTokenType == HiveASTParser.TOK_FUNCTIONDI
 				|| exprTokenType == HiveASTParser.TOK_FUNCTIONSTAR) {
 			assert (expressionTree.getChildCount() != 0);
-			if (expressionTree.getChild(expressionTree.getChildCount() - 1).getType()
-					== HiveASTParser.TOK_WINDOWSPEC) {
+			if (expressionTree.getChild(expressionTree.getChildCount() - 1).getType() == HiveASTParser.TOK_WINDOWSPEC) {
 				// If it is a windowing spec, we include it in the list
-				// Further, we will examine its children AST nodes to check whether
-				// there are aggregation functions within
+				// Further, we will examine its children AST nodes to check whether there are aggregation functions within
 				wdwFns.add(expressionTree);
 				doPhase1GetAllAggregations((ASTNode) expressionTree.getChild(expressionTree.getChildCount() - 1),
 						aggregations, wdwFns);
 				return;
 			}
 			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
-				String functionName = unescapeIdentifier(expressionTree.getChild(0)
-						.getText());
+				String functionName = unescapeIdentifier(expressionTree.getChild(0).getText());
 				// Validate the function name
-				if (HiveParserUtils.getFunctionInfo(functionName) == null) {
+				SqlOperator sqlOperator = HiveParserUtils.getAnySqlOperator(functionName, frameworkConfig.getOperatorTable());
+				if (sqlOperator == null) {
 					throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(functionName));
 				}
 				if (FunctionRegistry.impliesOrder(functionName)) {
 					throw new SemanticException(ErrorMsg.MISSING_OVER_CLAUSE.getMsg(functionName));
 				}
-				if (FunctionRegistry.getGenericUDAFResolver(functionName) != null) {
+				if (HiveParserUtils.isUDAF(sqlOperator)) {
 					if (containsLeadLagUDF(expressionTree)) {
 						throw new SemanticException(ErrorMsg.MISSING_OVER_CLAUSE.getMsg(functionName));
 					}
 					aggregations.put(expressionTree.toStringTree(), expressionTree);
-					FunctionInfo fi = HiveParserUtils.getFunctionInfo(functionName);
-					if (!fi.isNative()) {
+					if (!HiveParserUtils.isNative(sqlOperator)) {
 						unparseTranslator.addIdentifierTranslation((ASTNode) expressionTree.getChild(0));
 					}
 					return;
@@ -420,8 +425,7 @@ public class HiveParserSemanticAnalyzer {
 			}
 		}
 		for (int i = 0; i < expressionTree.getChildCount(); i++) {
-			doPhase1GetAllAggregations((ASTNode) expressionTree.getChild(i),
-					aggregations, wdwFns);
+			doPhase1GetAllAggregations((ASTNode) expressionTree.getChild(i), aggregations, wdwFns);
 		}
 	}
 
@@ -1236,7 +1240,7 @@ public class HiveParserSemanticAnalyzer {
 						} catch (HiveException e) {
 							LOG.info("Error while getting metadata : ", e);
 						}
-						validatePartSpec(table, partition, (ASTNode) tab, conf, false);
+						validatePartSpec(table, partition, (ASTNode) tab, conf, false, frameworkConfig, cluster);
 					}
 					skipRecursion = false;
 					break;
@@ -1584,7 +1588,7 @@ public class HiveParserSemanticAnalyzer {
 
 			if (qb.getParseInfo().isAnalyzeCommand()) {
 				// allow partial partition specification for nonscan since noscan is fast.
-				TableSpec ts = new TableSpec(db, conf, (ASTNode) ast.getChild(0), true, this.noscan);
+				TableSpec ts = new TableSpec(db, conf, (ASTNode) ast.getChild(0), true, this.noscan, frameworkConfig, cluster);
 				if (ts.specType == SpecType.DYNAMIC_PARTITION) { // dynamic partitions
 					try {
 						ts.partitions = db.getPartitionsByNames(ts.tableHandle, ts.partSpec);
@@ -1660,7 +1664,7 @@ public class HiveParserSemanticAnalyzer {
 			ASTNode ast = qbp.getDestForClause(name);
 			switch (ast.getToken().getType()) {
 				case HiveASTParser.TOK_TAB: {
-					TableSpec ts = new TableSpec(db, conf, ast);
+					TableSpec ts = new TableSpec(db, conf, ast, frameworkConfig, cluster);
 					if (ts.tableHandle.isView() || hiveShim.isMaterializedView(ts.tableHandle)) {
 						throw new SemanticException(ErrorMsg.DML_AGAINST_VIEW.getMsg());
 					}
@@ -1738,7 +1742,7 @@ public class HiveParserSemanticAnalyzer {
 										"Error creating temporary folder on: " + location.toString()), e);
 							}
 							if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
-								TableSpec ts = new TableSpec(db, conf, this.ast);
+								TableSpec ts = new TableSpec(db, conf, this.ast, frameworkConfig, cluster);
 								// Add the table spec for the destination table.
 								qb.getParseInfo().addTableSpec(ts.tableName.toLowerCase(), ts);
 							}
@@ -2345,7 +2349,7 @@ public class HiveParserSemanticAnalyzer {
 			HiveParserRowResolver outerRR, Map<ASTNode, RelNode> subqueryToRelNode,
 			boolean useCaching) throws SemanticException {
 
-		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, useCaching, false);
+		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, useCaching, false, frameworkConfig, cluster);
 		tcCtx.setOuterRR(outerRR);
 		tcCtx.setSubqueryToRelNode(subqueryToRelNode);
 		return genExprNodeDesc(expr, input, tcCtx);
@@ -2353,7 +2357,7 @@ public class HiveParserSemanticAnalyzer {
 
 	public ExprNodeDesc genExprNodeDesc(ASTNode expr, HiveParserRowResolver input, boolean useCaching,
 			boolean foldExpr) throws SemanticException {
-		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, useCaching, foldExpr);
+		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, useCaching, foldExpr, frameworkConfig, cluster);
 		return genExprNodeDesc(expr, input, tcCtx);
 	}
 
@@ -2363,7 +2367,7 @@ public class HiveParserSemanticAnalyzer {
 	 */
 	public Map<ASTNode, ExprNodeDesc> genAllExprNodeDesc(ASTNode expr, HiveParserRowResolver input)
 			throws SemanticException {
-		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input);
+		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, frameworkConfig, cluster);
 		return genAllExprNodeDesc(expr, input, tcCtx);
 	}
 
@@ -2419,8 +2423,7 @@ public class HiveParserSemanticAnalyzer {
 		// Create the walker and  the rules dispatcher.
 		tcCtx.setUnparseTranslator(unparseTranslator);
 
-		Map<ASTNode, ExprNodeDesc> nodeOutputs =
-				HiveParserTypeCheckProcFactory.genExprNode(expr, tcCtx);
+		Map<ASTNode, ExprNodeDesc> nodeOutputs = HiveParserTypeCheckProcFactory.genExprNode(expr, tcCtx);
 		ExprNodeDesc desc = nodeOutputs.get(expr);
 		if (desc == null) {
 			String errMsg = tcCtx.getError();
@@ -2819,8 +2822,7 @@ public class HiveParserSemanticAnalyzer {
 		if (exprTokenType == HiveASTParser.TOK_FUNCTION) {
 			assert (expressionTree.getChildCount() != 0);
 			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
-				String functionName = unescapeIdentifier(expressionTree.getChild(0)
-						.getText());
+				String functionName = unescapeIdentifier(expressionTree.getChild(0).getText());
 				functionName = functionName.toLowerCase();
 				if (FunctionRegistry.LAG_FUNC_NAME.equals(functionName) ||
 						FunctionRegistry.LEAD_FUNC_NAME.equals(functionName)

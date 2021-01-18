@@ -417,7 +417,7 @@ public class HiveInspectors {
 		}
 	}
 
-	private static ObjectInspector getObjectInspector(TypeInfo type) {
+	public static ObjectInspector getObjectInspector(TypeInfo type) {
 		switch (type.getCategory()) {
 
 			case PRIMITIVE:

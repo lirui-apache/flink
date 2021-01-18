@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.hive.ql.optimizer.calcite.translator;
 
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
 import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckCtx;
 import org.apache.hadoop.hive.ql.parse.JoinType;
@@ -34,10 +36,11 @@ public class HiveParserJoinTypeCheckCtx extends HiveParserTypeCheckCtx {
 	private final List<HiveParserRowResolver> inputRRLst;
 	private final boolean outerJoin;
 
-	public HiveParserJoinTypeCheckCtx(HiveParserRowResolver leftRR, HiveParserRowResolver rightRR, JoinType hiveJoinType)
+	public HiveParserJoinTypeCheckCtx(HiveParserRowResolver leftRR, HiveParserRowResolver rightRR, JoinType hiveJoinType,
+			FrameworkConfig frameworkConfig, RelOptCluster cluster)
 			throws SemanticException {
 		super(HiveParserRowResolver.getCombinedRR(leftRR, rightRR), true, false, false, false, false, false, false, false,
-				false, false);
+				false, false, frameworkConfig, cluster);
 		this.inputRRLst = Arrays.asList(leftRR, rightRR);
 		this.outerJoin = (hiveJoinType == JoinType.LEFTOUTER) || (hiveJoinType == JoinType.RIGHTOUTER)
 				|| (hiveJoinType == JoinType.FULLOUTER);

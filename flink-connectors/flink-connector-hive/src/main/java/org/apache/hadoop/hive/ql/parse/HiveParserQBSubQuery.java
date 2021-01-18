@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.hive.common.ObjectPair;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.HiveParserContext;
@@ -262,21 +264,27 @@ public class HiveParserQBSubQuery {
 		}
 	}
 
-	class ConjunctAnalyzer {
-		HiveParserRowResolver parentQueryRR;
+	static class ConjunctAnalyzer {
+		private final HiveParserRowResolver parentQueryRR;
 		boolean forHavingClause;
 		String parentQueryNewAlias;
 		NodeProcessor defaultExprProcessor;
 		Stack<Node> stack;
+		private final FrameworkConfig frameworkConfig;
+		private final RelOptCluster cluster;
 
 		ConjunctAnalyzer(HiveParserRowResolver parentQueryRR,
 				boolean forHavingClause,
-				String parentQueryNewAlias) {
+				String parentQueryNewAlias,
+				FrameworkConfig frameworkConfig,
+				RelOptCluster cluster) {
 			this.parentQueryRR = parentQueryRR;
 			defaultExprProcessor = new HiveParserTypeCheckProcFactory.DefaultExprProcessor();
 			this.forHavingClause = forHavingClause;
 			this.parentQueryNewAlias = parentQueryNewAlias;
-			stack = new Stack<Node>();
+			stack = new Stack<>();
+			this.frameworkConfig = frameworkConfig;
+			this.cluster = cluster;
 		}
 
 		/*
@@ -356,11 +364,11 @@ public class HiveParserQBSubQuery {
 		 */
 		protected ColumnInfo resolveDot(ASTNode node) {
 			try {
-				HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(parentQueryRR);
+				HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(parentQueryRR, frameworkConfig, cluster);
 				String str = unescapeIdentifier(node.getChild(1).getText());
 				ExprNodeDesc idDesc = new ExprNodeConstantDesc(TypeInfoFactory.stringTypeInfo, str.toLowerCase());
-				Object desc = defaultExprProcessor.process(node, stack, tcCtx, (Object) null, idDesc);
-				if (desc != null && desc instanceof ExprNodeColumnDesc) {
+				Object desc = defaultExprProcessor.process(node, stack, tcCtx, null, idDesc);
+				if (desc instanceof ExprNodeColumnDesc) {
 					ExprNodeColumnDesc colDesc = (ExprNodeColumnDesc) desc;
 					String[] qualName = parentQueryRR.reverseLookup(colDesc.getColumn());
 					return parentQueryRR.get(qualName[0], qualName[1]);
@@ -444,9 +452,7 @@ public class HiveParserQBSubQuery {
 		}
 
 		public ASTNode getJoinConditionAST() {
-			ASTNode ast =
-					HiveParserSubQueryUtils.buildNotInNullJoinCond(getAlias(), CNT_ALIAS);
-			return ast;
+			return HiveParserSubQueryUtils.buildNotInNullJoinCond(getAlias(), CNT_ALIAS);
 		}
 
 		public HiveParserQBSubQuery getSubQuery() {
@@ -489,7 +495,10 @@ public class HiveParserQBSubQuery {
 
 	private HiveParserQBSubQuery.NotInCheck notInCheck;
 
-	private HiveParserSubQueryDiagnostic.QBSubQueryRewrite subQueryDiagnostic;
+	private final HiveParserSubQueryDiagnostic.QBSubQueryRewrite subQueryDiagnostic;
+
+	private final FrameworkConfig frameworkConfig;
+	private final RelOptCluster cluster;
 
 	public HiveParserQBSubQuery(String outerQueryId,
 			int sqIdx,
@@ -497,7 +506,9 @@ public class HiveParserQBSubQuery {
 			ASTNode parentQueryExpression,
 			HiveParserQBSubQuery.SubQueryTypeDef operator,
 			ASTNode originalSQAST,
-			HiveParserContext ctx) {
+			HiveParserContext ctx,
+			FrameworkConfig frameworkConfig,
+			RelOptCluster cluster) {
 		super();
 		this.subQueryAST = subQueryAST;
 		this.parentQueryExpression = parentQueryExpression;
@@ -518,6 +529,9 @@ public class HiveParserQBSubQuery {
 		}
 
 		subQueryDiagnostic = HiveParserSubQueryDiagnostic.getRewrite(this, ctx.getTokenRewriteStream(), ctx);
+
+		this.frameworkConfig = frameworkConfig;
+		this.cluster = cluster;
 	}
 
 	public ASTNode getSubQueryAST() {
@@ -589,11 +603,11 @@ public class HiveParserQBSubQuery {
 			return false;
 		}
 		ASTNode searchCond = (ASTNode) whereClause.getChild(0);
-		List<ASTNode> conjuncts = new ArrayList<ASTNode>();
+		List<ASTNode> conjuncts = new ArrayList<>();
 		HiveParserSubQueryUtils.extractConjuncts(searchCond, conjuncts);
 
-		HiveParserQBSubQuery.ConjunctAnalyzer conjunctAnalyzer = new HiveParserQBSubQuery.ConjunctAnalyzer(parentQueryRR,
-				forHavingClause, outerQueryAlias);
+		HiveParserQBSubQuery.ConjunctAnalyzer conjunctAnalyzer = new ConjunctAnalyzer(parentQueryRR,
+				forHavingClause, outerQueryAlias, frameworkConfig, cluster);
 
 		boolean hasCorrelation = false;
 		boolean hasNonEquiJoinPred = false;
@@ -609,7 +623,7 @@ public class HiveParserQBSubQuery {
 		boolean noImplicityGby = true;
 		if (insertClause.getChild(1).getChildCount() > 3 &&
 				insertClause.getChild(1).getChild(3).getType() == HiveASTParser.TOK_GROUPBY) {
-			if ((ASTNode) insertClause.getChild(1).getChild(3) != null) {
+			if (insertClause.getChild(1).getChild(3) != null) {
 				noImplicityGby = false;
 			}
 		}
@@ -638,8 +652,7 @@ public class HiveParserQBSubQuery {
 		// * IN - always allowed, BUT returns true for cases with aggregate other than COUNT since later in subquery remove
 		//        rule we need to know about this case.
 		// * NOT IN - always allow, but always return true because later subq remove rule will generate diff plan for this case
-		if (hasAggreateExprs &&
-				noImplicityGby) {
+		if (hasAggreateExprs && noImplicityGby) {
 
 			if (operator.getType() == HiveParserQBSubQuery.SubQueryType.EXISTS
 					|| operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS) {
@@ -655,17 +668,11 @@ public class HiveParserQBSubQuery {
 							subQueryAST,
 							"Scalar subqueries with aggregate cannot have non-equi join predicate"));
 				}
-				if (hasCorrelation) {
-					return true;
-				}
+				return hasCorrelation;
 			} else if (operator.getType() == HiveParserQBSubQuery.SubQueryType.IN) {
-				if (hasCount && hasCorrelation) {
-					return true;
-				}
+				return hasCount && hasCorrelation;
 			} else if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_IN) {
-				if (hasCorrelation) {
-					return true;
-				}
+				return hasCorrelation;
 			}
 		}
 		return false;
@@ -936,8 +943,8 @@ public class HiveParserQBSubQuery {
 		List<ASTNode> conjuncts = new ArrayList<ASTNode>();
 		HiveParserSubQueryUtils.extractConjuncts(searchCond, conjuncts);
 
-		HiveParserQBSubQuery.ConjunctAnalyzer conjunctAnalyzer = new HiveParserQBSubQuery.ConjunctAnalyzer(parentQueryRR,
-				forHavingClause, outerQueryAlias);
+		HiveParserQBSubQuery.ConjunctAnalyzer conjunctAnalyzer = new ConjunctAnalyzer(parentQueryRR,
+				forHavingClause, outerQueryAlias, frameworkConfig, cluster);
 		ASTNode sqNewSearchCond = null;
 
 		for (ASTNode conjunctAST : conjuncts) {

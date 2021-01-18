@@ -20,7 +20,11 @@ package org.apache.hadoop.hive.ql.parse;
 
 import org.apache.flink.table.planner.delegation.hive.HiveParserUnparseTranslator;
 
+import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,23 +96,28 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 
 	private final boolean allowSubQueryExpr;
 
+	// used to get SqlOperators from flink
+	private final FrameworkConfig frameworkConfig;
+	private final RelOptCluster cluster;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param inputRR The input row resolver of the previous operator.
 	 */
-	public HiveParserTypeCheckCtx(HiveParserRowResolver inputRR) {
-		this(inputRR, true, false);
+	public HiveParserTypeCheckCtx(HiveParserRowResolver inputRR, FrameworkConfig frameworkConfig, RelOptCluster cluster) {
+		this(inputRR, true, false, frameworkConfig, cluster);
 	}
 
-	public HiveParserTypeCheckCtx(HiveParserRowResolver inputRR, boolean useCaching, boolean foldExpr) {
-		this(inputRR, useCaching, foldExpr, false, true, true, true, true, true, true, true);
+	public HiveParserTypeCheckCtx(HiveParserRowResolver inputRR, boolean useCaching, boolean foldExpr, FrameworkConfig frameworkConfig, RelOptCluster cluster) {
+		this(inputRR, useCaching, foldExpr, false, true, true, true, true, true, true, true, frameworkConfig, cluster);
 	}
 
 	public HiveParserTypeCheckCtx(HiveParserRowResolver inputRR, boolean useCaching, boolean foldExpr,
 			boolean allowStatefulFunctions, boolean allowDistinctFunctions, boolean allowGBExprElimination,
 			boolean allowAllColRef, boolean allowFunctionStar, boolean allowWindowing,
-			boolean allowIndexExpr, boolean allowSubQueryExpr) {
+			boolean allowIndexExpr, boolean allowSubQueryExpr,
+			FrameworkConfig frameworkConfig, RelOptCluster cluster) {
 		setInputRR(inputRR);
 		error = null;
 		this.useCaching = useCaching;
@@ -123,6 +132,8 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 		this.allowSubQueryExpr = allowSubQueryExpr;
 		this.outerRR = null;
 		this.subqueryToRelNode = null;
+		this.frameworkConfig = frameworkConfig;
+		this.cluster = cluster;
 	}
 
 	/**
@@ -257,5 +268,13 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 
 	public boolean isFoldExpr() {
 		return foldExpr;
+	}
+
+	public SqlOperatorTable getSqlOperatorTable() {
+		return frameworkConfig.getOperatorTable();
+	}
+
+	public RelDataTypeFactory getTypeFactory() {
+		return cluster.getTypeFactory();
 	}
 }
