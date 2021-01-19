@@ -558,24 +558,14 @@ public final class FunctionCatalog {
 		// 1. Temporary functions
 		// 2. Catalog functions
 		ObjectIdentifier normalizedIdentifier = FunctionIdentifier.normalizeObjectIdentifier(oi);
-		CatalogFunction potentialResult = tempCatalogFunctions.get(normalizedIdentifier);
-
-		if (potentialResult != null) {
-			return Optional.of(
-				new FunctionLookup.Result(
-					FunctionIdentifier.of(oi),
-					getFunctionDefinition(oi.getObjectName(), potentialResult)
-				)
-			);
-		}
-
+		CatalogFunction tempFunction = tempCatalogFunctions.get(normalizedIdentifier);
 		Optional<Catalog> catalogOptional = catalogManager.getCatalog(oi.getCatalogName());
 
 		if (catalogOptional.isPresent()) {
 			Catalog catalog = catalogOptional.get();
 			try {
-				CatalogFunction catalogFunction = catalog.getFunction(
-					new ObjectPath(oi.getDatabaseName(), oi.getObjectName()));
+				CatalogFunction catalogFunction = tempFunction != null ? tempFunction : catalog.getFunction(
+						new ObjectPath(oi.getDatabaseName(), oi.getObjectName()));
 
 				FunctionDefinition fd;
 				if (catalog.getFunctionDefinitionFactory().isPresent() &&
@@ -591,6 +581,13 @@ public final class FunctionCatalog {
 			} catch (FunctionNotExistException e) {
 				// Ignore
 			}
+		} else if (tempFunction != null) {
+			return Optional.of(
+					new FunctionLookup.Result(
+							FunctionIdentifier.of(oi),
+							getFunctionDefinition(oi.getObjectName(), tempFunction)
+					)
+			);
 		}
 
 		return Optional.empty();
