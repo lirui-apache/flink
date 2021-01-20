@@ -705,13 +705,14 @@ public class HiveParserUtils {
 	}
 
 	public static SqlOperator getSqlOperator(String funcName, SqlOperatorTable opTable, SqlFunctionCategory category) {
+		funcName = funcName.toLowerCase();
 		String[] names = funcName.split("\\.");
 		SqlIdentifier identifier = new SqlIdentifier(Arrays.asList(names), SqlParserPos.ZERO);
 		List<SqlOperator> operators = new ArrayList<>();
 		try {
 			opTable.lookupOperatorOverloads(identifier, category, SqlSyntax.FUNCTION, operators, SqlNameMatchers.withCaseSensitive(false));
 		} catch (Exception e) {
-			return null;
+			LOG.warn("Error trying to resolve function " + funcName, e);
 		}
 		if (operators.isEmpty()) {
 			return null;

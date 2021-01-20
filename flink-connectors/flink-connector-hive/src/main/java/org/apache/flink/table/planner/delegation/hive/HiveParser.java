@@ -169,17 +169,10 @@ public class HiveParser extends ParserImpl {
 		HiveShim hiveShim = HiveShimLoader.loadHiveShim(((HiveCatalog) currentCatalog).getHiveVersion());
 		try {
 			// creates SessionState
-			SessionState sessionState = new SessionState(hiveConf);
-			sessionState.initTxnMgr(hiveConf);
-			sessionState.setCurrentDatabase(catalogManager.getCurrentDatabase());
-			// some Hive functions needs the timestamp
-			sessionState.setupQueryCurrentTimestamp();
-			SessionState.start(sessionState);
+			startSessionState(hiveConf, catalogManager);
 			// We override Hive's grouping function. Refer to the implementation for more details.
 			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
 			return processCmd(statement, hiveConf, hiveShim, (HiveCatalog) currentCatalog);
-		} catch (LockException e) {
-			throw new FlinkHiveException("Failed to init SessionState", e);
 		} finally {
 			clearSessionState(hiveConf);
 		}
@@ -281,6 +274,23 @@ public class HiveParser extends ParserImpl {
 			return createInsertOperation(analyzer, relNode);
 		} else {
 			return new PlannerQueryOperation(relNode);
+		}
+	}
+
+	private void startSessionState(HiveConf hiveConf, CatalogManager catalogManager) {
+		ClassLoader contextCL = Thread.currentThread().getContextClassLoader();
+		try {
+			SessionState sessionState = new SessionState(hiveConf);
+			sessionState.initTxnMgr(hiveConf);
+			sessionState.setCurrentDatabase(catalogManager.getCurrentDatabase());
+			// some Hive functions needs the timestamp
+			sessionState.setupQueryCurrentTimestamp();
+			SessionState.start(sessionState);
+		} catch (LockException e) {
+			throw new FlinkHiveException("Failed to init SessionState", e);
+		} finally {
+			// don't let SessionState mess up with our context classloader
+			Thread.currentThread().setContextClassLoader(contextCL);
 		}
 	}
 
