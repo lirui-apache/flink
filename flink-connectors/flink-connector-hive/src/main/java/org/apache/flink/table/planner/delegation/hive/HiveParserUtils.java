@@ -697,22 +697,22 @@ public class HiveParserUtils {
 	}
 
 	public static SqlOperator getAnySqlOperator(String funcName, SqlOperatorTable opTable) {
-		try {
-			SqlOperator sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_FUNCTION);
-			if (sqlOperator == null) {
-				sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
-			}
-			return sqlOperator;
-		} catch (Exception e) {
-			return null;
+		SqlOperator sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_FUNCTION);
+		if (sqlOperator == null) {
+			sqlOperator = getSqlOperator(funcName, opTable, SqlFunctionCategory.USER_DEFINED_TABLE_FUNCTION);
 		}
+		return sqlOperator;
 	}
 
 	public static SqlOperator getSqlOperator(String funcName, SqlOperatorTable opTable, SqlFunctionCategory category) {
 		String[] names = funcName.split("\\.");
 		SqlIdentifier identifier = new SqlIdentifier(Arrays.asList(names), SqlParserPos.ZERO);
 		List<SqlOperator> operators = new ArrayList<>();
-		opTable.lookupOperatorOverloads(identifier, category, SqlSyntax.FUNCTION, operators, SqlNameMatchers.withCaseSensitive(false));
+		try {
+			opTable.lookupOperatorOverloads(identifier, category, SqlSyntax.FUNCTION, operators, SqlNameMatchers.withCaseSensitive(false));
+		} catch (Exception e) {
+			return null;
+		}
 		if (operators.isEmpty()) {
 			return null;
 		} else {
