@@ -174,7 +174,7 @@ public class HiveParserRexNodeConverter {
 		if (expr instanceof ExprNodeGenericFuncDesc) {
 			return convertGenericFunc((ExprNodeGenericFuncDesc) expr);
 		} else if (expr instanceof ExprNodeConstantDesc) {
-			return convertConstant((ExprNodeConstantDesc) expr);
+			return convertConstant((ExprNodeConstantDesc) expr, cluster);
 		} else if (expr instanceof ExprNodeColumnDesc) {
 			return convertColumn((ExprNodeColumnDesc) expr);
 		} else if (expr instanceof ExprNodeFieldDesc) {
@@ -233,7 +233,7 @@ public class HiveParserRexNodeConverter {
 				ic.calciteInpDataType.getFieldList().get(pos).getType(), pos + ic.offsetInCalciteSchema);
 	}
 
-	private RexNode convertConstant(ExprNodeConstantDesc literal) throws CalciteSemanticException {
+	private static RexNode convertConstant(ExprNodeConstantDesc literal, RelOptCluster cluster) throws CalciteSemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		PrimitiveTypeInfo hiveType = (PrimitiveTypeInfo) literal.getTypeInfo();

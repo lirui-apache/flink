@@ -40,6 +40,7 @@ import org.apache.flink.table.planner.delegation.PlannerContext;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
 import org.apache.flink.table.planner.plan.FlinkCalciteCatalogReader;
 import org.apache.flink.table.planner.plan.nodes.hive.HiveDistribution;
+import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.rel.RelCollation;
@@ -60,6 +61,7 @@ import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.common.JavaUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.HiveParserContext;
@@ -67,6 +69,7 @@ import org.apache.hadoop.hive.ql.HiveParserQueryState;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
+import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
@@ -88,6 +91,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -166,6 +170,7 @@ public class HiveParser extends ParserImpl {
 		HiveConf hiveConf = new HiveConf(((HiveCatalog) currentCatalog).getHiveConf());
 		hiveConf.setVar(HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
 		hiveConf.set("hive.allow.udf.load.on.demand", "false");
+		hiveConf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
 		HiveShim hiveShim = HiveShimLoader.loadHiveShim(((HiveCatalog) currentCatalog).getHiveVersion());
 		try {
 			// creates SessionState
@@ -280,7 +285,7 @@ public class HiveParser extends ParserImpl {
 	private void startSessionState(HiveConf hiveConf, CatalogManager catalogManager) {
 		ClassLoader contextCL = Thread.currentThread().getContextClassLoader();
 		try {
-			SessionState sessionState = new SessionState(hiveConf);
+			SessionState sessionState = new HiveParserSessionState(hiveConf, contextCL);
 			sessionState.initTxnMgr(hiveConf);
 			sessionState.setCurrentDatabase(catalogManager.getCurrentDatabase());
 			// some Hive functions needs the timestamp
@@ -690,5 +695,38 @@ public class HiveParser extends ParserImpl {
 			}
 		}
 		return LogicalProject.create(input, Collections.emptyList(), exprs, (List<String>) null);
+	}
+
+	/**
+	 * Sub-class of SessionState to meet our needs.
+	 */
+	private static class HiveParserSessionState extends SessionState {
+
+		private final ClassLoader originContextLoader;
+		private final ClassLoader hiveLoader;
+
+		public HiveParserSessionState(HiveConf conf, ClassLoader contextLoader) {
+			super(conf);
+			this.originContextLoader = contextLoader;
+			this.hiveLoader = getConf().getClassLoader();
+			// added jars are handled by context class loader, so we always use it as the session class loader
+			getConf().setClassLoader(contextLoader);
+		}
+
+		@Override
+		public void close() throws IOException {
+			getRegistry().clear();
+			getRegistry().closeCUDFLoaders();
+			if (getTxnMgr() != null) {
+				getTxnMgr().closeTxnManager();
+			}
+			// close the classloader created in hive
+			JavaUtils.closeClassLoadersTo(hiveLoader, originContextLoader);
+			File resourceDir = new File(getConf().getVar(HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
+			LOG.debug("Removing resource dir " + resourceDir);
+			FileUtils.deleteDirectoryQuietly(resourceDir);
+			detachSession();
+			Hive.closeCurrent();
+		}
 	}
 }

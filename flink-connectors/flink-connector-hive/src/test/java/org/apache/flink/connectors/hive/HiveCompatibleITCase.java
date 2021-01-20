@@ -194,16 +194,15 @@ public class HiveCompatibleITCase {
 		if (HiveVersionTestUtil.HIVE_220_OR_LATER) {
 			dqlToRun.add("select weekofyear(current_timestamp()), dayofweek(current_timestamp()) from src limit 1");
 		}
-		if (HiveVersionTestUtil.HIVE_200_OR_LATER) {
-			tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
-			tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
-			tableEnv.executeSql("create function myudtf as '" + MyUDTF.class.getName() + "'");
-			dqlToRun.add("select default.hiveudf(x,y) from foo");
-			dqlToRun.add("select hiveudtf(ai) from baz");
-			dqlToRun.add("select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1");
-			dqlToRun.add("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2");
-			dqlToRun.add("select col1 from foo lateral view myudtf(x,y) tbl1 as col1");
-		}
+		// create functions
+		tableEnv.executeSql("create function hiveudf as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
+		tableEnv.executeSql("create function hiveudtf as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
+		tableEnv.executeSql("create function myudtf as '" + MyUDTF.class.getName() + "'");
+		dqlToRun.add("select default.hiveudf(x,y) from foo");
+		dqlToRun.add("select hiveudtf(ai) from baz");
+		dqlToRun.add("select col1,d from baz lateral view hiveudtf(ai) tbl1 as col1");
+		dqlToRun.add("select col1,col2,d from baz lateral view hiveudtf(ai) tbl1 as col1 lateral view hiveudtf(ai) tbl2 as col2");
+		dqlToRun.add("select col1 from foo lateral view myudtf(x,y) tbl1 as col1");
 		// create temp functions
 		tableEnv.executeSql("create temporary function temp_add as 'org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd'");
 		tableEnv.executeSql("create temporary function temp_explode as 'org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode'");
