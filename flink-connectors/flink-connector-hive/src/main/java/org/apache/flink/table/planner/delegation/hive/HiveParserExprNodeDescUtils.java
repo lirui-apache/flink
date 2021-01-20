@@ -23,7 +23,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeColumnListDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeSubQueryDesc;
+import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
 import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
 
 import java.util.List;
@@ -57,8 +57,8 @@ public class HiveParserExprNodeDescUtils {
 			}
 		} else if (exprDesc instanceof ExprNodeFieldDesc) {
 			getExprNodeColumnDesc(((ExprNodeFieldDesc) exprDesc).getDesc(), hashCodeToColumnDescMap);
-		} else if (exprDesc instanceof ExprNodeSubQueryDesc) {
-			getExprNodeColumnDesc(((ExprNodeSubQueryDesc) exprDesc).getSubQueryLhs(), hashCodeToColumnDescMap);
+		} else if (exprDesc instanceof HiveParserExprNodeSubQueryDesc) {
+			getExprNodeColumnDesc(((HiveParserExprNodeSubQueryDesc) exprDesc).getSubQueryLhs(), hashCodeToColumnDescMap);
 		}
 
 	}
