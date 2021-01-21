@@ -277,4 +277,8 @@ public class HiveParserTypeCheckCtx implements NodeProcessorCtx {
 	public RelDataTypeFactory getTypeFactory() {
 		return cluster.getTypeFactory();
 	}
+
+	public RelOptCluster getCluster() {
+		return cluster;
+	}
 }

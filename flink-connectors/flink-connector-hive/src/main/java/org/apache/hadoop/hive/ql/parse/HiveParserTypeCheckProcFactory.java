@@ -20,11 +20,13 @@ package org.apache.hadoop.hive.ql.parse;
 
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.planner.delegation.hive.HiveParserRexNodeConverter;
 import org.apache.flink.table.planner.delegation.hive.HiveParserTypeInfoUtils;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlCollation;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlOperator;
@@ -1130,7 +1132,8 @@ public class HiveParserTypeCheckProcFactory {
 		}
 
 		// try to create an ExprNodeDesc with a SqlOperator
-		private ExprNodeDesc convertSqlOperator(String funcText, List<ExprNodeDesc> children, HiveParserTypeCheckCtx ctx) {
+		private ExprNodeDesc convertSqlOperator(String funcText, List<ExprNodeDesc> children, HiveParserTypeCheckCtx ctx)
+				throws CalciteSemanticException {
 			SqlOperator sqlOperator = HiveParserUtils.getSqlOperator(
 					funcText, ctx.getSqlOperatorTable(), SqlFunctionCategory.USER_DEFINED_FUNCTION);
 			if (sqlOperator == null) {
@@ -1145,8 +1148,16 @@ public class HiveParserTypeCheckProcFactory {
 						}
 					})
 					.collect(Collectors.toList());
+			List<RexNode> operands = new ArrayList<>(children.size());
+			for (ExprNodeDesc child : children) {
+				if (child instanceof ExprNodeConstantDesc) {
+					operands.add(HiveParserRexNodeConverter.convertConstant((ExprNodeConstantDesc) child, ctx.getCluster()));
+				} else {
+					operands.add(null);
+				}
+			}
 			TypeInfo returnType = HiveParserTypeConverter.convert(
-					HiveParserUtils.inferReturnTypeForArgTypes(sqlOperator, relDataTypes, ctx.getTypeFactory()));
+					HiveParserUtils.inferReturnTypeForOperandsTypes(sqlOperator, relDataTypes, operands, ctx.getTypeFactory()));
 			return new SqlOperatorExprNodeDesc(funcText, sqlOperator, children, returnType);
 		}
 

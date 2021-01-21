@@ -2455,7 +2455,7 @@ public class HiveParserCalcitePlanner {
 			LOG.debug("Table alias: " + outputTableAlias + " Col aliases: " + colAliases);
 
 			// Create the object inspector for the input columns and initialize the UDTF
-			RelDataType relDataType = HiveParserUtils.inferReturnTypeForArgs(sqlOperator, operands, cluster.getTypeFactory());
+			RelDataType relDataType = HiveParserUtils.inferReturnTypeForOperands(sqlOperator, operands, cluster.getTypeFactory());
 			DataType dataType = HiveParserUtils.toDataType(relDataType);
 			StructObjectInspector outputOI = (StructObjectInspector) HiveInspectors.getObjectInspector(HiveTypeUtil.toHiveTypeInfo(dataType, false));
 //			ArrayList<String> colNames = new ArrayList<>();

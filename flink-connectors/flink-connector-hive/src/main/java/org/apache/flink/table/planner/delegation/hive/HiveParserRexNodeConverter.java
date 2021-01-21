@@ -233,7 +233,7 @@ public class HiveParserRexNodeConverter {
 				ic.calciteInpDataType.getFieldList().get(pos).getType(), pos + ic.offsetInCalciteSchema);
 	}
 
-	private static RexNode convertConstant(ExprNodeConstantDesc literal, RelOptCluster cluster) throws CalciteSemanticException {
+	public static RexNode convertConstant(ExprNodeConstantDesc literal, RelOptCluster cluster) throws CalciteSemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		PrimitiveTypeInfo hiveType = (PrimitiveTypeInfo) literal.getTypeInfo();
@@ -242,10 +242,9 @@ public class HiveParserRexNodeConverter {
 		PrimitiveObjectInspector.PrimitiveCategory hiveTypeCategory = hiveType.getPrimitiveCategory();
 
 		ConstantObjectInspector coi = literal.getWritableObjectInspector();
-		Object value = ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(),
-				coi);
+		Object value = ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(), coi);
 
-		RexNode calciteLiteral = null;
+		RexNode calciteLiteral;
 		// If value is null, the type should also be VOID.
 		if (value == null) {
 			hiveTypeCategory = PrimitiveObjectInspector.PrimitiveCategory.VOID;

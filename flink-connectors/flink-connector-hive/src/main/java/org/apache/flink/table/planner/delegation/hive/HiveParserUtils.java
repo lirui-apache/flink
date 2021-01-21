@@ -55,6 +55,7 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
+import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.ExplicitOperatorBinding;
@@ -66,11 +67,11 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlSyntax;
-import org.apache.calcite.sql.SqlTableFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.validate.SqlNameMatchers;
+import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.util.ConversionUtil;
@@ -721,26 +722,29 @@ public class HiveParserUtils {
 		}
 	}
 
-	public static RelDataType inferReturnTypeForArgTypes(SqlOperator sqlOperator, List<RelDataType> argTypes, RelDataTypeFactory dataTypeFactory) {
+	public static RelDataType inferReturnTypeForOperandsTypes(SqlOperator sqlOperator, List<RelDataType> types,
+			List<RexNode> operands, RelDataTypeFactory dataTypeFactory) {
 		if (sqlOperator instanceof BridgingSqlFunction || sqlOperator instanceof HiveAggSqlFunction) {
 			SqlReturnTypeInference returnTypeInference = sqlOperator.getReturnTypeInference();
-			SqlOperatorBinding operatorBinding = new ArgTypesOperatorBinding(dataTypeFactory, sqlOperator, argTypes);
+			SqlOperatorBinding operatorBinding = new HiveParserOperatorBinding(dataTypeFactory, sqlOperator, types, operands);
 			return returnTypeInference.inferReturnType(operatorBinding);
 		} else if (sqlOperator instanceof HiveTableSqlFunction) {
 			HiveGenericUDTF hiveGenericUDTF = (HiveGenericUDTF) ((HiveTableSqlFunction) sqlOperator).makeFunction(new Object[0], new LogicalType[0]);
 			DataType dataType = hiveGenericUDTF.getHiveResultType(
-					new Object[argTypes.size()],
-					argTypes.stream().map(HiveParserUtils::toDataType).toArray(DataType[]::new));
+					new Object[types.size()],
+					types.stream().map(HiveParserUtils::toDataType).toArray(DataType[]::new));
 			return toRelDataType(dataType, dataTypeFactory);
 		} else {
 			throw new FlinkHiveException("Unsupported SqlOperator class " + sqlOperator.getClass().getName());
 		}
 	}
 
-	public static RelDataType inferReturnTypeForArgs(SqlOperator sqlOperator, List<RexNode> operands, RelDataTypeFactory dataTypeFactory) {
-		return inferReturnTypeForArgTypes(
+	public static RelDataType inferReturnTypeForOperands(SqlOperator sqlOperator, List<RexNode> operands,
+			RelDataTypeFactory dataTypeFactory) {
+		return inferReturnTypeForOperandsTypes(
 				sqlOperator,
 				operands.stream().map(RexNode::getType).collect(Collectors.toList()),
+				operands,
 				dataTypeFactory);
 	}
 
@@ -810,7 +814,7 @@ public class HiveParserUtils {
 		if (sqlOperator instanceof BridgingSqlFunction) {
 			return ((BridgingSqlFunction) sqlOperator).getDefinition().getKind() == FunctionKind.TABLE;
 		} else {
-			return sqlOperator instanceof SqlTableFunction;
+			return sqlOperator instanceof SqlUserDefinedTableFunction;
 		}
 	}
 
@@ -1202,17 +1206,49 @@ public class HiveParserUtils {
 	}
 
 	/**
-	 * A sub-class of ExplicitOperatorBinding that overrides methods to avoid exceptions.
+	 * A bit both of ExplicitOperatorBinding and RexCallBinding.
 	 */
-	private static class ArgTypesOperatorBinding extends ExplicitOperatorBinding {
+	private static class HiveParserOperatorBinding extends ExplicitOperatorBinding {
 
-		public ArgTypesOperatorBinding(RelDataTypeFactory typeFactory, SqlOperator operator, List<RelDataType> types) {
+		// can contain null for non-literal operand
+		private final List<RexNode> operands;
+
+		public HiveParserOperatorBinding(RelDataTypeFactory typeFactory, SqlOperator operator, List<RelDataType> types, List<RexNode> operands) {
 			super(typeFactory, operator, types);
+			this.operands = Preconditions.checkNotNull(operands, "Operands cannot be null");
+			Preconditions.checkArgument(types.size() == operands.size(),
+					String.format("Type length %d and operand length %d mismatch", types.size(), operands.size()));
+		}
+
+		@Override
+		public String getStringLiteralOperand(int ordinal) {
+			return RexLiteral.stringValue(operands.get(ordinal));
+		}
+
+		@Override
+		public int getIntLiteralOperand(int ordinal) {
+			return RexLiteral.intValue(operands.get(ordinal));
+		}
+
+		@Override
+		public <T> T getOperandLiteralValue(int ordinal, Class<T> clazz) {
+			RexNode operand = operands.get(ordinal);
+			if (operand instanceof RexLiteral) {
+				return ((RexLiteral) operand).getValueAs(clazz);
+			}
+			throw new AssertionError("not a literal: " + operand);
 		}
 
 		@Override
 		public boolean isOperandLiteral(int ordinal, boolean allowCast) {
-			return false;
+			RexNode operand = operands.get(ordinal);
+			return operand != null && RexUtil.isLiteral(operand, allowCast);
+		}
+
+		@Override
+		public boolean isOperandNull(int ordinal, boolean allowCast) {
+			RexNode operand = operands.get(ordinal);
+			return operand != null && RexUtil.isNullLiteral(operand, allowCast);
 		}
 	}
 }
