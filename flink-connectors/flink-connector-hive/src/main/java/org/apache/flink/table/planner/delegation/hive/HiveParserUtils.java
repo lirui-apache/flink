@@ -1242,13 +1242,17 @@ public class HiveParserUtils {
 		@Override
 		public boolean isOperandLiteral(int ordinal, boolean allowCast) {
 			RexNode operand = operands.get(ordinal);
-			return operand != null && RexUtil.isLiteral(operand, allowCast);
+			// we never consider cast as literal, because hive udf will convert char/varchar literals to string type,
+			// so we need to differentiate cast from a real literal
+			return operand != null && RexUtil.isLiteral(operand, false);
 		}
 
 		@Override
 		public boolean isOperandNull(int ordinal, boolean allowCast) {
 			RexNode operand = operands.get(ordinal);
-			return operand != null && RexUtil.isNullLiteral(operand, allowCast);
+			// we never consider cast as literal, because hive udf will convert char/varchar literals to string type,
+			// so we need to differentiate cast from a real literal
+			return operand != null && RexUtil.isNullLiteral(operand, false);
 		}
 	}
 }

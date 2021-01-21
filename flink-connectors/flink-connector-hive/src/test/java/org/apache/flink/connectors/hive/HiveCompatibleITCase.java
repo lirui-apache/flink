@@ -108,7 +108,8 @@ public class HiveCompatibleITCase {
 			"select temp_add(x,y) from foo",
 			"select default.temp_max(i) from bar",
 			"select temp_explode(ai) from baz",
-			"select col1 from baz lateral view default.temp_explode(ai) tbl1 as col1"
+			"select col1 from baz lateral view default.temp_explode(ai) tbl1 as col1",
+			"select case when i>1 then array('1') else array(s) end from bar"
 	};
 
 	private static final String[] UPDATES = new String[]{
