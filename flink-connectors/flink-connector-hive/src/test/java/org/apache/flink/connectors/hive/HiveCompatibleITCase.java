@@ -106,9 +106,9 @@ public class HiveCompatibleITCase {
 			"select (case when i>1 then 100 else split(s,',')[0] end) as a from bar",
 			"select if(i>1,s,null) from bar",
 			"select temp_add(x,y) from foo",
-			"select default.temp_max(i) from bar",
+			"select temp_max(i) from bar",
 			"select temp_explode(ai) from baz",
-			"select col1 from baz lateral view default.temp_explode(ai) tbl1 as col1",
+			"select col1 from baz lateral view temp_explode(ai) tbl1 as col1",
 			"select case when i>1 then array('1') else array(s) end from bar"
 	};
 

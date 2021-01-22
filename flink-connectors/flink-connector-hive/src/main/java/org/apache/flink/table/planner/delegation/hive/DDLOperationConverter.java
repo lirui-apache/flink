@@ -40,14 +40,18 @@ import org.apache.flink.table.catalog.CatalogTable;
 import org.apache.flink.table.catalog.CatalogTableImpl;
 import org.apache.flink.table.catalog.CatalogView;
 import org.apache.flink.table.catalog.CatalogViewImpl;
+import org.apache.flink.table.catalog.FunctionCatalog.InlineCatalogFunction;
 import org.apache.flink.table.catalog.FunctionLanguage;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.UnresolvedIdentifier;
 import org.apache.flink.table.catalog.config.CatalogConfig;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
+import org.apache.flink.table.catalog.hive.client.HiveShim;
+import org.apache.flink.table.catalog.hive.factories.HiveFunctionDefinitionFactory;
 import org.apache.flink.table.catalog.hive.util.HiveTableUtil;
 import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
+import org.apache.flink.table.functions.FunctionDefinition;
 import org.apache.flink.table.operations.DescribeTableOperation;
 import org.apache.flink.table.operations.Operation;
 import org.apache.flink.table.operations.ShowDatabasesOperation;
@@ -68,11 +72,13 @@ import org.apache.flink.table.operations.ddl.AlterViewRenameOperation;
 import org.apache.flink.table.operations.ddl.CreateCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateDatabaseOperation;
 import org.apache.flink.table.operations.ddl.CreateTableOperation;
+import org.apache.flink.table.operations.ddl.CreateTempSystemCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateViewOperation;
 import org.apache.flink.table.operations.ddl.DropCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropDatabaseOperation;
 import org.apache.flink.table.operations.ddl.DropPartitionsOperation;
 import org.apache.flink.table.operations.ddl.DropTableOperation;
+import org.apache.flink.table.operations.ddl.DropTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropViewOperation;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 import org.apache.flink.table.planner.utils.OperationConverterUtils;
@@ -137,9 +143,11 @@ import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.TABLE_LOCA
 public class DDLOperationConverter {
 
 	private final CatalogManager catalogManager;
+	private final HiveFunctionDefinitionFactory funcDefFactory;
 
-	public DDLOperationConverter(CatalogManager catalogManager) {
+	public DDLOperationConverter(CatalogManager catalogManager, HiveShim hiveShim) {
 		this.catalogManager = catalogManager;
+		this.funcDefFactory = new HiveFunctionDefinitionFactory(hiveShim);
 	}
 
 	public Operation convert(Serializable work) {
@@ -224,23 +232,39 @@ public class DDLOperationConverter {
 	}
 
 	private Operation convertCreateFunction(CreateFunctionDesc desc) {
-		ObjectIdentifier identifier = parseObjectIdentifier(desc.getFunctionName());
-		CatalogFunction catalogFunction = new CatalogFunctionImpl(desc.getClassName(), FunctionLanguage.JAVA);
-		return new CreateCatalogFunctionOperation(
-				identifier,
-				catalogFunction,
-				false,
-				desc.isTemp()
-		);
+		if (desc.isTemp()) {
+			// hive's temporary function is more like flink's temp system function, e.g. doesn't belong to a catalog/db
+			// the DDL analyzer makes sure temp function name is not a compound one
+			FunctionDefinition funcDefinition = funcDefFactory.createFunctionDefinition(
+					desc.getFunctionName(),
+					new CatalogFunctionImpl(desc.getClassName(), FunctionLanguage.JAVA));
+			return new CreateTempSystemCatalogFunctionOperation(
+					desc.getFunctionName(),
+					false,
+					new InlineCatalogFunction(funcDefinition));
+		} else {
+			ObjectIdentifier identifier = parseObjectIdentifier(desc.getFunctionName());
+			CatalogFunction catalogFunction = new CatalogFunctionImpl(desc.getClassName(), FunctionLanguage.JAVA);
+			return new CreateCatalogFunctionOperation(
+					identifier,
+					catalogFunction,
+					false,
+					desc.isTemp()
+			);
+		}
 	}
 
 	private Operation convertDropFunction(HiveParserDropFunctionDesc desc) {
-		ObjectIdentifier identifier = parseObjectIdentifier(desc.getDesc().getFunctionName());
-		return new DropCatalogFunctionOperation(
-				identifier,
-				desc.isIfExists(),
-				desc.getDesc().isTemp()
-		);
+		if (desc.getDesc().isTemp()) {
+			return new DropTempSystemFunctionOperation(desc.getDesc().getFunctionName(), desc.ifExists());
+		} else {
+			ObjectIdentifier identifier = parseObjectIdentifier(desc.getDesc().getFunctionName());
+			return new DropCatalogFunctionOperation(
+					identifier,
+					desc.ifExists(),
+					desc.getDesc().isTemp()
+			);
+		}
 	}
 
 	private Operation convertDropView(HiveParserDropTableDesc desc) {

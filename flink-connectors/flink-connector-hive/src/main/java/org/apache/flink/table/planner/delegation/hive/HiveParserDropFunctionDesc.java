@@ -41,7 +41,7 @@ public class HiveParserDropFunctionDesc implements Serializable {
 		return desc;
 	}
 
-	public boolean isIfExists() {
+	public boolean ifExists() {
 		return ifExists;
 	}
 }

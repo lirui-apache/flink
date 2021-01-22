@@ -213,11 +213,14 @@ public class HiveParser extends ParserImpl {
 						Table destTable = new Table(Table.getEmptyTable(dbTblName[0], dbTblName[1]));
 						destTable.getSd().setCols(createTableDesc.getCols());
 						// create the insert operation
-						Operation insertOperation = createInsertOperation(queryRelNode, destTable, Collections.emptyMap(), Collections.emptyList(), false);
-						Operation createTableOperation = new DDLOperationConverter(getCatalogManager()).convert(((CTASDesc) work).getCreateTableDesc());
+						Operation insertOperation = createInsertOperation(
+								queryRelNode, destTable, Collections.emptyMap(), Collections.emptyList(), false);
+						Operation createTableOperation = new DDLOperationConverter(getCatalogManager(), hiveShim)
+								.convert(((CTASDesc) work).getCreateTableDesc());
 						return Arrays.asList(createTableOperation, insertOperation);
 					}
-					return Collections.singletonList(new DDLOperationConverter(getCatalogManager()).convert(work));
+					return Collections.singletonList(new DDLOperationConverter(getCatalogManager(), hiveShim)
+							.convert(work));
 				}
 			} else {
 				final boolean explain = node.getType() == HiveASTParser.TOK_EXPLAIN;

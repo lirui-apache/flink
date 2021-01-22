@@ -2523,7 +2523,7 @@ public class HiveParserCalcitePlanner {
 				argTypes.add(HiveParserUtils.toRelDataType(ci.getType(), dtFactory));
 			}
 
-			SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteOperator(genericUDTFName, argTypes, retType);
+			SqlOperator calciteOp = HiveParserSqlFunctionConverter.getCalciteFn(genericUDTFName, argTypes, retType, false);
 
 			RexNode rexNode = cluster.getRexBuilder().makeCall(calciteOp, operands);
 
