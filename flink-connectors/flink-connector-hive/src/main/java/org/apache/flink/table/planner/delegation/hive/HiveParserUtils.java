@@ -26,9 +26,11 @@ import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
 import org.apache.flink.table.functions.FunctionKind;
 import org.apache.flink.table.functions.hive.HiveGenericUDAF;
 import org.apache.flink.table.functions.hive.HiveGenericUDTF;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
 import org.apache.flink.table.planner.functions.utils.HiveAggSqlFunction;
 import org.apache.flink.table.planner.functions.utils.HiveTableSqlFunction;
+import org.apache.flink.table.runtime.types.ClassLogicalTypeConverter;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.util.Preconditions;
@@ -64,7 +66,6 @@ import org.apache.calcite.sql.SqlCollation;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
@@ -724,14 +725,14 @@ public class HiveParserUtils {
 
 	public static RelDataType inferReturnTypeForOperandsTypes(SqlOperator sqlOperator, List<RelDataType> types,
 			List<RexNode> operands, RelDataTypeFactory dataTypeFactory) {
+		HiveParserOperatorBinding operatorBinding = new HiveParserOperatorBinding(dataTypeFactory, sqlOperator, types, operands);
 		if (sqlOperator instanceof BridgingSqlFunction || sqlOperator instanceof HiveAggSqlFunction) {
 			SqlReturnTypeInference returnTypeInference = sqlOperator.getReturnTypeInference();
-			SqlOperatorBinding operatorBinding = new HiveParserOperatorBinding(dataTypeFactory, sqlOperator, types, operands);
 			return returnTypeInference.inferReturnType(operatorBinding);
 		} else if (sqlOperator instanceof HiveTableSqlFunction) {
 			HiveGenericUDTF hiveGenericUDTF = (HiveGenericUDTF) ((HiveTableSqlFunction) sqlOperator).makeFunction(new Object[0], new LogicalType[0]);
 			DataType dataType = hiveGenericUDTF.getHiveResultType(
-					new Object[types.size()],
+					operatorBinding.getConstantOperands(),
 					types.stream().map(HiveParserUtils::toDataType).toArray(DataType[]::new));
 			return toRelDataType(dataType, dataTypeFactory);
 		} else {
@@ -1253,6 +1254,17 @@ public class HiveParserUtils {
 			// we never consider cast as literal, because hive udf will convert char/varchar literals to string type,
 			// so we need to differentiate cast from a real literal
 			return operand != null && RexUtil.isNullLiteral(operand, false);
+		}
+
+		public Object[] getConstantOperands() {
+			Object[] res = new Object[operands.size()];
+			for (int i = 0; i < res.length; i++) {
+				if (isOperandLiteral(i, false)) {
+					res[i] = getOperandLiteralValue(i, ClassLogicalTypeConverter.getDefaultExternalClassForType(
+							FlinkTypeFactory.toLogicalType(getOperandType(i))));
+				}
+			}
+			return res;
 		}
 	}
 }
