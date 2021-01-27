@@ -323,9 +323,12 @@ public class HiveParserRexNodeConverter {
 				break;
 			case STRING:
 				Object constantDescVal = literal.getValue();
-				calciteLiteral = constantDescVal instanceof NlsString ?
-						rexBuilder.makeCharLiteral((NlsString) constantDescVal) :
-						rexBuilder.makeCharLiteral(asUnicodeString((String) value));
+				constantDescVal = constantDescVal instanceof NlsString ? constantDescVal : asUnicodeString((String) value);
+				// calcite treat string literal as char type, we should treat it as string just like hive
+				RelDataType type = HiveParserTypeConverter.convert(hiveType, dtFactory);
+				// if we get here, the value is not null
+				type = dtFactory.createTypeWithNullability(type, false);
+				calciteLiteral = rexBuilder.makeLiteral(constantDescVal, type, true);
 				break;
 			case DATE:
 				Calendar cal = new GregorianCalendar();
@@ -362,8 +365,7 @@ public class HiveParserRexNodeConverter {
 										SqlParserPos(1, 1)));
 				break;
 			case VOID:
-				calciteLiteral = cluster.getRexBuilder().makeLiteral(null,
-						cluster.getTypeFactory().createSqlType(SqlTypeName.NULL), true);
+				calciteLiteral = cluster.getRexBuilder().makeLiteral(null, dtFactory.createSqlType(SqlTypeName.NULL), true);
 				break;
 			case BINARY:
 			case UNKNOWN:

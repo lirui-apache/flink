@@ -61,8 +61,8 @@ import java.util.stream.Stream;
 @Ignore
 public class HiveQFileITCase {
 
-	private static final String START = "orc_ppd_schema_evol_2b.q";
-	private static final String END = "smblimit.q";
+	private static final String START = null;
+	private static final String END = "limit_join_transpose.q";
 
 	@HiveSQL(files = {})
 	private static HiveShell hiveShell;
@@ -226,13 +226,9 @@ public class HiveQFileITCase {
 					String currentDB = hiveShell.executeQuery("select current_database()").get(0);
 					tableEnv.useDatabase(currentDB);
 					skipped++;
-				} else if (first.equals("select")) {
+				} else if (first.equals("select") || first.equals("with") || first.equals("insert")) {
 					byFlink = true;
-					runQuery(tableEnv, statement);
-					success++;
-				} else if (first.equals("insert")) {
-					byFlink = true;
-					runUpdate(tableEnv, statement);
+					runSql(tableEnv, statement);
 					success++;
 				} else if (needDelegate(first)) {
 					delegated++;
@@ -306,6 +302,17 @@ public class HiveQFileITCase {
 		// seems these tables should be created by each qfile
 		hiveShell.execute("drop table dest1");
 		hiveShell.execute("drop table dest2");
+	}
+
+	private void runSql(TableEnvironment tableEnv, String sql) throws Exception {
+		if (verbose) {
+			println(tableEnv.explainSql(sql));
+		}
+		List<Row> results = CollectionUtil.iteratorToList(tableEnv.executeSql(sql).collect());
+		if (verbose) {
+			println("Successfully executed sql: " + sql);
+			println(results.toString());
+		}
 	}
 
 	private void runUpdate(TableEnvironment tableEnv, String dml) throws Exception {

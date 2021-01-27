@@ -110,7 +110,8 @@ public class HiveCompatibleITCase {
 			"select temp_explode(ai) from baz",
 			"select col1 from baz lateral view temp_explode(ai) tbl1 as col1",
 			"select case when i>1 then array('1') else array(s) end from bar",
-			"select stack(2,*) as (c1,c2) from srcpart"
+			"select stack(2,*) as (c1,c2) from srcpart",
+			"select coalesce('abc',1)"
 	};
 
 	private static final String[] UPDATES = new String[]{

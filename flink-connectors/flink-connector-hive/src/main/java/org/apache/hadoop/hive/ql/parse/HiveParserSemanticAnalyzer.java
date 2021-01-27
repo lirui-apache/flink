@@ -2355,7 +2355,7 @@ public class HiveParserSemanticAnalyzer {
 		return genExprNodeDesc(expr, input, tcCtx);
 	}
 
-	public ExprNodeDesc genExprNodeDesc(ASTNode expr, HiveParserRowResolver input, boolean useCaching,
+	private ExprNodeDesc genExprNodeDesc(ASTNode expr, HiveParserRowResolver input, boolean useCaching,
 			boolean foldExpr) throws SemanticException {
 		HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(input, useCaching, foldExpr, frameworkConfig, cluster);
 		return genExprNodeDesc(expr, input, tcCtx);

@@ -84,6 +84,7 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Function;
+import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
@@ -1074,6 +1075,8 @@ public class HiveParserUtils {
 							Thread.currentThread().getContextClassLoader().loadClass(function.getClassName()),
 							FunctionTask.toFunctionResource(function.getResourceUris()));
 					res = FunctionRegistry.getFunctionInfo(funcName);
+				} catch (NoSuchObjectException e) {
+					LOG.warn("Function {} doesn't exist in metastore", funcName);
 				} catch (Exception e) {
 					LOG.warn("Failed to look up function in metastore", e);
 				}
