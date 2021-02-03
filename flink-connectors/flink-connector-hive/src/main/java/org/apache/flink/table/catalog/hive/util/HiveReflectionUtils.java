@@ -86,7 +86,7 @@ public class HiveReflectionUtils {
 
 	public static Class tryGetClass(String name) {
 		try {
-			return Class.forName(name);
+			return Thread.currentThread().getContextClassLoader().loadClass(name);
 		} catch (ClassNotFoundException e) {
 			return null;
 		}

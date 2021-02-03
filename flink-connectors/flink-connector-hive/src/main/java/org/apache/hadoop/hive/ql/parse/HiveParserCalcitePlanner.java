@@ -117,12 +117,12 @@ import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.lib.Node;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
-import org.apache.hadoop.hive.ql.optimizer.calcite.HiveCalciteUtil;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserJoinTypeCheckCtx;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.HiveParserPTFInvocationSpec.OrderExpression;
+import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.GenericUDAFInfo;
+import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.Phase1Ctx;
 import org.apache.hadoop.hive.ql.parse.HiveParserWindowingSpec.BoundarySpec;
 import org.apache.hadoop.hive.ql.parse.HiveParserWindowingSpec.WindowExpressionSpec;
 import org.apache.hadoop.hive.ql.parse.HiveParserWindowingSpec.WindowFunctionSpec;
@@ -131,8 +131,6 @@ import org.apache.hadoop.hive.ql.parse.HiveParserWindowingSpec.WindowType;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.Order;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionExpression;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionSpec;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.GenericUDAFInfo;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.Phase1Ctx;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
@@ -649,10 +647,8 @@ public class HiveParserCalcitePlanner {
 			JoinType hiveJoinType;
 
 			if (joinParseTree.getToken().getType() == HiveASTParser.TOK_UNIQUEJOIN) {
-				String msg = "UNIQUE JOIN is currently not supported in CBO,"
-						+ " turn off cbo to use UNIQUE JOIN.";
-				LOG.debug(msg);
-				throw new CalciteSemanticException(msg, CalciteSemanticException.UnsupportedFeature.Unique_join);
+				String msg = "UNIQUE JOIN is currently not supported in CBO, turn off cbo to use UNIQUE JOIN.";
+				throw new SemanticException(msg);
 			}
 
 			// 1. Determine Join Type
@@ -733,12 +729,13 @@ public class HiveParserCalcitePlanner {
 				// 2. if returnpath is on and hivetestmode is on bail
 				if (qb.getParseInfo().getTabSample(tableAlias) != null
 						|| hiveAnalyzer.getNameToSplitSampleMap().containsKey(tableAlias)
-						|| (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) && (hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVETESTMODE))) {
+						|| Boolean.parseBoolean(hiveAnalyzer.getConf().get("hive.cbo.returnpath.hiveop", "false"))
+						&& hiveAnalyzer.getConf().getBoolVar(HiveConf.ConfVars.HIVETESTMODE)) {
 					String msg = String.format("Table Sample specified for %s."
 							+ " Currently we don't support Table Sample clauses in CBO,"
 							+ " turn off cbo for queries on tableSamples.", tableAlias);
 					LOG.debug(msg);
-					throw new CalciteSemanticException(msg, CalciteSemanticException.UnsupportedFeature.Table_sample_clauses);
+					throw new SemanticException(msg);
 				}
 
 				// 2. Get Table Metadata
@@ -906,8 +903,7 @@ public class HiveParserCalcitePlanner {
 				// fail on compile time
 				// for such queries, its an arcane corner case, not worth of adding that
 				// complexity.
-				throw new CalciteSemanticException("Filter expression with non-boolean return type.",
-						CalciteSemanticException.UnsupportedFeature.Filter_expression_with_non_boolean_return_type);
+				throw new SemanticException("Filter expression with non-boolean return type.");
 			}
 			Map<String, Integer> hiveColNameToCalcitePos = relToHiveColNameCalcitePosMap.get(srcRel);
 			RexNode convertedFilterExpr = new HiveParserRexNodeConverter(cluster, srcRel.getRowType(),
@@ -1008,7 +1004,7 @@ public class HiveParserCalcitePlanner {
 						// Restriction 2.h Subquery is not allowed in LHS
 						if (next.getChildren().size() == 3
 								&& next.getChild(2).getType() == HiveASTParser.TOK_SUBQUERY_EXPR) {
-							throw new CalciteSemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
+							throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
 									next.getChild(2),
 									"SubQuery in LHS expressions are not supported."));
 						}
@@ -1332,7 +1328,7 @@ public class HiveParserCalcitePlanner {
 						// 3.3.2 Get UDAF Info using UDAF Evaluator
 						GenericUDAFInfo udaf = HiveParserUtils.getGenericUDAFInfo(genericUDAFEvaluator, amode,
 								aggParameters);
-						if (FunctionRegistry.pivotResult(aggName)) {
+						if (HiveParserUtils.pivotResult(aggName)) {
 							udafRetType = ((ListTypeInfo) udaf.returnType).getListElementTypeInfo();
 						} else {
 							udafRetType = udaf.returnType;
@@ -1441,8 +1437,7 @@ public class HiveParserCalcitePlanner {
 						Map<ASTNode, ExprNodeDesc> astToExprNodeDesc = hiveAnalyzer.genAllExprNodeDesc(gbAstExpr, inputRR);
 						ExprNodeDesc grpbyExprNDesc = astToExprNodeDesc.get(gbAstExpr);
 						if (grpbyExprNDesc == null) {
-							throw new CalciteSemanticException("Invalid Column Reference: " + gbAstExpr.dump(),
-									CalciteSemanticException.UnsupportedFeature.Invalid_column_reference);
+							throw new SemanticException("Invalid Column Reference: " + gbAstExpr.dump());
 						}
 
 						addToGBExpr(outputRR, inputRR, gbAstExpr, grpbyExprNDesc, gbExprNodeDescs, outputColNames);
@@ -1656,9 +1651,8 @@ public class HiveParserCalcitePlanner {
 							.collect(Collectors.toList());
 					HiveParserRowResolver addedProjectRR = new HiveParserRowResolver();
 					if (!HiveParserRowResolver.add(addedProjectRR, inputRR)) {
-						throw new CalciteSemanticException(
-								"Duplicates detected when adding columns to RR: see previous message",
-								CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException(
+								"Duplicates detected when adding columns to RR: see previous message");
 					}
 					int vColPos = inputRR.getRowSchema().getSignature().size();
 					for (Pair<ASTNode, TypeInfo> astTypePair : vcASTAndType) {
@@ -1671,23 +1665,20 @@ public class HiveParserCalcitePlanner {
 
 					if (outermostOB) {
 						if (!HiveParserRowResolver.add(outputRR, inputRR)) {
-							throw new CalciteSemanticException(
-									"Duplicates detected when adding columns to RR: see previous message",
-									CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+							throw new SemanticException(
+									"Duplicates detected when adding columns to RR: see previous message");
 						}
 					} else {
 						if (!HiveParserRowResolver.add(outputRR, addedProjectRR)) {
-							throw new CalciteSemanticException(
-									"Duplicates detected when adding columns to RR: see previous message",
-									CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+							throw new SemanticException(
+									"Duplicates detected when adding columns to RR: see previous message");
 						}
 					}
 					originalInput = srcRel;
 				} else {
 					if (!HiveParserRowResolver.add(outputRR, inputRR)) {
-						throw new CalciteSemanticException(
-								"Duplicates detected when adding columns to RR: see previous message",
-								CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException(
+								"Duplicates detected when adding columns to RR: see previous message");
 					}
 				}
 
@@ -1799,9 +1790,8 @@ public class HiveParserCalcitePlanner {
 							.collect(Collectors.toList());
 					HiveParserRowResolver obSyntheticProjectRR = new HiveParserRowResolver();
 					if (!HiveParserRowResolver.add(obSyntheticProjectRR, inputRR)) {
-						throw new CalciteSemanticException(
-								"Duplicates detected when adding columns to RR: see previous message",
-								CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException(
+								"Duplicates detected when adding columns to RR: see previous message");
 					}
 					int vcolPos = inputRR.getRowSchema().getSignature().size();
 					for (Pair<ASTNode, TypeInfo> astTypePair : vcASTAndType) {
@@ -1815,23 +1805,20 @@ public class HiveParserCalcitePlanner {
 
 					if (outermostOB) {
 						if (!HiveParserRowResolver.add(outputRR, inputRR)) {
-							throw new CalciteSemanticException(
-									"Duplicates detected when adding columns to RR: see previous message",
-									CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+							throw new SemanticException(
+									"Duplicates detected when adding columns to RR: see previous message");
 						}
 					} else {
 						if (!HiveParserRowResolver.add(outputRR, obSyntheticProjectRR)) {
-							throw new CalciteSemanticException(
-									"Duplicates detected when adding columns to RR: see previous message",
-									CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+							throw new SemanticException(
+									"Duplicates detected when adding columns to RR: see previous message");
 						}
 					}
 					originalOBInput = srcRel;
 				} else {
 					if (!HiveParserRowResolver.add(outputRR, inputRR)) {
-						throw new CalciteSemanticException(
-								"Duplicates detected when adding columns to RR: see previous message",
-								CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException(
+								"Duplicates detected when adding columns to RR: see previous message");
 					}
 				}
 
@@ -1873,9 +1860,8 @@ public class HiveParserCalcitePlanner {
 
 				HiveParserRowResolver outputRR = new HiveParserRowResolver();
 				if (!HiveParserRowResolver.add(outputRR, relToRowResolver.get(srcRel))) {
-					throw new CalciteSemanticException(
-							"Duplicates detected when adding columns to RR: see previous message",
-							CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+					throw new SemanticException(
+							"Duplicates detected when adding columns to RR: see previous message");
 				}
 				Map<String, Integer> hiveColNameCalcitePosMap = buildHiveToCalciteColumnMap(outputRR);
 				relToRowResolver.put(sortRel, outputRR);
@@ -2050,7 +2036,7 @@ public class HiveParserCalcitePlanner {
 
 			HiveParserRowResolver inputRR = relToRowResolver.get(srcRel);
 			// 2. Get RexNodes for original Projections from below
-			List<RexNode> projsForWindowSelOp = new ArrayList<>(HiveCalciteUtil.getProjsFromBelowAsInputRef(srcRel));
+			List<RexNode> projsForWindowSelOp = new ArrayList<>(HiveParserUtils.getProjsFromBelowAsInputRef(srcRel));
 
 			// 3. Construct new Row Resolver with everything from below.
 			HiveParserRowResolver outRR = new HiveParserRowResolver();
@@ -2181,8 +2167,7 @@ public class HiveParserCalcitePlanner {
 			boolean isInTransform = selExprList.getChild(posn).getChild(0).getType() == HiveASTParser.TOK_TRANSFORM;
 			if (isInTransform) {
 				String msg = "SELECT TRANSFORM is currently not supported in CBO, turn off cbo to use TRANSFORM.";
-				LOG.debug(msg);
-				throw new CalciteSemanticException(msg, CalciteSemanticException.UnsupportedFeature.Select_transform);
+				throw new SemanticException(msg);
 			}
 
 			// 2.Row resolvers for input, output
@@ -2303,9 +2288,8 @@ public class HiveParserCalcitePlanner {
 					ColumnInfo colInfo = new ColumnInfo(getColumnInternalName(pos),
 							subQueryExpr.getWritableObjectInspector(), tabAlias, false);
 					if (!outRR.putWithCheck(tabAlias, colAlias, null, colInfo)) {
-						throw new CalciteSemanticException("Cannot add column to RR: " + tabAlias + "."
-								+ colAlias + " => " + colInfo + " due to duplication, see previous warnings",
-								CalciteSemanticException.UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException("Cannot add column to RR: " + tabAlias + "."
+								+ colAlias + " => " + colInfo + " due to duplication, see previous warnings");
 					}
 				} else {
 					// 6.4 Build ExprNode corresponding to columns
@@ -2335,8 +2319,7 @@ public class HiveParserCalcitePlanner {
 					} else if (HiveASTParseUtils.containsTokenOfType(expr, HiveASTParser.TOK_FUNCTIONDI)
 							&& !(srcRel instanceof Aggregate)) {
 						// Likely a malformed query eg, select hash(distinct c1) from t1;
-						throw new CalciteSemanticException("Distinct without an aggregation.",
-								CalciteSemanticException.UnsupportedFeature.Distinct_without_an_aggreggation);
+						throw new SemanticException("Distinct without an aggregation.");
 					} else {
 						// Case when this is an expression
 						HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(inputRR, frameworkConfig, cluster);
@@ -2622,11 +2605,8 @@ public class HiveParserCalcitePlanner {
 			// canHandleQbForCbo returns null if the query can be handled.
 			String reason = HiveParserUtils.canHandleQbForCbo(hiveAnalyzer.getQueryProperties());
 			if (reason != null) {
-				String msg = "CBO can not handle Sub Query";
-				if (LOG.isDebugEnabled()) {
-					LOG.debug(msg + " because it: " + reason);
-				}
-				throw new CalciteSemanticException(msg, CalciteSemanticException.UnsupportedFeature.Subquery);
+				String msg = "CBO can not handle Sub Query" + " because it: " + reason;
+				throw new SemanticException(msg);
 			}
 
 			// 1. Build Rel For Src (SubQuery, TS, Join)
@@ -2834,8 +2814,7 @@ public class HiveParserCalcitePlanner {
 			if (havingClause != null) {
 				if (!(srcRel instanceof Aggregate)) {
 					// ill-formed query like select * from t1 having c1 > 0;
-					throw new CalciteSemanticException("Having clause without any group-by.",
-							CalciteSemanticException.UnsupportedFeature.Having_clause_without_any_groupby);
+					throw new SemanticException("Having clause without any group-by.");
 				}
 				ASTNode targetNode = (ASTNode) havingClause.getChild(0);
 				validateNoHavingReferenceToAlias(qb, targetNode, relToRowResolver.get(srcRel));

@@ -28,6 +28,7 @@ import org.apache.flink.table.catalog.UnresolvedIdentifier;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
+import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
 import org.apache.flink.table.module.hive.udf.generic.HiveGenericUDFGrouping;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
 import org.apache.flink.table.operations.ExplainOperation;
@@ -94,6 +95,8 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -112,6 +115,9 @@ import java.util.stream.Collectors;
 public class HiveParser extends ParserImpl {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParser.class);
+
+	private static final Method setCurrentTSMethod = HiveReflectionUtils.tryGetMethod(
+			SessionState.class, "setupQueryCurrentTimestamp", new Class[0]);
 
 	// need to maintain the ASTNode types for DDLs
 	private static final Set<Integer> DDL_NODES;
@@ -176,7 +182,7 @@ public class HiveParser extends ParserImpl {
 			// creates SessionState
 			startSessionState(hiveConf, catalogManager);
 			// We override Hive's grouping function. Refer to the implementation for more details.
-			FunctionRegistry.registerTemporaryUDF("grouping", HiveGenericUDFGrouping.class);
+			hiveShim.registerTemporaryFunction("grouping", HiveGenericUDFGrouping.class);
 			return processCmd(statement, hiveConf, hiveShim, (HiveCatalog) currentCatalog);
 		} finally {
 			clearSessionState(hiveConf);
@@ -286,19 +292,29 @@ public class HiveParser extends ParserImpl {
 	}
 
 	private void startSessionState(HiveConf hiveConf, CatalogManager catalogManager) {
-		ClassLoader contextCL = Thread.currentThread().getContextClassLoader();
+		final ClassLoader contextCL = Thread.currentThread().getContextClassLoader();
 		try {
 			SessionState sessionState = new HiveParserSessionState(hiveConf, contextCL);
 			sessionState.initTxnMgr(hiveConf);
 			sessionState.setCurrentDatabase(catalogManager.getCurrentDatabase());
 			// some Hive functions needs the timestamp
-			sessionState.setupQueryCurrentTimestamp();
+			setCurrentTimestamp(sessionState);
 			SessionState.start(sessionState);
 		} catch (LockException e) {
 			throw new FlinkHiveException("Failed to init SessionState", e);
 		} finally {
 			// don't let SessionState mess up with our context classloader
 			Thread.currentThread().setContextClassLoader(contextCL);
+		}
+	}
+
+	private static void setCurrentTimestamp(SessionState sessionState) {
+		if (setCurrentTSMethod != null) {
+			try {
+				setCurrentTSMethod.invoke(sessionState);
+			} catch (IllegalAccessException | InvocationTargetException e) {
+				throw new FlinkHiveException("Failed to set current timestamp for session", e);
+			}
 		}
 	}
 
@@ -705,6 +721,24 @@ public class HiveParser extends ParserImpl {
 	 */
 	private static class HiveParserSessionState extends SessionState {
 
+		private static final Class registryClz;
+		private static final Method getRegistry;
+		private static final Method clearRegistry;
+		private static final Method closeRegistryLoaders;
+
+		static {
+			registryClz = HiveReflectionUtils.tryGetClass("org.apache.hadoop.hive.ql.exec.Registry");
+			if (registryClz != null) {
+				getRegistry = HiveReflectionUtils.tryGetMethod(SessionState.class, "getRegistry", new Class[0]);
+				clearRegistry = HiveReflectionUtils.tryGetMethod(registryClz, "clear", new Class[0]);
+				closeRegistryLoaders = HiveReflectionUtils.tryGetMethod(registryClz, "closeCUDFLoaders", new Class[0]);
+			} else {
+				getRegistry = null;
+				clearRegistry = null;
+				closeRegistryLoaders = null;
+			}
+		}
+
 		private final ClassLoader originContextLoader;
 		private final ClassLoader hiveLoader;
 
@@ -718,8 +752,7 @@ public class HiveParser extends ParserImpl {
 
 		@Override
 		public void close() throws IOException {
-			getRegistry().clear();
-			getRegistry().closeCUDFLoaders();
+			clearSessionRegistry();
 			if (getTxnMgr() != null) {
 				getTxnMgr().closeTxnManager();
 			}
@@ -730,6 +763,20 @@ public class HiveParser extends ParserImpl {
 			FileUtils.deleteDirectoryQuietly(resourceDir);
 			detachSession();
 			Hive.closeCurrent();
+		}
+
+		private void clearSessionRegistry() {
+			if (getRegistry != null) {
+				try {
+					Object registry = getRegistry.invoke(this);
+					if (registry != null) {
+						clearRegistry.invoke(registry);
+						closeRegistryLoaders.invoke(registry);
+					}
+				} catch (IllegalAccessException | InvocationTargetException e) {
+					e.printStackTrace();
+				}
+			}
 		}
 	}
 }

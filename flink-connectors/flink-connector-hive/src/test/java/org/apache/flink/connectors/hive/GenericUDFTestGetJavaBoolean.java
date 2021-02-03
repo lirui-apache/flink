@@ -18,6 +18,8 @@
 
 package org.apache.flink.connectors.hive;
 
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -55,6 +57,6 @@ public class GenericUDFTestGetJavaBoolean extends GenericUDF {
 	@Override
 	public String getDisplayString(String[] children) {
 		assert (children.length == 1);
-		return getStandardDisplayString("TestGetJavaBoolean", children);
+		return HiveParserUtils.getStandardDisplayString("TestGetJavaBoolean", children);
 	}
 }

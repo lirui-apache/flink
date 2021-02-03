@@ -19,6 +19,7 @@
 package org.apache.hadoop.hive.ql.parse;
 
 import org.apache.flink.table.catalog.hive.client.HiveShim;
+import org.apache.flink.table.planner.delegation.hive.HiveParserExprNodeColumnListDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUnparseTranslator;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 
@@ -61,8 +62,6 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException.UnsupportedFeature;
 import org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.TableSpec;
 import org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.TableSpec.SpecType;
 import org.apache.hadoop.hive.ql.parse.HiveParserPTFInvocationSpec.OrderExpression;
@@ -80,18 +79,18 @@ import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFQueryInputSpec;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFQueryInputType;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionExpression;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionSpec;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.Phase1Ctx;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec.Direction;
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.apache.hadoop.hive.ql.plan.CreateViewDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeColumnListDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.PlanUtils;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.mapred.InputFormat;
 import org.slf4j.Logger;
@@ -1075,8 +1074,7 @@ public class HiveParserSemanticAnalyzer {
 					break;
 
 				case HiveASTParser.TOK_CLUSTERBY:
-					// Get the clusterby aliases - these are aliased to the entries in the
-					// select list
+					// Get the clusterby aliases - these are aliased to the entries in the select list
 					queryProperties.setHasClusterBy(true);
 					qbp.setClusterByExprForClause(ctx1.dest, ast);
 					break;
@@ -1095,8 +1093,7 @@ public class HiveParserSemanticAnalyzer {
 					break;
 
 				case HiveASTParser.TOK_SORTBY:
-					// Get the sort by aliases - these are aliased to the entries in the
-					// select list
+					// Get the sort by aliases - these are aliased to the entries in the select list
 					queryProperties.setHasSortBy(true);
 					qbp.setSortByExprForClause(ctx1.dest, ast);
 					if (qbp.getClusterByForClause(ctx1.dest) != null) {
@@ -1109,8 +1106,7 @@ public class HiveParserSemanticAnalyzer {
 					break;
 
 				case HiveASTParser.TOK_ORDERBY:
-					// Get the order by aliases - these are aliased to the entries in the
-					// select list
+					// Get the order by aliases - these are aliased to the entries in the select list
 					queryProperties.setHasOrderBy(true);
 					qbp.setOrderByExprForClause(ctx1.dest, ast);
 					if (qbp.getClusterByForClause(ctx1.dest) != null) {
@@ -1123,8 +1119,7 @@ public class HiveParserSemanticAnalyzer {
 				case HiveASTParser.TOK_ROLLUP_GROUPBY:
 				case HiveASTParser.TOK_CUBE_GROUPBY:
 				case HiveASTParser.TOK_GROUPING_SETS:
-					// Get the groupby aliases - these are aliased to the entries in the
-					// select list
+					// Get the groupby aliases - these are aliased to the entries in the select list
 					queryProperties.setHasGroupBy(true);
 					if (qbp.getJoinExpr() != null) {
 						queryProperties.setHasJoinFollowedByGroupBy(true);
@@ -1330,7 +1325,7 @@ public class HiveParserSemanticAnalyzer {
 		ASTNode tabColName = (ASTNode) ast.getChild(1);
 		if (ast.getType() == HiveASTParser.TOK_INSERT_INTO && tabColName != null && tabColName.getType() == HiveASTParser.TOK_TABCOLNAME) {
 			//we have "insert into foo(a,b)..."; parser will enforce that 1+ columns are listed if TOK_TABCOLNAME is present
-			List<String> targetColNames = new ArrayList<String>();
+			List<String> targetColNames = new ArrayList<>();
 			for (Node col : tabColName.getChildren()) {
 				assert ((ASTNode) col).getType() == HiveASTParser.Identifier :
 						"expected token " + HiveASTParser.Identifier + " found " + ((ASTNode) col).getType();
@@ -1339,13 +1334,13 @@ public class HiveParserSemanticAnalyzer {
 			String fullTableName = getUnescapedName((ASTNode) ast.getChild(0).getChild(0),
 					SessionState.get().getCurrentDatabase());
 			qbp.setDestSchemaForClause(ctx1.dest, targetColNames);
-			Set<String> targetColumns = new HashSet<String>();
+			Set<String> targetColumns = new HashSet<>();
 			targetColumns.addAll(targetColNames);
 			if (targetColNames.size() != targetColumns.size()) {
 				throw new SemanticException(HiveParserUtils.generateErrorMessage(tabColName,
 						"Duplicate column name detected in " + fullTableName + " table schema specification"));
 			}
-			Table targetTable = null;
+			Table targetTable;
 			try {
 				targetTable = db.getTable(fullTableName, false);
 			} catch (HiveException ex) {
@@ -1941,9 +1936,8 @@ public class HiveParserSemanticAnalyzer {
 					}
 					if (ensureUniqueCols) {
 						if (!output.putWithCheck(tmp[0], tmp[1], null, oColInfo)) {
-							throw new CalciteSemanticException("Cannot add column to RR: " + tmp[0] + "."
-									+ tmp[1] + " => " + oColInfo + " due to duplication, see previous warnings",
-									UnsupportedFeature.Duplicates_in_RR);
+							throw new SemanticException("Cannot add column to RR: " + tmp[0] + "."
+									+ tmp[1] + " => " + oColInfo + " due to duplication, see previous warnings");
 						}
 					} else {
 						output.put(tmp[0], tmp[1], oColInfo);
@@ -2033,9 +2027,8 @@ public class HiveParserSemanticAnalyzer {
 				}
 				if (ensureUniqueCols) {
 					if (!output.putWithCheck(tmp[0], tmp[1], null, oColInfo)) {
-						throw new CalciteSemanticException("Cannot add column to RR: " + tmp[0] + "." + tmp[1]
-								+ " => " + oColInfo + " due to duplication, see previous warnings",
-								UnsupportedFeature.Duplicates_in_RR);
+						throw new SemanticException("Cannot add column to RR: " + tmp[0] + "." + tmp[1]
+								+ " => " + oColInfo + " due to duplication, see previous warnings");
 					}
 				} else {
 					output.put(tmp[0], tmp[1], oColInfo);
@@ -2432,7 +2425,7 @@ public class HiveParserSemanticAnalyzer {
 			}
 			throw new SemanticException(errMsg);
 		}
-		if (desc instanceof ExprNodeColumnListDesc) {
+		if (desc instanceof HiveParserExprNodeColumnListDesc) {
 			throw new SemanticException("TOK_ALLCOLREF is not supported in current context");
 		}
 
@@ -2973,5 +2966,22 @@ public class HiveParserSemanticAnalyzer {
 		public String toString() {
 			return alias == null ? "<root>" : alias;
 		}
+	}
+
+	/**
+	 * Counterpart of hive's Phase1Ctx.
+	 */
+	static class Phase1Ctx {
+		String dest;
+		int nextNum;
+	}
+
+	/**
+	 * Counterpart of hive's GenericUDAFInfo.
+	 */
+	public static class GenericUDAFInfo {
+		public ArrayList<ExprNodeDesc> convertedParameters;
+		public GenericUDAFEvaluator genericUDAFEvaluator;
+		public TypeInfo returnType;
 	}
 }

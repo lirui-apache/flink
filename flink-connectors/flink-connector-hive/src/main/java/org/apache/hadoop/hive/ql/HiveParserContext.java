@@ -24,6 +24,7 @@ import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -61,6 +62,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Counterpart of hive's Context.
  */
 public class HiveParserContext {
+
+	public static final PathFilter HIDDEN_FILES_PATH_FILTER = p -> {
+		String name = p.getName();
+		return !name.startsWith("_") && !name.startsWith(".");
+	};
 
 	private boolean isHDFSCleanup;
 	private Path resFile;
@@ -265,7 +271,7 @@ public class HiveParserContext {
 		nonLocalScratchPath = new Path(SessionState.getHDFSSessionPath(conf), executionId);
 		localScratchDir = new Path(SessionState.getLocalSessionPath(conf), executionId).toUri().getPath();
 		scratchDirPermission = HiveConf.getVar(conf, HiveConf.ConfVars.SCRATCHDIRPERMISSION);
-		stagingDir = HiveConf.getVar(conf, HiveConf.ConfVars.STAGINGDIR);
+		stagingDir = conf.get("hive.exec.stagingdir", ".hive-staging");
 
 		viewsTokenRewriteStreams = new HashMap<>();
 	}
@@ -670,7 +676,7 @@ public class HiveParserContext {
 				resFs = resDir.getFileSystem(conf);
 				FileStatus status = resFs.getFileStatus(resDir);
 				assert status.isDir();
-				FileStatus[] resDirFS = resFs.globStatus(new Path(resDir + "/*"), FileUtils.HIDDEN_FILES_PATH_FILTER);
+				FileStatus[] resDirFS = resFs.globStatus(new Path(resDir + "/*"), HIDDEN_FILES_PATH_FILTER);
 				resDirPaths = new Path[resDirFS.length];
 				int pos = 0;
 				for (FileStatus resFS : resDirFS) {

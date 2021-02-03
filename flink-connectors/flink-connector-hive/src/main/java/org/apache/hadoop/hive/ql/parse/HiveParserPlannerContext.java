@@ -23,9 +23,9 @@ package org.apache.hadoop.hive.ql.parse;
  */
 class HiveParserPlannerContext {
 	protected ASTNode child;
-	protected SemanticAnalyzer.Phase1Ctx ctx1;
+	protected HiveParserSemanticAnalyzer.Phase1Ctx ctx1;
 
-	void setParseTreeAttr(ASTNode child, SemanticAnalyzer.Phase1Ctx ctx1) {
+	void setParseTreeAttr(ASTNode child, HiveParserSemanticAnalyzer.Phase1Ctx ctx1) {
 		this.child = child;
 		this.ctx1 = ctx1;
 	}

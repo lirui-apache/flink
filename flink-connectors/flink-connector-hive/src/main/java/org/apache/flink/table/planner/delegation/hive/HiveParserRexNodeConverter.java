@@ -18,6 +18,9 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
+import org.apache.flink.table.catalog.hive.client.HiveShim;
+import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
+
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.plan.RelOptCluster;
@@ -44,12 +47,9 @@ import org.apache.calcite.util.NlsString;
 import org.apache.hadoop.hive.common.type.Decimal128;
 import org.apache.hadoop.hive.common.type.HiveChar;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
-import org.apache.hadoop.hive.common.type.HiveIntervalDayTime;
-import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
 import org.apache.hadoop.hive.common.type.HiveVarchar;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserFloorDate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
@@ -60,15 +60,14 @@ import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
 import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
 import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseBinary;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseCompare;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseNumeric;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFCase;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFIn;
@@ -107,6 +106,9 @@ import java.util.Map;
  * signatures, or create sql operators of a different kind, etc.
  */
 public class HiveParserRexNodeConverter {
+
+	private static final Class genericUDFBaseBinaryClz = HiveReflectionUtils.tryGetClass(
+			"org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseBinary");
 
 	private static final BigInteger MIN_LONG_BI = BigInteger.valueOf(Long.MIN_VALUE);
 	private static final BigInteger MAX_LONG_BI = BigInteger.valueOf(Long.MAX_VALUE);
@@ -207,8 +209,7 @@ public class HiveParserRexNodeConverter {
 			}
 			// This may happen for schema-less tables, where columns are dynamically
 			// supplied by serdes.
-			throw new CalciteSemanticException("Unexpected rexnode : "
-					+ rexNode.getClass().getCanonicalName(), CalciteSemanticException.UnsupportedFeature.Schema_less_table);
+			throw new SemanticException("Unexpected rexnode : " + rexNode.getClass().getCanonicalName());
 		}
 	}
 
@@ -233,7 +234,7 @@ public class HiveParserRexNodeConverter {
 				ic.calciteInpDataType.getFieldList().get(pos).getType(), pos + ic.offsetInCalciteSchema);
 	}
 
-	public static RexNode convertConstant(ExprNodeConstantDesc literal, RelOptCluster cluster) throws CalciteSemanticException {
+	public static RexNode convertConstant(ExprNodeConstantDesc literal, RelOptCluster cluster) throws SemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		PrimitiveTypeInfo hiveType = (PrimitiveTypeInfo) literal.getTypeInfo();
@@ -245,6 +246,7 @@ public class HiveParserRexNodeConverter {
 		Object value = ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(), coi);
 
 		RexNode calciteLiteral;
+		HiveShim hiveShim = HiveParserUtils.getSessionHiveShim();
 		// If value is null, the type should also be VOID.
 		if (value == null) {
 			hiveTypeCategory = PrimitiveObjectInspector.PrimitiveCategory.VOID;
@@ -279,8 +281,8 @@ public class HiveParserRexNodeConverter {
 					// somehow, because otherwise having different expression type in AST causes the plan generation
 					// to fail after CBO, probably due to some residual state in SA/QB.
 					// For now, we will not run CBO in the presence of invalid decimal literals.
-					throw new CalciteSemanticException("Expression " + literal.getExprString()
-							+ " is not a valid decimal", CalciteSemanticException.UnsupportedFeature.Invalid_decimal);
+					throw new SemanticException("Expression " + literal.getExprString()
+							+ " is not a valid decimal");
 					// TODO: return createNullLiteral(literal);
 				}
 				BigDecimal bd = (BigDecimal) value;
@@ -304,7 +306,7 @@ public class HiveParserRexNodeConverter {
 			case DOUBLE:
 				// TODO: The best solution is to support NaN in expression reduction.
 				if (Double.isNaN((Double) value)) {
-					throw new CalciteSemanticException("NaN", CalciteSemanticException.UnsupportedFeature.Invalid_decimal);
+					throw new SemanticException("NaN");
 				}
 				calciteLiteral = rexBuilder.makeApproxLiteral(
 						new BigDecimal(Double.toString((Double) value)), calciteDataType);
@@ -345,32 +347,31 @@ public class HiveParserRexNodeConverter {
 				}
 				calciteLiteral = rexBuilder.makeTimestampLiteral(c, RelDataType.PRECISION_NOT_SPECIFIED);
 				break;
-			case INTERVAL_YEAR_MONTH:
-				// Calcite year-month literal value is months as BigDecimal
-				BigDecimal totalMonths = BigDecimal.valueOf(((HiveIntervalYearMonth) value).getTotalMonths());
-				calciteLiteral = rexBuilder.makeIntervalLiteral(totalMonths,
-						new SqlIntervalQualifier(TimeUnit.YEAR, TimeUnit.MONTH, new SqlParserPos(1, 1)));
-				break;
-			case INTERVAL_DAY_TIME:
-				// Calcite day-time interval is millis value as BigDecimal
-				// Seconds converted to millis
-				BigDecimal secsValueBd = BigDecimal
-						.valueOf(((HiveIntervalDayTime) value).getTotalSeconds() * 1000);
-				// Nanos converted to millis
-				BigDecimal nanosValueBd = BigDecimal.valueOf(((HiveIntervalDayTime)
-						value).getNanos(), 6);
-				calciteLiteral =
-						rexBuilder.makeIntervalLiteral(secsValueBd.add(nanosValueBd),
-								new SqlIntervalQualifier(TimeUnit.MILLISECOND, null, new
-										SqlParserPos(1, 1)));
-				break;
 			case VOID:
 				calciteLiteral = cluster.getRexBuilder().makeLiteral(null, dtFactory.createSqlType(SqlTypeName.NULL), true);
 				break;
 			case BINARY:
 			case UNKNOWN:
 			default:
-				throw new RuntimeException("UnSupported Literal");
+				if (hiveShim.isIntervalYearMonthType(hiveTypeCategory)) {
+					// Calcite year-month literal value is months as BigDecimal
+					BigDecimal totalMonths = BigDecimal.valueOf(((HiveParserIntervalYearMonth) value).getTotalMonths());
+					calciteLiteral = rexBuilder.makeIntervalLiteral(totalMonths,
+							new SqlIntervalQualifier(TimeUnit.YEAR, TimeUnit.MONTH, new SqlParserPos(1, 1)));
+				} else if (hiveShim.isIntervalDayTimeType(hiveTypeCategory)) {
+					// Calcite day-time interval is millis value as BigDecimal
+					// Seconds converted to millis
+					BigDecimal secsValueBd = BigDecimal
+							.valueOf(((HiveParserIntervalDayTime) value).getTotalSeconds() * 1000);
+					// Nanos converted to millis
+					BigDecimal nanosValueBd = BigDecimal.valueOf(((HiveParserIntervalDayTime) value).getNanos(), 6);
+					calciteLiteral =
+							rexBuilder.makeIntervalLiteral(secsValueBd.add(nanosValueBd),
+									new SqlIntervalQualifier(TimeUnit.MILLISECOND, null, new
+											SqlParserPos(1, 1)));
+				} else {
+					throw new RuntimeException("UnSupported Literal type " + hiveTypeCategory);
+				}
 		}
 
 		return calciteLiteral;
@@ -395,10 +396,7 @@ public class HiveParserRexNodeConverter {
 			return cluster.getRexBuilder().makeCall(HiveParserIN.INSTANCE, childRexNodes);
 		}
 
-		boolean isNumeric = (tgtUdf instanceof GenericUDFBaseBinary
-				&& func.getTypeInfo().getCategory() == ObjectInspector.Category.PRIMITIVE
-				&& (PrimitiveObjectInspectorUtils.PrimitiveGrouping.NUMERIC_GROUP == PrimitiveObjectInspectorUtils.getPrimitiveGrouping(
-				((PrimitiveTypeInfo) func.getTypeInfo()).getPrimitiveCategory())));
+		boolean isNumeric = isNumericBinary(func);
 		boolean isCompare = !isNumeric && tgtUdf instanceof GenericUDFBaseCompare;
 		boolean isWhenCase = tgtUdf instanceof GenericUDFWhen || tgtUdf instanceof GenericUDFCase;
 		boolean isTransformableTimeStamp = func.getGenericUDF() instanceof GenericUDFUnixTimeStamp &&
@@ -432,7 +430,7 @@ public class HiveParserRexNodeConverter {
 				} else if (isNumeric) {
 					// For numeric, we'll do minimum necessary cast - if we cast to the type
 					// of expression, bad things will happen.
-					PrimitiveTypeInfo minArgType = ExprNodeDescUtils.deriveMinArgumentCast(childExpr, tgtDT);
+					PrimitiveTypeInfo minArgType = HiveParserExprNodeDescUtils.deriveMinArgumentCast(childExpr, tgtDT);
 					tmpExprNode = HiveASTParseUtils.createConversionCast(childExpr, minArgType);
 				} else {
 					throw new AssertionError("Unexpected " + tgtDT + " - not a numeric op or compare");
@@ -631,8 +629,7 @@ public class HiveParserRexNodeConverter {
 		return castExpr;
 	}
 
-	private RexNode handleExplicitCast(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst, SqlOperator operator)
-			throws CalciteSemanticException {
+	private RexNode handleExplicitCast(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst, SqlOperator operator) throws SemanticException {
 		GenericUDF udf = func.getGenericUDF();
 		if (isExplicitCast(udf) && childRexNodeLst != null && childRexNodeLst.size() == 1) {
 			// we cannot handle SettableUDF at the moment so we call calcite to do the cast in that case
@@ -697,6 +694,20 @@ public class HiveParserRexNodeConverter {
 			}
 		}
 		return false;
+	}
+
+	private static boolean isNumericBinary(ExprNodeGenericFuncDesc func) {
+		GenericUDF tgtUdf = func.getGenericUDF();
+		boolean rightClz;
+		if (genericUDFBaseBinaryClz != null) {
+			rightClz = genericUDFBaseBinaryClz.isInstance(tgtUdf);
+		} else {
+			rightClz = tgtUdf instanceof GenericUDFBaseCompare || tgtUdf instanceof GenericUDFBaseNumeric;
+		}
+		return rightClz
+				&& func.getTypeInfo().getCategory() == ObjectInspector.Category.PRIMITIVE
+				&& (PrimitiveObjectInspectorUtils.PrimitiveGrouping.NUMERIC_GROUP == PrimitiveObjectInspectorUtils.getPrimitiveGrouping(
+				((PrimitiveTypeInfo) func.getTypeInfo()).getPrimitiveCategory()));
 	}
 
 	private static class InputCtx {

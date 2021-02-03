@@ -20,7 +20,9 @@ package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.catalog.hive.client.HiveMetastoreClientWrapper;
+import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.catalog.hive.client.HiveShimLoader;
+import org.apache.flink.table.catalog.hive.descriptors.HiveCatalogValidator;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
 import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
 import org.apache.flink.table.functions.FunctionKind;
@@ -90,13 +92,12 @@ import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.exec.FunctionTask;
 import org.apache.hadoop.hive.ql.exec.FunctionUtils;
+import org.apache.hadoop.hive.ql.exec.WindowFunctionInfo;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserJoinCondTypeCheckProcFactory;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
@@ -105,6 +106,7 @@ import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserQB;
 import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
 import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer;
+import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.GenericUDAFInfo;
 import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckCtx;
 import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
@@ -187,7 +189,7 @@ public class HiveParserUtils {
 
 	// converts a hive TypeInfo to RelDataType
 	public static RelDataType toRelDataType(TypeInfo typeInfo, RelDataTypeFactory relTypeFactory)
-			throws CalciteSemanticException {
+			throws SemanticException {
 		RelDataType res;
 		switch (typeInfo.getCategory()) {
 			case PRIMITIVE:
@@ -212,7 +214,7 @@ public class HiveParserUtils {
 				return relTypeFactory.createStructType(convertedTypes, ((StructTypeInfo) typeInfo).getAllStructFieldNames());
 			case UNION:
 			default:
-				throw new CalciteSemanticException(String.format("%s type is not supported yet", typeInfo.getCategory().name()));
+				throw new SemanticException(String.format("%s type is not supported yet", typeInfo.getCategory().name()));
 		}
 	}
 
@@ -485,10 +487,10 @@ public class HiveParserUtils {
 	 * @return GenericUDAFInfo
 	 * @throws SemanticException when the UDAF is not found or has problems.
 	 */
-	public static SemanticAnalyzer.GenericUDAFInfo getGenericUDAFInfo(GenericUDAFEvaluator evaluator,
+	public static GenericUDAFInfo getGenericUDAFInfo(GenericUDAFEvaluator evaluator,
 			GenericUDAFEvaluator.Mode emode, ArrayList<ExprNodeDesc> aggParameters) throws SemanticException {
 
-		SemanticAnalyzer.GenericUDAFInfo res = new SemanticAnalyzer.GenericUDAFInfo();
+		GenericUDAFInfo res = new GenericUDAFInfo();
 
 		// set r.genericUDAFEvaluator
 		res.genericUDAFEvaluator = evaluator;
@@ -761,7 +763,7 @@ public class HiveParserUtils {
 	public static RelDataType toRelDataType(DataType dataType, RelDataTypeFactory dtFactory) {
 		try {
 			return toRelDataType(HiveTypeUtil.toHiveTypeInfo(dataType, false), dtFactory);
-		} catch (CalciteSemanticException e) {
+		} catch (SemanticException e) {
 			throw new FlinkHiveException(e);
 		}
 	}
@@ -1059,6 +1061,20 @@ public class HiveParserUtils {
 		return outJoinCond;
 	}
 
+	public static List<RexNode> getProjsFromBelowAsInputRef(final RelNode rel) {
+		return rel.getRowType().getFieldList().stream()
+				.map(field -> rel.getCluster().getRexBuilder().makeInputRef(field.getType(), field.getIndex()))
+				.collect(Collectors.toList());
+	}
+
+	public static boolean pivotResult(String functionName) throws SemanticException {
+		WindowFunctionInfo windowInfo = FunctionRegistry.getWindowFunctionInfo(functionName);
+		if (windowInfo != null) {
+			return windowInfo.isPivotResult();
+		}
+		return false;
+	}
+
 	// Get FunctionInfo and always look for it in metastore when FunctionRegistry returns null.
 	public static FunctionInfo getFunctionInfo(String funcName) throws SemanticException {
 		FunctionInfo res = FunctionRegistry.getFunctionInfo(funcName);
@@ -1070,10 +1086,9 @@ public class HiveParserUtils {
 				try (HiveMetastoreClientWrapper hmsClient = new HiveMetastoreClientWrapper(hiveConf, HiveShimLoader.getHiveVersion())) {
 					String[] parts = FunctionUtils.getQualifiedFunctionNameParts(funcName);
 					Function function = hmsClient.getFunction(parts[0], parts[1]);
-					FunctionRegistry.registerTemporaryUDF(
+					getSessionHiveShim().registerTemporaryFunction(
 							FunctionUtils.qualifyFunctionName(parts[1], parts[0]),
-							Thread.currentThread().getContextClassLoader().loadClass(function.getClassName()),
-							FunctionTask.toFunctionResource(function.getResourceUris()));
+							Thread.currentThread().getContextClassLoader().loadClass(function.getClassName()));
 					res = FunctionRegistry.getFunctionInfo(funcName);
 				} catch (NoSuchObjectException e) {
 					LOG.warn("Function {} doesn't exist in metastore", funcName);
@@ -1178,6 +1193,25 @@ public class HiveParserUtils {
 			// materialized views don't store the expanded text as they won't be rewritten at query time.
 			desc.setExpandedText(expandedText);
 		}
+	}
+
+	public static HiveShim getSessionHiveShim() {
+		return HiveShimLoader.loadHiveShim(SessionState.get().getConf().get(HiveCatalogValidator.CATALOG_HIVE_VERSION));
+	}
+
+	public static String getStandardDisplayString(String name, String[] children) {
+		StringBuilder sb = new StringBuilder();
+		sb.append(name);
+		sb.append("(");
+		if (children.length > 0) {
+			sb.append(children[0]);
+			for (int i = 1; i < children.length; i++) {
+				sb.append(", ");
+				sb.append(children[i]);
+			}
+		}
+		sb.append(")");
+		return sb.toString();
 	}
 
 	/**

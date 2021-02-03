@@ -119,7 +119,7 @@ public class HiveParserStorageFormat {
 				serde = conf.get("hive.materializedview.serde", "org.apache.hadoop.hive.ql.io.orc.OrcSerde");
 			} else {
 				defaultFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTFILEFORMAT);
-				defaultManagedFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTMANAGEDFILEFORMAT);
+				defaultManagedFormat = conf.get("hive.default.fileformat.managed", "none");
 			}
 
 			if (!isExternal && !"none".equals(defaultManagedFormat)) {

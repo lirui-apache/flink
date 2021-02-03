@@ -18,6 +18,9 @@
 
 package org.apache.hadoop.hive.ql.optimizer.calcite.translator;
 
+import org.apache.flink.table.catalog.hive.client.HiveShim;
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.type.RelDataType;
@@ -33,10 +36,10 @@ import org.apache.hadoop.hive.common.type.HiveChar;
 import org.apache.hadoop.hive.common.type.HiveVarchar;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.RowSchema;
-import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter.HiveToken;
 import org.apache.hadoop.hive.ql.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
+import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.typeinfo.BaseCharTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.DecimalTypeInfo;
@@ -77,31 +80,31 @@ public class HiveParserTypeConverter {
 		map.put(SqlTypeName.DATE.getName(), new HiveToken(HiveASTParser.TOK_DATE, "TOK_DATE"));
 		map.put(SqlTypeName.TIMESTAMP.getName(), new HiveToken(HiveASTParser.TOK_TIMESTAMP, "TOK_TIMESTAMP"));
 		map.put(SqlTypeName.INTERVAL_YEAR.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_MONTH.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_YEAR_MONTH.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_DAY.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_DAY_HOUR.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_DAY_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_DAY_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_HOUR.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_HOUR_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_HOUR_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_MINUTE_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.INTERVAL_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME));
+				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
 		map.put(SqlTypeName.BINARY.getName(), new HiveToken(HiveASTParser.TOK_BINARY, "TOK_BINARY"));
 		calciteToHiveTypeNameMap = Collections.unmodifiableMap(map);
 	}
@@ -110,11 +113,11 @@ public class HiveParserTypeConverter {
 	 * Convert Hive Types To Calcite Types.
 	 */
 	public static RelDataType getType(RelOptCluster cluster,
-			List<ColumnInfo> cInfoLst) throws CalciteSemanticException {
+			List<ColumnInfo> cInfoLst) throws SemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
-		List<RelDataType> fieldTypes = new LinkedList<RelDataType>();
-		List<String> fieldNames = new LinkedList<String>();
+		List<RelDataType> fieldTypes = new LinkedList<>();
+		List<String> fieldNames = new LinkedList<>();
 
 		for (ColumnInfo ci : cInfoLst) {
 			fieldTypes.add(convert(ci.getType(), dtFactory));
@@ -123,7 +126,7 @@ public class HiveParserTypeConverter {
 		return dtFactory.createStructType(fieldTypes, fieldNames);
 	}
 
-	public static RelDataType getType(RelOptCluster cluster, HiveParserRowResolver rr, List<String> neededCols) throws CalciteSemanticException {
+	public static RelDataType getType(RelOptCluster cluster, HiveParserRowResolver rr, List<String> neededCols) throws SemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
 		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
 		RowSchema rs = rr.getRowSchema();
@@ -140,7 +143,7 @@ public class HiveParserTypeConverter {
 	}
 
 	public static RelDataType convert(TypeInfo type, RelDataTypeFactory dtFactory)
-			throws CalciteSemanticException {
+			throws SemanticException {
 		RelDataType convertedType = null;
 
 		switch (type.getCategory()) {
@@ -165,6 +168,7 @@ public class HiveParserTypeConverter {
 
 	public static RelDataType convert(PrimitiveTypeInfo type, RelDataTypeFactory dtFactory) {
 		RelDataType convertedType = null;
+		HiveShim hiveShim = HiveParserUtils.getSessionHiveShim();
 
 		switch (type.getPrimitiveCategory()) {
 			case VOID:
@@ -202,14 +206,6 @@ public class HiveParserTypeConverter {
 			case TIMESTAMP:
 				convertedType = dtFactory.createSqlType(SqlTypeName.TIMESTAMP, 9);
 				break;
-			case INTERVAL_YEAR_MONTH:
-				convertedType = dtFactory.createSqlIntervalType(
-						new SqlIntervalQualifier(TimeUnit.YEAR, TimeUnit.MONTH, new SqlParserPos(1, 1)));
-				break;
-			case INTERVAL_DAY_TIME:
-				convertedType = dtFactory.createSqlIntervalType(
-						new SqlIntervalQualifier(TimeUnit.DAY, TimeUnit.SECOND, new SqlParserPos(1, 1)));
-				break;
 			case BINARY:
 				convertedType = dtFactory.createSqlType(SqlTypeName.BINARY);
 				break;
@@ -231,6 +227,14 @@ public class HiveParserTypeConverter {
 			case UNKNOWN:
 				convertedType = dtFactory.createSqlType(SqlTypeName.OTHER);
 				break;
+			default:
+				if (hiveShim.isIntervalYearMonthType(type.getPrimitiveCategory())) {
+					convertedType = dtFactory.createSqlIntervalType(
+							new SqlIntervalQualifier(TimeUnit.YEAR, TimeUnit.MONTH, new SqlParserPos(1, 1)));
+				} else if (hiveShim.isIntervalDayTimeType(type.getPrimitiveCategory())) {
+					convertedType = dtFactory.createSqlIntervalType(
+							new SqlIntervalQualifier(TimeUnit.DAY, TimeUnit.SECOND, new SqlParserPos(1, 1)));
+				}
 		}
 
 		if (null == convertedType) {
@@ -241,20 +245,20 @@ public class HiveParserTypeConverter {
 	}
 
 	public static RelDataType convert(ListTypeInfo lstType,
-			RelDataTypeFactory dtFactory) throws CalciteSemanticException {
+			RelDataTypeFactory dtFactory) throws SemanticException {
 		RelDataType elemType = convert(lstType.getListElementTypeInfo(), dtFactory);
 		return dtFactory.createArrayType(elemType, -1);
 	}
 
 	public static RelDataType convert(MapTypeInfo mapType, RelDataTypeFactory dtFactory)
-			throws CalciteSemanticException {
+			throws SemanticException {
 		RelDataType keyType = convert(mapType.getMapKeyTypeInfo(), dtFactory);
 		RelDataType valueType = convert(mapType.getMapValueTypeInfo(), dtFactory);
 		return dtFactory.createMapType(keyType, valueType);
 	}
 
 	public static RelDataType convert(StructTypeInfo structType,
-			final RelDataTypeFactory dtFactory) throws CalciteSemanticException {
+			final RelDataTypeFactory dtFactory) throws SemanticException {
 		List<RelDataType> fTypes = new ArrayList<RelDataType>(structType.getAllStructFieldTypeInfos().size());
 		for (TypeInfo ti : structType.getAllStructFieldTypeInfos()) {
 			fTypes.add(convert(ti, dtFactory));
@@ -263,9 +267,9 @@ public class HiveParserTypeConverter {
 	}
 
 	public static RelDataType convert(UnionTypeInfo unionType, RelDataTypeFactory dtFactory)
-			throws CalciteSemanticException {
+			throws SemanticException {
 		// Union type is not supported in Calcite.
-		throw new CalciteSemanticException("Union type is not supported", CalciteSemanticException.UnsupportedFeature.Union_type);
+		throw new SemanticException("Union type is not supported");
 	}
 
 	public static TypeInfo convert(RelDataType rType) {
@@ -296,6 +300,7 @@ public class HiveParserTypeConverter {
 	}
 
 	public static TypeInfo convertPrimitiveType(RelDataType rType) {
+		HiveShim hiveShim = HiveParserUtils.getSessionHiveShim();
 		switch (rType.getSqlTypeName()) {
 			case BOOLEAN:
 				return TypeInfoFactory.booleanTypeInfo;
@@ -318,7 +323,7 @@ public class HiveParserTypeConverter {
 			case INTERVAL_YEAR:
 			case INTERVAL_MONTH:
 			case INTERVAL_YEAR_MONTH:
-				return TypeInfoFactory.intervalYearMonthTypeInfo;
+				return hiveShim.getIntervalYearMonthTypeInfo();
 			case INTERVAL_DAY:
 			case INTERVAL_DAY_HOUR:
 			case INTERVAL_DAY_MINUTE:
@@ -329,7 +334,7 @@ public class HiveParserTypeConverter {
 			case INTERVAL_MINUTE:
 			case INTERVAL_MINUTE_SECOND:
 			case INTERVAL_SECOND:
-				return TypeInfoFactory.intervalDayTimeTypeInfo;
+				return hiveShim.getIntervalDayTimeTypeInfo();
 			case BINARY:
 				return TypeInfoFactory.binaryTypeInfo;
 			case DECIMAL:

@@ -24,6 +24,7 @@ import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
+import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.planner.delegation.hive.CTASDesc;
 import org.apache.flink.table.planner.delegation.hive.DropPartitionDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAlterTableDesc;
@@ -60,7 +61,6 @@ import org.apache.hadoop.hive.ql.plan.ColumnStatsDesc;
 import org.apache.hadoop.hive.ql.plan.ColumnStatsUpdateWork;
 import org.apache.hadoop.hive.ql.plan.CreateDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateFunctionDesc;
-import org.apache.hadoop.hive.ql.plan.CreateTableLikeDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.plan.DescDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.DescFunctionDesc;
@@ -137,8 +137,8 @@ public class HiveParserDDLSemanticAnalyzer {
 		TokenToTypeName.put(HiveASTParser.TOK_DATE, serdeConstants.DATE_TYPE_NAME);
 		TokenToTypeName.put(HiveASTParser.TOK_DATETIME, serdeConstants.DATETIME_TYPE_NAME);
 		TokenToTypeName.put(HiveASTParser.TOK_TIMESTAMP, serdeConstants.TIMESTAMP_TYPE_NAME);
-		TokenToTypeName.put(HiveASTParser.TOK_INTERVAL_YEAR_MONTH, serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME);
-		TokenToTypeName.put(HiveASTParser.TOK_INTERVAL_DAY_TIME, serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME);
+		TokenToTypeName.put(HiveASTParser.TOK_INTERVAL_YEAR_MONTH, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME);
+		TokenToTypeName.put(HiveASTParser.TOK_INTERVAL_DAY_TIME, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME);
 		TokenToTypeName.put(HiveASTParser.TOK_DECIMAL, serdeConstants.DECIMAL_TYPE_NAME);
 	}
 
@@ -726,11 +726,12 @@ public class HiveParserDDLSemanticAnalyzer {
 //								+ "and source table in CREATE TABLE LIKE is partitioned.");
 //					}
 //				}
-				CreateTableLikeDesc crtTblLikeDesc = new CreateTableLikeDesc(dbDotTab, isExt, isTemporary,
-						storageFormat.getInputFormat(), storageFormat.getOutputFormat(), location,
-						storageFormat.getSerde(), storageFormat.getSerdeProps(), tblProps, ifNotExists,
-						likeTableName, isUserStorageFormat);
-				return new DDLWork(getInputs(), getOutputs(), crtTblLikeDesc);
+//				CreateTableLikeDesc crtTblLikeDesc = new CreateTableLikeDesc(dbDotTab, isExt, isTemporary,
+//						storageFormat.getInputFormat(), storageFormat.getOutputFormat(), location,
+//						storageFormat.getSerde(), storageFormat.getSerdeProps(), tblProps, ifNotExists,
+//						likeTableName, isUserStorageFormat);
+//				return new DDLWork(getInputs(), getOutputs(), crtTblLikeDesc);
+				throw new SemanticException("CREATE TABLE LIKE is not supported yet");
 
 			case ctas: // create table as select
 				// TODO: check this somewhere else
@@ -915,8 +916,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		String tableName = getUnescapedName((ASTNode) ast.getChild(0));
 		boolean ifExists = (ast.getFirstChildWithType(HiveASTParser.TOK_IFEXISTS) != null);
 
-		ReplicationSpec replicationSpec = new ReplicationSpec(ast);
-
 		boolean ifPurge = (ast.getFirstChildWithType(HiveASTParser.KW_PURGE) != null);
 		return new HiveParserDropTableDesc(tableName, expectedType == TableType.VIRTUAL_VIEW, ifExists, ifPurge);
 	}
@@ -1032,38 +1031,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		alterTblDesc.setGenericFileFormatName(format.getGenericName());
 
 		return alterTblDesc;
-	}
-
-	private void addInputsOutputsAlterTable(String tableName, Map<String, String> partSpec,
-			AlterTableDesc desc) throws SemanticException {
-		addInputsOutputsAlterTable(tableName, partSpec, desc, desc.getOp());
-	}
-
-	private void addInputsOutputsAlterTable(String tableName, Map<String, String> partSpec,
-			AlterTableDesc desc, AlterTableDesc.AlterTableTypes op) throws SemanticException {
-		boolean isCascade = desc != null && desc.getIsCascade();
-		boolean alterPartitions = partSpec != null && !partSpec.isEmpty();
-		// cascade only occurs at table level then cascade to partition level
-		if (isCascade && alterPartitions) {
-			throw new SemanticException(ErrorMsg.ALTER_TABLE_PARTITION_CASCADE_NOT_SUPPORTED, op.getName());
-		}
-
-		Table tab = getTable(tableName);
-
-		if (desc != null) {
-			validateAlterTableType(tab, op, desc.getExpectView());
-
-			// validate Unset Non Existed Table Properties
-			if (op == AlterTableDesc.AlterTableTypes.DROPPROPS && !desc.getIsDropIfExists()) {
-				Map<String, String> tableParams = tab.getTTable().getParameters();
-				for (String currKey : desc.getProps().keySet()) {
-					if (!tableParams.containsKey(currKey)) {
-						String errorMsg = "The following property " + currKey + " does not exist in " + tab.getTableName();
-						throw new SemanticException(ErrorMsg.ALTER_TBL_UNSET_NON_EXIST_PROPERTY.getMsg(errorMsg));
-					}
-				}
-			}
-		}
 	}
 
 	private Serializable analyzeAlterTableLocation(ASTNode ast, String tableName, HashMap<String, String> partSpec) throws SemanticException {
@@ -1484,8 +1451,9 @@ public class HiveParserDDLSemanticAnalyzer {
 			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames);
 		} else if (ast.getChildCount() == 2) {
 			assert (ast.getChild(0).getType() == HiveASTParser.KW_LIKE);
-			String funcNames = stripQuotes(ast.getChild(1).getText());
-			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames, true);
+//			String funcNames = stripQuotes(ast.getChild(1).getText());
+//			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames, true);
+			throw new SemanticException("SHOW FUNCTIONS LIKE is not supported yet");
 		} else {
 			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile());
 		}
@@ -1649,9 +1617,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		// operators are equality, if we assume those would always match one partition (which
 		// may not be true with legacy, non-normalized column values). This is probably a
 		// popular case but that's kinda hacky. Let's not do it for now.
-
-		boolean mustPurge = (ast.getFirstChildWithType(HiveASTParser.KW_PURGE) != null);
-		ReplicationSpec replicationSpec = new ReplicationSpec(ast);
 
 		Table tab = getTable(new ObjectPath(qualified[0], qualified[1]));
 		// hive represents drop partition specs with generic func desc, but what we need is just spec maps

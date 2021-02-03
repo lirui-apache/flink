@@ -19,12 +19,16 @@
 package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeColumnListDesc;
+import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
 import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
+import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.HiveDecimalUtils;
+import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 
 import java.util.List;
 import java.util.Map;
@@ -47,7 +51,7 @@ public class HiveParserExprNodeDescUtils {
 	private static void getExprNodeColumnDesc(ExprNodeDesc exprDesc, Map<Integer, ExprNodeDesc> hashCodeToColumnDescMap) {
 		if (exprDesc instanceof ExprNodeColumnDesc) {
 			hashCodeToColumnDescMap.put(exprDesc.hashCode(), exprDesc);
-		} else if (exprDesc instanceof ExprNodeColumnListDesc) {
+		} else if (exprDesc instanceof HiveParserExprNodeColumnListDesc) {
 			for (ExprNodeDesc child : exprDesc.getChildren()) {
 				getExprNodeColumnDesc(child, hashCodeToColumnDescMap);
 			}
@@ -60,6 +64,28 @@ public class HiveParserExprNodeDescUtils {
 		} else if (exprDesc instanceof HiveParserExprNodeSubQueryDesc) {
 			getExprNodeColumnDesc(((HiveParserExprNodeSubQueryDesc) exprDesc).getSubQueryLhs(), hashCodeToColumnDescMap);
 		}
+	}
 
+	public static boolean isAllConstants(List<ExprNodeDesc> value) {
+		for (ExprNodeDesc expr : value) {
+			if (!(expr instanceof ExprNodeConstantDesc)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public static PrimitiveTypeInfo deriveMinArgumentCast(ExprNodeDesc childExpr, TypeInfo targetType) {
+		assert targetType instanceof PrimitiveTypeInfo : "Not a primitive type" + targetType;
+		PrimitiveTypeInfo pti = (PrimitiveTypeInfo) targetType;
+		// We only do the minimum cast for decimals. Other types are assumed safe; fix if needed.
+		// We also don't do anything for non-primitive children (maybe we should assert).
+		if ((pti.getPrimitiveCategory() != PrimitiveObjectInspector.PrimitiveCategory.DECIMAL)
+				|| (!(childExpr.getTypeInfo() instanceof PrimitiveTypeInfo))) {
+			return pti;
+		}
+		PrimitiveTypeInfo childTi = (PrimitiveTypeInfo) childExpr.getTypeInfo();
+		// If the child is also decimal, no cast is needed (we hope - can target type be narrower?).
+		return HiveDecimalUtils.getDecimalTypeForPrimitiveCategory(childTi);
 	}
 }

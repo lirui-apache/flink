@@ -18,6 +18,8 @@
 
 package org.apache.flink.table.module.hive.udf.generic;
 
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
@@ -102,6 +104,6 @@ public class HiveGenericUDFGrouping extends GenericUDF {
 	@Override
 	public String getDisplayString(String[] children) {
 		assert (children.length > 1);
-		return getStandardDisplayString("grouping", children);
+		return HiveParserUtils.getStandardDisplayString("grouping", children);
 	}
 }

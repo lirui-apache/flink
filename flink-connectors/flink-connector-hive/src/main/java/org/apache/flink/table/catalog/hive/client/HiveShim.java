@@ -40,6 +40,8 @@ import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
 import org.apache.hadoop.hive.ql.udf.generic.SimpleGenericUDAFParameterInfo;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.thrift.TException;
@@ -58,6 +60,10 @@ import java.util.Set;
  * A shim layer to support different versions of Hive.
  */
 public interface HiveShim extends Serializable {
+
+	String INTERVAL_YEAR_MONTH_TYPE_NAME = "interval_year_month";
+
+	String INTERVAL_DAY_TIME_TYPE_NAME = "interval_day_time";
 
 	/**
 	 * Create a Hive Metastore client based on the given HiveConf object.
@@ -218,7 +224,25 @@ public interface HiveShim extends Serializable {
 	/**
 	 * Checks whether a hive table is a materialized view.
 	 */
-	default boolean isMaterializedView(org.apache.hadoop.hive.ql.metadata.Table table){
+	default boolean isMaterializedView(org.apache.hadoop.hive.ql.metadata.Table table) {
 		return false;
 	}
+
+	default PrimitiveTypeInfo getIntervalYearMonthTypeInfo() {
+		throw new UnsupportedOperationException("INTERVAL YEAR MONTH type not supported until 1.2.0");
+	}
+
+	default PrimitiveTypeInfo getIntervalDayTimeTypeInfo() {
+		throw new UnsupportedOperationException("INTERVAL DAY TIME type not supported until 1.2.0");
+	}
+
+	default boolean isIntervalYearMonthType(PrimitiveObjectInspector.PrimitiveCategory primitiveCategory) {
+		return false;
+	}
+
+	default boolean isIntervalDayTimeType(PrimitiveObjectInspector.PrimitiveCategory primitiveCategory) {
+		return false;
+	}
+
+	void registerTemporaryFunction(String funcName, Class funcClass);
 }
