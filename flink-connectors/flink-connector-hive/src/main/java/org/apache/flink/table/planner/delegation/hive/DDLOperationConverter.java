@@ -81,11 +81,11 @@ import org.apache.flink.table.operations.ddl.DropTableOperation;
 import org.apache.flink.table.operations.ddl.DropTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropViewOperation;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowFormatParams;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserStorageFormat;
 import org.apache.flink.table.planner.utils.OperationConverterUtils;
 
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.ql.parse.HiveParserRowFormatParams;
-import org.apache.hadoop.hive.ql.parse.HiveParserStorageFormat;
 import org.apache.hadoop.hive.ql.plan.AddPartitionDesc;
 import org.apache.hadoop.hive.ql.plan.AlterDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateDatabaseDesc;

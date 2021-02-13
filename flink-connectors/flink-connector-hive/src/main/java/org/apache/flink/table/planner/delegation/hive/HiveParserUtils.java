@@ -29,6 +29,16 @@ import org.apache.flink.table.functions.FunctionKind;
 import org.apache.flink.table.functions.hive.HiveGenericUDAF;
 import org.apache.flink.table.functions.hive.HiveGenericUDTF;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserJoinCondTypeCheckProcFactory;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseDriver;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserQB;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowResolver;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer.GenericUDAFInfo;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckCtx;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckProcFactory;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
 import org.apache.flink.table.planner.functions.utils.HiveAggSqlFunction;
 import org.apache.flink.table.planner.functions.utils.HiveTableSqlFunction;
@@ -98,17 +108,7 @@ import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserJoinCondTypeCheckProcFactory;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.HiveASTParseDriver;
-import org.apache.hadoop.hive.ql.parse.HiveASTParser;
-import org.apache.hadoop.hive.ql.parse.HiveParserQB;
-import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
-import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.GenericUDAFInfo;
-import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckCtx;
-import org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -141,9 +141,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
-import static org.apache.hadoop.hive.ql.parse.HiveParserSemanticAnalyzer.getColumnInternalName;
-import static org.apache.hadoop.hive.ql.parse.HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer.getColumnInternalName;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText;
 
 /**
  * Util class for the hive planner.

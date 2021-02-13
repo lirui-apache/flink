@@ -38,6 +38,14 @@ import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverter;
 import org.apache.flink.table.planner.delegation.ParserImpl;
 import org.apache.flink.table.planner.delegation.PlannerContext;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseException;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseUtils;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserCalcitePlanner;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserDDLSemanticAnalyzer;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserQB;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
 import org.apache.flink.table.planner.plan.FlinkCalciteCatalogReader;
 import org.apache.flink.table.planner.plan.nodes.hive.HiveDistribution;
@@ -65,23 +73,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.JavaUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.ql.HiveParserContext;
-import org.apache.hadoop.hive.ql.HiveParserQueryState;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
-import org.apache.hadoop.hive.ql.parse.HiveASTParser;
-import org.apache.hadoop.hive.ql.parse.HiveParserCalcitePlanner;
-import org.apache.hadoop.hive.ql.parse.HiveParserDDLSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.HiveParserQB;
-import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.session.SessionState;
@@ -241,7 +239,7 @@ public class HiveParser extends ParserImpl {
 				}
 			}
 			return Collections.singletonList(operation);
-		} catch (ParseException e) {
+		} catch (HiveASTParseException e) {
 			// ParseException can happen for flink-specific statements, e.g. catalog DDLs
 			try {
 				return super.parse(cmd);

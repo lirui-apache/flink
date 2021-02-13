@@ -20,6 +20,15 @@ package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserExtractDate;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserFloorDate;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseUtils;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowResolver;
+import org.apache.flink.table.planner.delegation.hive.plan.HiveParserExprNodeSubQueryDesc;
+import org.apache.flink.table.planner.delegation.hive.plan.SqlOperatorExprNodeDesc;
+import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.avatica.util.TimeUnitRange;
@@ -30,6 +39,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
@@ -50,20 +60,12 @@ import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.HiveVarchar;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserFloorDate;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserTypeConverter;
-import org.apache.hadoop.hive.ql.parse.HiveASTParseUtils;
-import org.apache.hadoop.hive.ql.parse.HiveParserRowResolver;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
-import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
-import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
 import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseCompare;
@@ -389,11 +391,7 @@ public class HiveParserRexNodeConverter {
 		GenericUDF tgtUdf = func.getGenericUDF();
 
 		if (tgtUdf instanceof GenericUDFIn) {
-			List<RexNode> childRexNodes = new ArrayList<>();
-			for (ExprNodeDesc childExpr : func.getChildren()) {
-				childRexNodes.add(convert(childExpr));
-			}
-			return cluster.getRexBuilder().makeCall(HiveParserIN.INSTANCE, childRexNodes);
+			return convertIN(func);
 		}
 
 		boolean isNumeric = isNumericBinary(func);
@@ -467,7 +465,7 @@ public class HiveParserRexNodeConverter {
 
 		// TODO: Cast Function in Calcite have a bug where it infer type on cast throws
 		// an exception
-		if (flattenExpr && (expr instanceof RexCall)
+		if (flattenExpr && expr instanceof RexCall
 				&& !(((RexCall) expr).getOperator() instanceof SqlCastFunction)) {
 			RexCall call = (RexCall) expr;
 			expr = cluster.getRexBuilder().makeCall(retType, call.getOperator(),
@@ -525,9 +523,30 @@ public class HiveParserRexNodeConverter {
 		}
 	}
 
-	private List<RexNode> rewriteFloorDateChildren(SqlOperator op, List<RexNode> childRexNodeLst)
-			throws SemanticException {
-		List<RexNode> newChildRexNodeLst = new ArrayList<RexNode>();
+	// converts IN for constant value list, RexSubQuery won't get here
+	private RexNode convertIN(ExprNodeGenericFuncDesc func) throws SemanticException {
+		List<RexNode> childRexNodes = new ArrayList<>();
+		for (ExprNodeDesc childExpr : func.getChildren()) {
+			childRexNodes.add(convert(childExpr));
+		}
+		if (funcConverter.hasOverloadedOp(HiveParserIN.INSTANCE, SqlFunctionCategory.USER_DEFINED_FUNCTION)) {
+			return cluster.getRexBuilder().makeCall(HiveParserIN.INSTANCE, childRexNodes);
+		} else {
+			// hive module is not loaded, calcite converts IN using either OR or inline table (LogicalValues)
+			// we do the same here but only support OR for now
+			RexNode leftKey = childRexNodes.get(0);
+			Preconditions.checkState(leftKey instanceof RexInputRef,
+					"Expecting LHS key of IN to be a RexInputRef, actually got " + leftKey);
+			final List<RexNode> comparisons = new ArrayList<>();
+			for (int i = 1; i < childRexNodes.size(); i++) {
+				comparisons.add(cluster.getRexBuilder().makeCall(SqlStdOperatorTable.EQUALS, leftKey, childRexNodes.get(i)));
+			}
+			return RexUtil.composeDisjunction(cluster.getRexBuilder(), comparisons, true);
+		}
+	}
+
+	private List<RexNode> rewriteFloorDateChildren(SqlOperator op, List<RexNode> childRexNodeLst) {
+		List<RexNode> newChildRexNodeLst = new ArrayList<>();
 		assert childRexNodeLst.size() == 1;
 		newChildRexNodeLst.add(childRexNodeLst.get(0));
 		if (op == HiveParserFloorDate.YEAR) {
@@ -550,9 +569,8 @@ public class HiveParserRexNodeConverter {
 		return newChildRexNodeLst;
 	}
 
-	private List<RexNode> rewriteExtractDateChildren(SqlOperator op, List<RexNode> childRexNodeLst)
-			throws SemanticException {
-		List<RexNode> newChildRexNodeLst = new ArrayList<RexNode>();
+	private List<RexNode> rewriteExtractDateChildren(SqlOperator op, List<RexNode> childRexNodeLst) {
+		List<RexNode> newChildRexNodeLst = new ArrayList<>();
 		if (op == HiveParserExtractDate.YEAR) {
 			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.YEAR));
 		} else if (op == HiveParserExtractDate.QUARTER) {
@@ -577,7 +595,7 @@ public class HiveParserRexNodeConverter {
 
 	private List<RexNode> rewriteCaseChildren(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst)
 			throws SemanticException {
-		List<RexNode> newChildRexNodeLst = new ArrayList<RexNode>();
+		List<RexNode> newChildRexNodeLst = new ArrayList<>();
 		if (FunctionRegistry.getNormalizedFunctionName(func.getFuncText()).equals("case")) {
 			RexNode firstPred = childRexNodeLst.get(0);
 			int length = childRexNodeLst.size() % 2 == 1 ?

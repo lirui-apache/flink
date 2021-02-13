@@ -18,13 +18,14 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
+import org.apache.flink.table.planner.delegation.hive.plan.HiveParserExprNodeSubQueryDesc;
+import org.apache.flink.table.planner.delegation.hive.plan.SqlOperatorExprNodeDesc;
+
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
-import org.apache.hadoop.hive.ql.plan.HiveParserExprNodeSubQueryDesc;
-import org.apache.hadoop.hive.ql.plan.SqlOperatorExprNodeDesc;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.HiveDecimalUtils;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;

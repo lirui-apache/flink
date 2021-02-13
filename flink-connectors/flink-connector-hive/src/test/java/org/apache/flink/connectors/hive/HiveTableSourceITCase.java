@@ -228,8 +228,6 @@ public class HiveTableSourceITCase extends BatchAbstractTestBase {
 					.addRow(new Object[]{2}).commit("p1=2,p2='b'");
 			HiveTestUtils.createTextTableInserter(hiveCatalog, "db1", "part")
 					.addRow(new Object[]{3}).commit("p1=3,p2='c'");
-			// TODO: enable hive dialect with partition pruning
-			tableEnv.getConfig().setSqlDialect(SqlDialect.DEFAULT);
 			// test string partition columns with special characters
 			HiveTestUtils.createTextTableInserter(hiveCatalog, "db1", "part")
 					.addRow(new Object[]{4}).commit("p1=4,p2='c:2'");

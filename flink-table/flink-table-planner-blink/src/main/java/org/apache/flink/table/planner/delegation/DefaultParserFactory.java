@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.planner.delegation.hive;
+package org.apache.flink.table.planner.delegation;
 
 import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.config.TableConfigOptions;
@@ -24,27 +24,24 @@ import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.delegation.Parser;
 import org.apache.flink.table.descriptors.DescriptorProperties;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverterFactory;
-import org.apache.flink.table.planner.delegation.ParserFactory;
-import org.apache.flink.table.planner.delegation.PlannerContext;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 /**
- * A Parser factory that creates {@link HiveParser}.
+ * A Parser factory that creates {@link ParserImpl}.
  */
-public class HiveParserFactory implements ParserFactory {
+public class DefaultParserFactory implements ParserFactory {
 
 	@Override
 	public Parser create(CatalogManager catalogManager, PlannerContext plannerContext) {
 		SqlExprToRexConverterFactory sqlExprToRexConverterFactory = plannerContext::createSqlExprToRexConverter;
-		return new HiveParser(
+		return new ParserImpl(
 				catalogManager,
 				() -> plannerContext.createFlinkPlanner(catalogManager.getCurrentCatalog(), catalogManager.getCurrentDatabase()),
 				plannerContext::createCalciteParser,
-				tableSchema -> sqlExprToRexConverterFactory.create(plannerContext.getTypeFactory().buildRelNodeRowType(tableSchema)),
-				plannerContext);
+				tableSchema -> sqlExprToRexConverterFactory.create(plannerContext.getTypeFactory().buildRelNodeRowType(tableSchema)));
 	}
 
 	@Override
@@ -56,7 +53,7 @@ public class HiveParserFactory implements ParserFactory {
 	@Override
 	public Map<String, String> requiredContext() {
 		DescriptorProperties properties = new DescriptorProperties();
-		properties.putString(TableConfigOptions.TABLE_SQL_DIALECT.key(), SqlDialect.HIVE.name().toLowerCase());
+		properties.putString(TableConfigOptions.TABLE_SQL_DIALECT.key(), SqlDialect.DEFAULT.name().toLowerCase());
 		return properties.asMap();
 	}
 

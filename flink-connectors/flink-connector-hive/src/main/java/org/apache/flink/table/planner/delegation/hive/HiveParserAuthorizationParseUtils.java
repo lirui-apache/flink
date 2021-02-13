@@ -18,10 +18,11 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer;
+
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.HiveASTParser;
-import org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
 
 import java.util.ArrayList;
@@ -47,9 +48,9 @@ public class HiveParserAuthorizationParseUtils {
 
 	private static PrincipalType getPrincipalType(ASTNode principal) {
 		switch (principal.getType()) {
-			case org.apache.hadoop.hive.ql.parse.HiveASTParser.TOK_USER:
+			case HiveASTParser.TOK_USER:
 				return PrincipalType.USER;
-			case org.apache.hadoop.hive.ql.parse.HiveASTParser.TOK_GROUP:
+			case HiveASTParser.TOK_GROUP:
 				return PrincipalType.GROUP;
 			case HiveASTParser.TOK_ROLE:
 				return PrincipalType.ROLE;

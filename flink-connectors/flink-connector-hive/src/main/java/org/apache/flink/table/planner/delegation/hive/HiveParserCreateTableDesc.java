@@ -18,9 +18,10 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowFormatParams;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserStorageFormat;
+
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.ql.parse.HiveParserRowFormatParams;
-import org.apache.hadoop.hive.ql.parse.HiveParserStorageFormat;
 
 import java.io.Serializable;
 import java.util.List;

@@ -19,6 +19,9 @@
 package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserExtractDate;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserFloorDate;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.rel.type.RelDataType;
@@ -41,9 +44,6 @@ import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlNameMatcher;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserExtractDate;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveParserFloorDate;
-import org.apache.hadoop.hive.ql.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;

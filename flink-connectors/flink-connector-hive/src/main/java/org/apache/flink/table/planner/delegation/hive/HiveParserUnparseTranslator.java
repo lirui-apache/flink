@@ -18,12 +18,13 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer;
+
 import org.antlr.runtime.TokenRewriteStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.HiveASTParser;
-import org.apache.hadoop.hive.ql.parse.HiveParserBaseSemanticAnalyzer;
 
 import java.util.ArrayList;
 import java.util.List;
