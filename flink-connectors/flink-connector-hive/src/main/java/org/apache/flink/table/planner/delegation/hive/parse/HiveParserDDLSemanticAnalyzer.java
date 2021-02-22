@@ -27,12 +27,14 @@ import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.planner.delegation.hive.CTASDesc;
 import org.apache.flink.table.planner.delegation.hive.DropPartitionDesc;
+import org.apache.flink.table.planner.delegation.hive.HiveParserAlterDatabaseDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAlterTableDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAuthorizationParseUtils;
 import org.apache.flink.table.planner.delegation.hive.HiveParserContext;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateViewDesc;
+import org.apache.flink.table.planner.delegation.hive.HiveParserDropDatabaseDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserDropFunctionDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserDropTableDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserQueryState;
@@ -42,9 +44,7 @@ import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.TableType;
-import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Order;
 import org.apache.hadoop.hive.metastore.api.SkewedInfo;
 import org.apache.hadoop.hive.ql.ErrorMsg;
@@ -58,23 +58,18 @@ import org.apache.hadoop.hive.ql.parse.EximUtil;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.AddPartitionDesc;
-import org.apache.hadoop.hive.ql.plan.AlterDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.AlterTableAlterPartDesc;
 import org.apache.hadoop.hive.ql.plan.AlterTableDesc;
-import org.apache.hadoop.hive.ql.plan.ColumnStatsDesc;
-import org.apache.hadoop.hive.ql.plan.ColumnStatsUpdateWork;
 import org.apache.hadoop.hive.ql.plan.CreateDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.plan.DescDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.DescFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.DescTableDesc;
-import org.apache.hadoop.hive.ql.plan.DropDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.DropFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.FunctionWork;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
-import org.apache.hadoop.hive.ql.plan.RenamePartitionDesc;
 import org.apache.hadoop.hive.ql.plan.ShowColumnsDesc;
 import org.apache.hadoop.hive.ql.plan.ShowConfDesc;
 import org.apache.hadoop.hive.ql.plan.ShowCreateTableDesc;
@@ -268,7 +263,7 @@ public class HiveParserDDLSemanticAnalyzer {
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_SERDEPROPERTIES) {
 					res = analyzeAlterTableSerdeProps(ast, tableName, partSpec);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_RENAMEPART) {
-					res = analyzeAlterTableRenamePart(ast, tableName, partSpec);
+					throw new SemanticException("Unsupported command: " + ast);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_SKEWED_LOCATION) {
 					throw new SemanticException("Unsupported command: " + ast);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_BUCKETS) {
@@ -278,7 +273,7 @@ public class HiveParserDDLSemanticAnalyzer {
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_COMPACT) {
 					throw new SemanticException("Unsupported command: " + ast);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_UPDATECOLSTATS) {
-					res = analyzeAlterTableUpdateStats(ast, tableName, partSpec);
+					throw new SemanticException("Unsupported command: " + ast);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_DROPCONSTRAINT) {
 					throw new SemanticException("Unsupported command: " + ast);
 				} else if (ast.getToken().getType() == HiveASTParser.TOK_ALTERTABLE_ADDCONSTRAINT) {
@@ -451,7 +446,9 @@ public class HiveParserDDLSemanticAnalyzer {
 //		}
 
 		boolean isTemporaryFunction = (ast.getFirstChildWithType(HiveASTParser.TOK_TEMPORARY) != null);
-		DropFunctionDesc desc = new DropFunctionDesc(functionName, isTemporaryFunction);
+		DropFunctionDesc desc = new DropFunctionDesc();
+		desc.setFunctionName(functionName);
+		desc.setTemp(isTemporaryFunction);
 		return new HiveParserDropFunctionDesc(desc, ifExists);
 	}
 
@@ -469,7 +466,11 @@ public class HiveParserDDLSemanticAnalyzer {
 		// find any referenced resources
 //		List<ResourceUri> resources = getResourceList(ast);
 
-		CreateFunctionDesc desc = new CreateFunctionDesc(functionName, isTemporaryFunction, className, Collections.emptyList());
+		CreateFunctionDesc desc = new CreateFunctionDesc();
+		desc.setFunctionName(functionName);
+		desc.setTemp(isTemporaryFunction);
+		desc.setClassName(className);
+		desc.setResources(Collections.emptyList());
 		return new FunctionWork(desc);
 	}
 
@@ -780,39 +781,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		}
 	}
 
-	private Serializable analyzeAlterTableUpdateStats(ASTNode ast, String tblName, Map<String, String> partSpec)
-			throws SemanticException {
-		String colName = HiveParserBaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(0));
-		Map<String, String> mapProp = getProps((ASTNode) (ast.getChild(1)).getChild(0));
-
-		Table tbl = getTable(tblName);
-		String partName = null;
-		if (partSpec != null) {
-			try {
-				partName = Warehouse.makePartName(partSpec, false);
-			} catch (MetaException e) {
-				throw new SemanticException("partition " + partSpec.toString() + " not found");
-			}
-		}
-
-		String colType = null;
-		List<FieldSchema> cols = tbl.getCols();
-		for (FieldSchema col : cols) {
-			if (colName.equalsIgnoreCase(col.getName())) {
-				colType = col.getType();
-				break;
-			}
-		}
-
-		if (colType == null) {
-			throw new SemanticException("column type not found");
-		}
-
-		ColumnStatsDesc cStatsDesc = new ColumnStatsDesc(tbl.getDbName() + "." + tbl.getTableName(),
-				Collections.singletonList(colName), Collections.singletonList(colType), partSpec == null);
-		return new ColumnStatsUpdateWork(cStatsDesc, partName, mapProp);
-	}
-
 	private Serializable analyzeAlterDatabaseProperties(ASTNode ast) throws SemanticException {
 
 		String dbName = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(ast.getChild(0).getText());
@@ -828,8 +796,7 @@ public class HiveParserDDLSemanticAnalyzer {
 					throw new SemanticException("Unrecognized token in CREATE DATABASE statement");
 			}
 		}
-		AlterDatabaseDesc alterDesc = new AlterDatabaseDesc(dbName, dbProps);
-		return new DDLWork(new HashSet<>(), new HashSet<>(), alterDesc);
+		return HiveParserAlterDatabaseDesc.alterProps(dbName, dbProps);
 	}
 
 	private Serializable analyzeAlterDatabaseOwner(ASTNode ast) throws SemanticException {
@@ -845,8 +812,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			throw new SemanticException("Owner type " + nullCmdMsg);
 		}
 
-		AlterDatabaseDesc alterDesc = new AlterDatabaseDesc(dbName, principalDesc);
-		return new DDLWork(new HashSet<>(), new HashSet<>(), alterDesc);
+		return HiveParserAlterDatabaseDesc.alterOwner(dbName, principalDesc);
 	}
 
 	private Serializable analyzeCreateDatabase(ASTNode ast) throws SemanticException {
@@ -896,8 +862,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			ifCascade = true;
 		}
 
-		DropDatabaseDesc dropDatabaseDesc = new DropDatabaseDesc(dbName, ifExists, ifCascade);
-		return new DDLWork(new HashSet<>(), new HashSet<>(), dropDatabaseDesc);
+		return new HiveParserDropDatabaseDesc(dbName, ifExists, ifCascade);
 	}
 
 	private Serializable analyzeSwitchDatabase(ASTNode ast) throws SemanticException {
@@ -1229,19 +1194,11 @@ public class HiveParserDDLSemanticAnalyzer {
 
 		DescTableDesc descTblDesc = new DescTableDesc(ctx.getResFile(), tableName, partSpec, colPath);
 
-		boolean showColStats = false;
 		if (ast.getChildCount() == 2) {
 			int descOptions = ast.getChild(1).getType();
 			descTblDesc.setFormatted(descOptions == HiveASTParser.KW_FORMATTED);
 			descTblDesc.setExt(descOptions == HiveASTParser.KW_EXTENDED);
-			descTblDesc.setPretty(descOptions == HiveASTParser.KW_PRETTY);
-			// in case of "DESCRIBE FORMATTED tablename column_name" statement, colPath
-			// will contain tablename.column_name. If column_name is not specified
-			// colPath will be equal to tableName. This is how we can differentiate
-			// if we are describing a table or column
-			if (!colPath.equalsIgnoreCase(tableName) && descTblDesc.isFormatted()) {
-				showColStats = true;
-			}
+//			descTblDesc.setPretty(descOptions == HiveASTParser.KW_PRETTY);
 		}
 
 		return new DDLWork(getInputs(), getOutputs(), descTblDesc);
@@ -1312,23 +1269,11 @@ public class HiveParserDDLSemanticAnalyzer {
 		return new DDLWork(getInputs(), getOutputs(), showPartsDesc);
 	}
 
-//	private Serializable analyzeShowCreateDatabase(ASTNode ast) throws SemanticException {
-//		String dbName = getUnescapedName((ASTNode) ast.getChild(0));
-//		ShowCreateDatabaseDesc showCreateDbDesc = new ShowCreateDatabaseDesc(dbName, ctx.getResFile().toString());
-//
-//		return new DDLWork(getInputs(), getOutputs(), showCreateDbDesc);
-//	}
-
 	private Serializable analyzeShowCreateTable(ASTNode ast) throws SemanticException {
 		ShowCreateTableDesc showCreateTblDesc;
 		String tableName = HiveParserBaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(0));
 		showCreateTblDesc = new ShowCreateTableDesc(tableName, ctx.getResFile().toString());
 
-		Table tab = getTable(tableName);
-		if (tab.getTableType() == org.apache.hadoop.hive.metastore.TableType.INDEX_TABLE) {
-			throw new SemanticException(ErrorMsg.SHOW_CREATETABLE_INDEX.getMsg(tableName
-					+ " has table type INDEX_TABLE"));
-		}
 		return new DDLWork(getInputs(), getOutputs(), showCreateTblDesc);
 	}
 
@@ -1575,20 +1520,6 @@ public class HiveParserDDLSemanticAnalyzer {
 				newType, newComment, first, flagCol, isCascade);
 	}
 
-	private Serializable analyzeAlterTableRenamePart(ASTNode ast, String tblName,
-			HashMap<String, String> oldPartSpec) throws SemanticException {
-		Table tab = getTable(tblName);
-		validateAlterTableType(tab, AlterTableDesc.AlterTableTypes.RENAMEPARTITION);
-		Map<String, String> newPartSpec =
-				getValidatedPartSpec(tab, (ASTNode) ast.getChild(0), conf, false);
-		if (newPartSpec == null) {
-			throw new SemanticException("RENAME PARTITION Missing Destination" + ast);
-		}
-
-		RenamePartitionDesc renamePartitionDesc = new RenamePartitionDesc(tblName, oldPartSpec, newPartSpec);
-		return new DDLWork(getInputs(), getOutputs(), renamePartitionDesc);
-	}
-
 	private Serializable analyzeAlterTableModifyCols(String[] qualified, ASTNode ast,
 			HashMap<String, String> partSpec, boolean replace) throws SemanticException {
 
@@ -1754,134 +1685,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		}
 		return partSpecs;
 	}
-
-	/**
-	 * Get the partition specs from the tree. This stores the full specification
-	 * with the comparator operator into the output list.
-	 *
-	 * @param ast Tree to extract partitions from.
-	 * @param tab Table.
-	 * @return Map of partitions by prefix length. Most of the time prefix length will
-	 * be the same for all partition specs, so we can just OR the expressions.
-	 */
-//	private Map<Integer, List<ExprNodeGenericFuncDesc>> getFullPartitionSpecs(
-//			CommonTree ast, Table tab, boolean canGroupExprs) throws SemanticException {
-//		String defaultPartitionName = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
-//		Map<String, String> colTypes = new HashMap<>();
-//		for (FieldSchema fs : tab.getPartitionKeys()) {
-//			colTypes.put(fs.getName().toLowerCase(), fs.getType());
-//		}
-//
-//		Map<Integer, List<ExprNodeGenericFuncDesc>> result = new HashMap<>();
-//		for (int childIndex = 0; childIndex < ast.getChildCount(); childIndex++) {
-//			Tree partSpecTree = ast.getChild(childIndex);
-//			if (partSpecTree.getType() != HiveASTParser.TOK_PARTSPEC) {
-//				continue;
-//			}
-//			ExprNodeGenericFuncDesc expr = null;
-//			HashSet<String> names = new HashSet<>(partSpecTree.getChildCount());
-//			for (int i = 0; i < partSpecTree.getChildCount(); ++i) {
-//				CommonTree partSpecSingleKey = (CommonTree) partSpecTree.getChild(i);
-//				assert (partSpecSingleKey.getType() == HiveASTParser.TOK_PARTVAL);
-//				String key = stripIdentifierQuotes(partSpecSingleKey.getChild(0).getText()).toLowerCase();
-//				String operator = partSpecSingleKey.getChild(1).getText();
-//				ASTNode partValNode = (ASTNode) partSpecSingleKey.getChild(2);
-//				HiveParserTypeCheckCtx typeCheckCtx = new HiveParserTypeCheckCtx(null);
-//				ExprNodeConstantDesc valExpr = (ExprNodeConstantDesc) HiveParserTypeCheckProcFactory
-//						.genExprNode(partValNode, typeCheckCtx).get(partValNode);
-//				Object val = valExpr.getValue();
-//
-//				boolean isDefaultPartitionName = val.equals(defaultPartitionName);
-//
-//				String type = colTypes.get(key);
-//				PrimitiveTypeInfo pti = TypeInfoFactory.getPrimitiveTypeInfo(type);
-//				if (type == null) {
-//					throw new SemanticException("Column " + key + " not found");
-//				}
-//				// Create the corresponding hive expression to filter on partition columns.
-//				if (!isDefaultPartitionName) {
-//					if (!valExpr.getTypeString().equals(type)) {
-//						ObjectInspectorConverters.Converter converter = ObjectInspectorConverters.getConverter(
-//								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(valExpr.getTypeInfo()),
-//								TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(pti));
-//						val = converter.convert(valExpr.getValue());
-//					}
-//				}
-//
-//				ExprNodeColumnDesc column = new ExprNodeColumnDesc(pti, key, null, true);
-//				ExprNodeGenericFuncDesc op;
-//				if (!isDefaultPartitionName) {
-//					op = makeBinaryPredicate(operator, column, new ExprNodeConstantDesc(pti, val));
-//				} else {
-//					GenericUDF originalOp = HiveParserUtils.getFunctionInfo(operator).getGenericUDF();
-//					String fnName;
-//					if (originalOp instanceof GenericUDFOPEqual) {
-//						fnName = "isnull";
-//					} else if (originalOp instanceof GenericUDFOPNotEqual) {
-//						fnName = "isnotnull";
-//					} else {
-//						throw new SemanticException("Cannot use " + operator
-//								+ " in a default partition spec; only '=' and '!=' are allowed.");
-//					}
-//					op = makeUnaryPredicate(fnName, column);
-//				}
-//				// If it's multi-expr filter (e.g. a='5', b='2012-01-02'), AND with previous exprs.
-//				expr = (expr == null) ? op : makeBinaryPredicate("and", expr, op);
-//				names.add(key);
-//			}
-//			if (expr == null) {
-//				continue;
-//			}
-//			// We got the expr for one full partition spec. Determine the prefix length.
-//			int prefixLength = calculatePartPrefix(tab, names);
-//			List<ExprNodeGenericFuncDesc> orExpr = result.get(prefixLength);
-//			// We have to tell apart partitions resulting from spec with different prefix lengths.
-//			// So, if we already have smth for the same prefix length, we can OR the two.
-//			// If we don't, create a new separate filter. In most cases there will only be one.
-//			if (orExpr == null) {
-//				List<ExprNodeGenericFuncDesc> spec = new ArrayList<>();
-//				spec.add(expr);
-//				result.put(prefixLength, spec);
-//			} else if (canGroupExprs) {
-//				orExpr.set(0, makeBinaryPredicate("or", expr, orExpr.get(0)));
-//			} else {
-//				orExpr.add(expr);
-//			}
-//		}
-//		return result;
-//	}
-
-//	public static ExprNodeGenericFuncDesc makeBinaryPredicate(
-//			String fn, ExprNodeDesc left, ExprNodeDesc right) throws SemanticException {
-//		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
-//				HiveParserUtils.getFunctionInfo(fn).getGenericUDF(), Arrays.asList(left, right));
-//	}
-//
-//	public static ExprNodeGenericFuncDesc makeUnaryPredicate(
-//			String fn, ExprNodeDesc arg) throws SemanticException {
-//		return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,
-//				FunctionRegistry.getFunctionInfo(fn).getGenericUDF(), Collections.singletonList(arg));
-//	}
-
-	/**
-	 * Calculates the partition prefix length based on the drop spec.
-	 * This is used to avoid deleting archived partitions with lower level.
-	 * For example, if, for A and B key cols, drop spec is A=5, B=6, we shouldn't drop
-	 * archived A=5/, because it can contain B-s other than 6.
-	 *
-	 * @param tbl          Table
-	 * @param partSpecKeys Keys present in drop partition spec.
-	 */
-//	private int calculatePartPrefix(Table tbl, HashSet<String> partSpecKeys) {
-//		int partPrefixToDrop = 0;
-//		for (FieldSchema fs : tbl.getPartCols()) {
-//			if (!partSpecKeys.contains(fs.getName())) {
-//				break;
-//			}
-//			++partPrefixToDrop;
-//		}
-//		return partPrefixToDrop;
-//	}
 
 	/**
 	 * Certain partition values are are used by hive. e.g. the default partition

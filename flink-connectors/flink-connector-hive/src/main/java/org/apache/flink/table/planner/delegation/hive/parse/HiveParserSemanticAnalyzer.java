@@ -1607,9 +1607,9 @@ public class HiveParserSemanticAnalyzer {
 							assert false;
 					}
 					// throw a HiveException for formats other than rcfile or orcfile.
-					if (!(inputFormatClass.equals(RCFileInputFormat.class) || inputFormatClass
-							.equals(OrcInputFormat.class))) {
-						throw new SemanticException(ErrorMsg.ANALYZE_TABLE_PARTIALSCAN_NON_RCFILE.getMsg());
+					if (!(inputFormatClass.equals(RCFileInputFormat.class) ||
+							inputFormatClass.equals(OrcInputFormat.class))) {
+						throw new SemanticException("ANALYZE TABLE PARTIALSCAN doesn't support non-RCfile.");
 					}
 				}
 

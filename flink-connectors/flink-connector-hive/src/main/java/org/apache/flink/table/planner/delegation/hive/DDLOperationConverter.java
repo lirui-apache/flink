@@ -87,12 +87,10 @@ import org.apache.flink.table.planner.utils.OperationConverterUtils;
 
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.plan.AddPartitionDesc;
-import org.apache.hadoop.hive.ql.plan.AlterDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.CreateFunctionDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.plan.DescTableDesc;
-import org.apache.hadoop.hive.ql.plan.DropDatabaseDesc;
 import org.apache.hadoop.hive.ql.plan.FunctionWork;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
 import org.apache.hadoop.hive.ql.plan.ShowDatabasesDesc;
@@ -155,10 +153,6 @@ public class DDLOperationConverter {
 			DDLWork ddlWork = (DDLWork) work;
 			if (ddlWork.getCreateDatabaseDesc() != null) {
 				return convertCreateDatabase(ddlWork.getCreateDatabaseDesc());
-			} else if (ddlWork.getAlterDatabaseDesc() != null) {
-				return convertAlterDatabase(ddlWork.getAlterDatabaseDesc());
-			} else if (ddlWork.getDropDatabaseDesc() != null) {
-				return convertDropDatabase(ddlWork.getDropDatabaseDesc());
 			} else if (ddlWork.getShowDatabasesDesc() != null) {
 				return convertShowDatabases(ddlWork.getShowDatabasesDesc());
 			} else if (ddlWork.getSwitchDatabaseDesc() != null) {
@@ -208,6 +202,10 @@ public class DDLOperationConverter {
 				return convertCreateFunction(functionWork.getCreateFunctionDesc());
 			}
 			throw new FlinkHiveException("Unsupported FunctionWork");
+		} else if (work instanceof HiveParserAlterDatabaseDesc) {
+			return convertAlterDatabase((HiveParserAlterDatabaseDesc) work);
+		} else if (work instanceof HiveParserDropDatabaseDesc) {
+			return convertDropDatabase((HiveParserDropDatabaseDesc) work);
 		} else {
 			throw new FlinkHiveException("Unsupported work class " + work.getClass().getName());
 		}
@@ -559,11 +557,11 @@ public class DDLOperationConverter {
 		return new ShowDatabasesOperation();
 	}
 
-	private Operation convertDropDatabase(DropDatabaseDesc desc) {
-		return new DropDatabaseOperation(catalogManager.getCurrentCatalog(), desc.getDatabaseName(), desc.getIfExists(), desc.isCasdade());
+	private Operation convertDropDatabase(HiveParserDropDatabaseDesc desc) {
+		return new DropDatabaseOperation(catalogManager.getCurrentCatalog(), desc.getDatabaseName(), desc.ifExists(), desc.cascade());
 	}
 
-	private Operation convertAlterDatabase(AlterDatabaseDesc desc) {
+	private Operation convertAlterDatabase(HiveParserAlterDatabaseDesc desc) {
 		Catalog catalog = catalogManager.getCatalog(catalogManager.getCurrentCatalog()).get();
 		CatalogDatabase originDB;
 		try {
@@ -572,10 +570,10 @@ public class DDLOperationConverter {
 			throw new ValidationException(String.format("Database %s not exists", desc.getDatabaseName()), e);
 		}
 		Map<String, String> props = new HashMap<>(originDB.getProperties());
-		if (desc.getDatabaseProperties() != null) {
+		if (desc.getDbProperties() != null) {
 			// alter properties
 			props.put(ALTER_DATABASE_OP, CHANGE_PROPS.name());
-			props.putAll(desc.getDatabaseProperties());
+			props.putAll(desc.getDbProperties());
 		} else if (desc.getOwnerPrincipal() != null) {
 			// alter owner
 			props.put(ALTER_DATABASE_OP, CHANGE_OWNER.name());

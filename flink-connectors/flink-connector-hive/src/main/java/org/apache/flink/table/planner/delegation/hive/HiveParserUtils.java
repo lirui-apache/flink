@@ -92,8 +92,12 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.io.HdfsUtils;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
@@ -128,6 +132,7 @@ import org.apache.hadoop.io.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -1212,6 +1217,47 @@ public class HiveParserUtils {
 		}
 		sb.append(")");
 		return sb.toString();
+	}
+
+	/**
+	 * Creates the directory and all necessary parent directories.
+	 * @param fs FileSystem to use
+	 * @param f path to create.
+	 * @param inheritPerms whether directory inherits the permission of the last-existing parent path
+	 * @param conf Hive configuration
+	 * @return true if directory created successfully.  False otherwise, including if it exists.
+	 * @throws IOException exception in creating the directory
+	 */
+	public static boolean mkdir(FileSystem fs, Path f, boolean inheritPerms, Configuration conf) throws IOException {
+		LOG.info("Creating directory if it doesn't exist: " + f);
+		if (!inheritPerms) {
+			//just create the directory
+			return fs.mkdirs(f);
+		} else {
+			//Check if the directory already exists. We want to change the permission
+			//to that of the parent directory only for newly created directories.
+			try {
+				return fs.getFileStatus(f).isDir();
+			} catch (FileNotFoundException ignore) {
+			}
+			// inherit perms: need to find last existing parent path, and apply its permission on entire subtree.
+			Path lastExistingParent = f;
+			Path firstNonExistentParent = null;
+			while (!fs.exists(lastExistingParent)) {
+				firstNonExistentParent = lastExistingParent;
+				lastExistingParent = lastExistingParent.getParent();
+			}
+			boolean success = fs.mkdirs(f);
+			if (!success) {
+				return false;
+			} else {
+				//set on the entire subtree
+				HdfsUtils.setFullFileStatus(conf,
+						new HdfsUtils.HadoopFileStatus(conf, fs, lastExistingParent), fs,
+						firstNonExistentParent, true);
+				return true;
+			}
+		}
 	}
 
 	/**

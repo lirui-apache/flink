@@ -36,7 +36,7 @@ import static org.apache.hadoop.hive.ql.plan.AlterTableDesc.AlterTableTypes.RENA
 import static org.apache.hadoop.hive.ql.plan.AlterTableDesc.AlterTableTypes.REPLACECOLS;
 
 /**
- * Desc for alter table file format.
+ * Desc for alter table.
  */
 public class HiveParserAlterTableDesc implements Serializable {
 	private static final long serialVersionUID = 1L;
