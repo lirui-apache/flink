@@ -140,7 +140,7 @@ public class HiveParser extends ParserImpl {
 				HiveASTParser.TOK_TRUNCATETABLE, HiveASTParser.TOK_SHOW_SET_ROLE, HiveASTParser.TOK_CACHE_METADATA,
 				HiveASTParser.TOK_CREATEMACRO, HiveASTParser.TOK_DROPMACRO, HiveASTParser.TOK_CREATETABLE,
 				HiveASTParser.TOK_CREATEFUNCTION, HiveASTParser.TOK_DROPFUNCTION, HiveASTParser.TOK_RELOADFUNCTION,
-				HiveASTParser.TOK_CREATEVIEW));
+				HiveASTParser.TOK_CREATEVIEW, HiveASTParser.TOK_ALTERDATABASE_LOCATION));
 	}
 
 	private final PlannerContext plannerContext;

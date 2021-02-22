@@ -375,6 +375,9 @@ public class HiveParserDDLSemanticAnalyzer {
 			case HiveASTParser.TOK_ALTERDATABASE_OWNER:
 				res = analyzeAlterDatabaseOwner(ast);
 				break;
+			case HiveASTParser.TOK_ALTERDATABASE_LOCATION:
+				res = analyzeAlterDatabaseLocation(ast);
+				break;
 			case HiveASTParser.TOK_CREATETABLE:
 				res = analyzeCreateTable(ast);
 				break;
@@ -427,23 +430,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		// ^(TOK_DROPFUNCTION identifier ifExists? $temp?)
 		String functionName = ast.getChild(0).getText();
 		boolean ifExists = (ast.getFirstChildWithType(HiveASTParser.TOK_IFEXISTS) != null);
-		// we want to signal an error if the function doesn't exist and we're
-		// configured not to ignore this
-//		boolean isExists = ifExists || HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
-//		boolean throwException =
-//				!ifExists && !HiveConf.getBoolVar(conf, HiveConf.ConfVars.DROPIGNORESNONEXISTENT);
-
-//		FunctionInfo info = FunctionRegistry.getFunctionInfo(functionName);
-//		if (info == null) {
-//			if (throwException) {
-//				throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(functionName));
-//			} else {
-//				// Fail silently
-//				return;
-//			}
-//		} else if (info.isBuiltIn()) {
-//			throw new SemanticException(ErrorMsg.DROP_NATIVE_FUNCTION.getMsg(functionName));
-//		}
 
 		boolean isTemporaryFunction = (ast.getFirstChildWithType(HiveASTParser.TOK_TEMPORARY) != null);
 		DropFunctionDesc desc = new DropFunctionDesc();
@@ -695,86 +681,18 @@ public class HiveParserDDLSemanticAnalyzer {
 
 			case createTable: // REGULAR CREATE TABLE DDL
 				tblProps = addDefaultProperties(tblProps);
-
-//				CreateTableDesc crtTblDesc = new CreateTableDesc(dbDotTab, isExt, isTemporary, cols, partCols,
-//						bucketCols, sortCols, numBuckets, rowFormatParams.fieldDelim,
-//						rowFormatParams.fieldEscape,
-//						rowFormatParams.collItemDelim, rowFormatParams.mapKeyDelim, rowFormatParams.lineDelim, comment,
-//						storageFormat.getInputFormat(), storageFormat.getOutputFormat(), location, storageFormat.getSerde(),
-//						storageFormat.getStorageHandler(), storageFormat.getSerdeProps(), tblProps, ifNotExists, skewedColNames,
-//						skewedValues, primaryKeys, foreignKeys);
-//				crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
-//				crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
-
-//				crtTblDesc.validate(conf);
 				return new HiveParserCreateTableDesc(dbDotTab, isExt, ifNotExists, isTemporary, cols, partCols,
 						comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys);
 
 			case ctlt: // create table like <tbl_name>
 				tblProps = addDefaultProperties(tblProps);
-
-				// TODO: check this somewhere else
-//				if (isTemporary) {
-//					Table likeTable = getTable(likeTableName, false);
-//					if (likeTable != null && likeTable.getPartCols().size() > 0) {
-//						throw new SemanticException("Partition columns are not supported on temporary tables "
-//								+ "and source table in CREATE TABLE LIKE is partitioned.");
-//					}
-//				}
-//				CreateTableLikeDesc crtTblLikeDesc = new CreateTableLikeDesc(dbDotTab, isExt, isTemporary,
-//						storageFormat.getInputFormat(), storageFormat.getOutputFormat(), location,
-//						storageFormat.getSerde(), storageFormat.getSerdeProps(), tblProps, ifNotExists,
-//						likeTableName, isUserStorageFormat);
-//				return new DDLWork(getInputs(), getOutputs(), crtTblLikeDesc);
 				throw new SemanticException("CREATE TABLE LIKE is not supported yet");
 
 			case ctas: // create table as select
-				// TODO: check this somewhere else
-//				if(location != null && location.length() != 0) {
-//					Path locPath = new Path(location);
-//					FileSystem curFs = null;
-//					FileStatus locStats = null;
-//					try {
-//						curFs = locPath.getFileSystem(conf);
-//						if(curFs != null) {
-//							locStats = curFs.getFileStatus(locPath);
-//						}
-//						if(locStats != null && locStats.isDir()) {
-//							FileStatus[] lStats = curFs.listStatus(locPath);
-//							if(lStats != null && lStats.length != 0) {
-//								// Don't throw an exception if the target location only contains the staging-dirs
-//								for (FileStatus lStat : lStats) {
-//									if (!lStat.getPath().getName().startsWith(HiveConf.getVar(conf, HiveConf.ConfVars.STAGINGDIR))) {
-//										throw new SemanticException(ErrorMsg.CTAS_LOCATION_NONEMPTY.getMsg(location));
-//									}
-//								}
-//							}
-//						}
-//					} catch (FileNotFoundException nfe) {
-//						//we will create the folder if it does not exist.
-//					} catch (IOException ioE) {
-//						if (LOG.isDebugEnabled()) {
-//							LOG.debug("Exception when validate folder ",ioE);
-//						}
-//
-//					}
-//				}
-
 				tblProps = addDefaultProperties(tblProps);
 
 				HiveParserCreateTableDesc createTableDesc = new HiveParserCreateTableDesc(dbDotTab, isExt, ifNotExists, isTemporary,
 						cols, partCols, comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys);
-
-//				CreateTableDesc tableDesc = new CreateTableDesc(qualifiedTabName[0], dbDotTab, isExt, isTemporary, cols,
-//						partCols, bucketCols, sortCols, numBuckets, rowFormatParams.fieldDelim,
-//						rowFormatParams.fieldEscape, rowFormatParams.collItemDelim, rowFormatParams.mapKeyDelim,
-//						rowFormatParams.lineDelim, comment, storageFormat.getInputFormat(),
-//						storageFormat.getOutputFormat(), location, storageFormat.getSerde(),
-//						storageFormat.getStorageHandler(), storageFormat.getSerdeProps(), tblProps, ifNotExists,
-//						skewedColNames, skewedValues, true, primaryKeys, foreignKeys);
-//				tableDesc.setMaterialization(isMaterialization);
-//				tableDesc.setStoredAsSubDirectories(storedAsDirs);
-//				tableDesc.setNullFormat(rowFormatParams.nullFormat);
 				return new CTASDesc(createTableDesc, selectStmt);
 			default:
 				throw new SemanticException("Unrecognized command.");
@@ -813,6 +731,12 @@ public class HiveParserDDLSemanticAnalyzer {
 		}
 
 		return HiveParserAlterDatabaseDesc.alterOwner(dbName, principalDesc);
+	}
+
+	private Serializable analyzeAlterDatabaseLocation(ASTNode ast) {
+		String dbName = HiveParserBaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(0));
+		String newLocation = HiveParserBaseSemanticAnalyzer.unescapeSQLString(ast.getChild(1).getText());
+		return HiveParserAlterDatabaseDesc.alterLocation(dbName, newLocation);
 	}
 
 	private Serializable analyzeCreateDatabase(ASTNode ast) throws SemanticException {
@@ -950,10 +874,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		HiveParserAlterTableDesc alterTblDesc;
 		if (isUnset) {
 			throw new SemanticException("Unset properties not supported");
-//			alterTblDesc = new AlterTableDesc(AlterTableDesc.AlterTableTypes.DROPPROPS, partSpec, expectView);
-//			if (ast.getChild(1) != null) {
-//				alterTblDesc.setDropIfExists(true);
-//			}
 		} else {
 			alterTblDesc = HiveParserAlterTableDesc.alterTableProps(tableName, partSpec, mapProp, expectView);
 		}
@@ -1198,7 +1118,9 @@ public class HiveParserDDLSemanticAnalyzer {
 			int descOptions = ast.getChild(1).getType();
 			descTblDesc.setFormatted(descOptions == HiveASTParser.KW_FORMATTED);
 			descTblDesc.setExt(descOptions == HiveASTParser.KW_EXTENDED);
-//			descTblDesc.setPretty(descOptions == HiveASTParser.KW_PRETTY);
+			if (descOptions == HiveASTParser.KW_PRETTY) {
+				throw new SemanticException("DESCRIBE PRETTY is not supported.");
+			}
 		}
 
 		return new DDLWork(getInputs(), getOutputs(), descTblDesc);
@@ -1244,12 +1166,8 @@ public class HiveParserDDLSemanticAnalyzer {
 
 	public static HashMap<String, String> getValidatedPartSpec(Table table, ASTNode astNode,
 			HiveConf conf, boolean shouldBeFull) throws SemanticException {
-		HashMap<String, String> partSpec = getPartSpec(astNode);
 		// hive catalog will validate the part spec later
-//		if (partSpec != null && !partSpec.isEmpty()) {
-//			validatePartSpec(table, partSpec, astNode, conf, shouldBeFull);
-//		}
-		return partSpec;
+		return getPartSpec(astNode);
 	}
 
 	private Serializable analyzeShowPartitions(ASTNode ast) throws SemanticException {
@@ -1390,8 +1308,6 @@ public class HiveParserDDLSemanticAnalyzer {
 			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames);
 		} else if (ast.getChildCount() == 2) {
 			assert (ast.getChild(0).getType() == HiveASTParser.KW_LIKE);
-//			String funcNames = stripQuotes(ast.getChild(1).getText());
-//			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames, true);
 			throw new SemanticException("SHOW FUNCTIONS LIKE is not supported yet");
 		} else {
 			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile());
@@ -1545,7 +1461,6 @@ public class HiveParserDDLSemanticAnalyzer {
 
 		Table tab = getTable(new ObjectPath(qualified[0], qualified[1]));
 		// hive represents drop partition specs with generic func desc, but what we need is just spec maps
-//		Map<Integer, List<ExprNodeGenericFuncDesc>> partSpecs = getFullPartitionSpecs(ast, tab, ifExists);
 		List<Map<String, String>> partSpecs = new ArrayList<>();
 		for (int i = 0; i < ast.getChildCount(); i++) {
 			ASTNode child = (ASTNode) ast.getChild(i);
@@ -1605,10 +1520,6 @@ public class HiveParserDDLSemanticAnalyzer {
 	/**
 	 * Add one or more partitions to a table. Useful when the data has been copied
 	 * to the right location by some other process.
-	 *
-	 * @param ast        The parsed command tree.
-	 * @param expectView True for ALTER VIEW, false for ALTER TABLE.
-	 * @throws SemanticException Parsing failed
 	 */
 	private Serializable analyzeAlterTableAddParts(String[] qualified, CommonTree ast, boolean expectView)
 			throws SemanticException {
@@ -1654,19 +1565,6 @@ public class HiveParserDDLSemanticAnalyzer {
 		if (currentPart != null) {
 			addPartitionDesc.addPartition(currentPart, currentLocation);
 		}
-
-//		if (this.conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
-//			for (int index = 0; index < addPartitionDesc.getPartitionCount(); index++) {
-//				AddPartitionDesc.OnePartitionDesc desc = addPartitionDesc.getPartition(index);
-//				if (desc.getLocation() == null) {
-//					if (desc.getPartParams() == null) {
-//						desc.setPartParams(new HashMap<>());
-//					}
-//					StatsSetupConst.setBasicStatsStateForCreateTable(desc.getPartParams(),
-//							StatsSetupConst.TRUE);
-//				}
-//			}
-//		}
 
 		return new DDLWork(getInputs(), getOutputs(), addPartitionDesc);
 	}

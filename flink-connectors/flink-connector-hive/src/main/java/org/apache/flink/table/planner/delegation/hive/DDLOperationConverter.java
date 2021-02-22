@@ -20,7 +20,7 @@ package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.sql.parser.hive.ddl.HiveDDLUtils;
-import org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveDatabase;
+import org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabase.AlterHiveDatabaseOp;
 import org.apache.flink.table.api.TableColumn;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.api.ValidationException;
@@ -109,8 +109,6 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabase.ALTER_DATABASE_OP;
-import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabase.AlterHiveDatabaseOp.CHANGE_OWNER;
-import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabase.AlterHiveDatabaseOp.CHANGE_PROPS;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabaseOwner.DATABASE_OWNER_NAME;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabaseOwner.DATABASE_OWNER_TYPE;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable.ALTER_COL_CASCADE;
@@ -120,6 +118,7 @@ import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable.AlterTableO
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable.AlterTableOp.CHANGE_LOCATION;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable.AlterTableOp.CHANGE_SERDE_PROPS;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveTable.AlterTableOp.CHANGE_TBL_PROPS;
+import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveDatabase.DATABASE_LOCATION_URI;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableRowFormat.COLLECTION_DELIM;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableRowFormat.ESCAPE_CHAR;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableRowFormat.FIELD_DELIM;
@@ -570,18 +569,23 @@ public class DDLOperationConverter {
 			throw new ValidationException(String.format("Database %s not exists", desc.getDatabaseName()), e);
 		}
 		Map<String, String> props = new HashMap<>(originDB.getProperties());
-		if (desc.getDbProperties() != null) {
-			// alter properties
-			props.put(ALTER_DATABASE_OP, CHANGE_PROPS.name());
-			props.putAll(desc.getDbProperties());
-		} else if (desc.getOwnerPrincipal() != null) {
-			// alter owner
-			props.put(ALTER_DATABASE_OP, CHANGE_OWNER.name());
-			PrincipalDesc principalDesc = desc.getOwnerPrincipal();
-			props.put(DATABASE_OWNER_NAME, principalDesc.getName());
-			props.put(DATABASE_OWNER_TYPE, principalDesc.getType().name().toLowerCase());
-		} else {
-			throw new FlinkHiveException("Unsupported alter database operation");
+		switch (desc.getAlterType()) {
+			case ALTER_PROPERTY:
+				props.put(ALTER_DATABASE_OP, AlterHiveDatabaseOp.CHANGE_PROPS.name());
+				props.putAll(desc.getDbProperties());
+				break;
+			case ALTER_OWNER:
+				props.put(ALTER_DATABASE_OP, AlterHiveDatabaseOp.CHANGE_OWNER.name());
+				PrincipalDesc principalDesc = desc.getOwnerPrincipal();
+				props.put(DATABASE_OWNER_NAME, principalDesc.getName());
+				props.put(DATABASE_OWNER_TYPE, principalDesc.getType().name().toLowerCase());
+				break;
+			case ALTER_LOCATION:
+				props.put(ALTER_DATABASE_OP, AlterHiveDatabaseOp.CHANGE_LOCATION.name());
+				props.put(DATABASE_LOCATION_URI, desc.getLocation());
+				break;
+			default:
+				throw new FlinkHiveException("Unsupported alter database operation");
 		}
 		CatalogDatabase newDB = new CatalogDatabaseImpl(props, originDB.getComment());
 		return new AlterDatabaseOperation(catalogManager.getCurrentCatalog(), desc.getDatabaseName(), newDB);
@@ -594,7 +598,7 @@ public class DDLOperationConverter {
 		}
 		markNonGeneric(props);
 		if (desc.getLocationUri() != null) {
-			props.put(SqlCreateHiveDatabase.DATABASE_LOCATION_URI, desc.getLocationUri());
+			props.put(DATABASE_LOCATION_URI, desc.getLocationUri());
 		}
 		CatalogDatabase catalogDatabase = new CatalogDatabaseImpl(props, desc.getComment());
 		return new CreateDatabaseOperation(catalogManager.getCurrentCatalog(), desc.getName(), catalogDatabase, desc.getIfNotExists());

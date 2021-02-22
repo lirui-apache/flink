@@ -80,7 +80,7 @@ public class HiveParserAlterDatabaseDesc implements Serializable {
 	}
 
 	public static HiveParserAlterDatabaseDesc alterLocation(String databaseName, String location) {
-		return new Builder(AlterDBType.ALTER_LOCATION, databaseName).build();
+		return new Builder(AlterDBType.ALTER_LOCATION, databaseName).newLocation(location).build();
 	}
 
 	private static class Builder {
