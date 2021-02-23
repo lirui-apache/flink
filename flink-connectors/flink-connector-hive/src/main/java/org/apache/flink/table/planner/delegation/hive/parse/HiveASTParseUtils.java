@@ -271,7 +271,7 @@ public class HiveASTParseUtils {
 	}
 
 	public static boolean containsTokenOfType(ASTNode root, PTFUtils.Predicate<ASTNode> predicate) {
-		Queue<ASTNode> queue = new ArrayDeque<ASTNode>();
+		Queue<ASTNode> queue = new ArrayDeque<>();
 
 		// BFS
 		queue.add(root);

@@ -157,15 +157,6 @@ public class HiveASTParseDriver {
 		}
 	};
 
-	public ASTNode parse(String command) throws HiveASTParseException {
-		return parse(command, null);
-	}
-
-	public ASTNode parse(String command, HiveParserContext ctx)
-			throws HiveASTParseException {
-		return parse(command, ctx, null);
-	}
-
 	/**
 	 * Parses a command, optionally assigning the parser's token stream to the
 	 * given context.
@@ -233,73 +224,6 @@ public class HiveASTParseDriver {
 		HiveASTHintParser.hint_return r = null;
 		try {
 			r = parser.hint();
-		} catch (RecognitionException e) {
-			e.printStackTrace();
-			throw new HiveASTParseException(parser.errors);
-		}
-
-		if (lexer.getErrors().size() == 0 && parser.errors.size() == 0) {
-			LOG.info("Parse Completed");
-		} else if (lexer.getErrors().size() != 0) {
-			throw new HiveASTParseException(lexer.getErrors());
-		} else {
-			throw new HiveASTParseException(parser.errors);
-		}
-
-		return (ASTNode) r.getTree();
-	}
-
-	/*
-	 * parse a String as a Select List. This allows table functions to be passed expression Strings
-	 * that are translated in
-	 * the context they define at invocation time. Currently used by NPath to allow users to specify
-	 * what output they want.
-	 * NPath allows expressions n 'tpath' a column that represents the matched set of rows. This
-	 * column doesn't exist in
-	 * the input schema and hence the Result Expression cannot be analyzed by the regular Hive
-	 * translation process.
-	 */
-	public ASTNode parseSelect(String command, HiveParserContext ctx) throws HiveASTParseException {
-		if (LOG.isDebugEnabled()) {
-			LOG.debug("Parsing command: " + command);
-		}
-
-		HiveLexerX lexer = new HiveLexerX(new ANTLRNoCaseStringStream(command));
-		TokenRewriteStream tokens = new TokenRewriteStream(lexer);
-		if (ctx != null) {
-			ctx.setTokenRewriteStream(tokens);
-		}
-		HiveASTParser parser = new HiveASTParser(tokens);
-		parser.setTreeAdaptor(ADAPTOR);
-		HiveASTParser_SelectClauseASTParser.selectClause_return r = null;
-		try {
-			r = parser.selectClause();
-		} catch (RecognitionException e) {
-			e.printStackTrace();
-			throw new HiveASTParseException(parser.errors);
-		}
-
-		if (lexer.getErrors().size() == 0 && parser.errors.size() == 0) {
-			LOG.debug("Parse Completed");
-		} else if (lexer.getErrors().size() != 0) {
-			throw new HiveASTParseException(lexer.getErrors());
-		} else {
-			throw new HiveASTParseException(parser.errors);
-		}
-
-		return (ASTNode) r.getTree();
-	}
-
-	public ASTNode parseExpression(String command) throws HiveASTParseException {
-		LOG.info("Parsing expression: " + command);
-
-		HiveLexerX lexer = new HiveLexerX(new ANTLRNoCaseStringStream(command));
-		TokenRewriteStream tokens = new TokenRewriteStream(lexer);
-		HiveASTParser parser = new HiveASTParser(tokens);
-		parser.setTreeAdaptor(ADAPTOR);
-		HiveASTParser_IdentifiersASTParser.expression_return r = null;
-		try {
-			r = parser.expression();
 		} catch (RecognitionException e) {
 			e.printStackTrace();
 			throw new HiveASTParseException(parser.errors);

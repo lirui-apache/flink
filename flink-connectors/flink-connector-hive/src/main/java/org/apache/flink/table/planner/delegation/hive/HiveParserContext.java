@@ -25,7 +25,6 @@ import org.apache.flink.table.planner.delegation.hive.parse.HiveParserExplainCon
 import org.antlr.runtime.TokenRewriteStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
@@ -46,8 +45,6 @@ import org.apache.hadoop.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.DataInput;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.text.SimpleDateFormat;
@@ -78,7 +75,7 @@ public class HiveParserContext {
 	private int resDirFilesNum;
 	boolean initialized;
 	String originalTracker = null;
-	private final Map<String, ContentSummary> pathToCS = new ConcurrentHashMap<String, ContentSummary>();
+	private final Map<String, ContentSummary> pathToCS = new ConcurrentHashMap<>();
 
 	// scratch path to use for all non-local (ie. hdfs) file system tmp folders
 	private final Path nonLocalScratchPath;
@@ -118,13 +115,13 @@ public class HiveParserContext {
 
 	private AtomicInteger sequencer = new AtomicInteger();
 
-	private final Map<String, Table> cteTables = new HashMap<String, Table>();
+	private final Map<String, Table> cteTables = new HashMap<>();
 
 	// Keep track of the mapping from load table desc to the output and the lock
 	private final Map<LoadTableDesc, WriteEntity> loadTableOutputMap =
-			new HashMap<LoadTableDesc, WriteEntity>();
+			new HashMap<>();
 	private final Map<WriteEntity, List<HiveLockObj>> outputLockObjects =
-			new HashMap<WriteEntity, List<HiveLockObj>>();
+			new HashMap<>();
 
 	private final String stagingDir;
 
@@ -243,18 +240,6 @@ public class HiveParserContext {
 		}
 	}
 
-	/**
-	 * Will make SemanticAnalyzer.Phase1Ctx#dest in subtree rooted at 'tree' use 'prefix'.  This to
-	 * handle multi-insert stmt that represents Merge stmt and has insert branches representing
-	 * update/delete/insert.
-	 *
-	 * @param pos ordinal index of specific TOK_INSERT as child of TOK_QUERY
-	 * @return previous prefix for 'tree' or null
-	 */
-	public DestClausePrefix addDestNamePrefix(int pos, DestClausePrefix prefix) {
-		return insertBranchToNamePrefix.put(pos, prefix);
-	}
-
 	public HiveParserContext(Configuration conf) throws IOException {
 		this(conf, generateExecutionId());
 	}
@@ -277,22 +262,9 @@ public class HiveParserContext {
 		viewsTokenRewriteStreams = new HashMap<>();
 	}
 
-	public Map<LoadTableDesc, WriteEntity> getLoadTableOutputMap() {
-		return loadTableOutputMap;
-	}
-
-	public Map<WriteEntity, List<HiveLockObj>> getOutputLockObjects() {
-		return outputLockObjects;
-	}
-
 	// Find whether we should execute the current query due to explain.
 	public boolean isExplainSkipExecution() {
 		return (explainConfig != null && explainConfig.getAnalyze() != AnalyzeState.RUNNING);
-	}
-
-	// Find whether the current query is a logical explain query.
-	public boolean getExplainLogical() {
-		return explainConfig != null && explainConfig.isLogical();
 	}
 
 	public AnalyzeState getExplainAnalyze() {
@@ -300,24 +272,6 @@ public class HiveParserContext {
 			return explainConfig.getAnalyze();
 		}
 		return null;
-	}
-
-	/**
-	 * Set the original query command.
-	 *
-	 * @param cmd the original query command string
-	 */
-	public void setCmd(String cmd) {
-		this.cmd = cmd;
-	}
-
-	/**
-	 * Find the original query command.
-	 *
-	 * @return the original query command string
-	 */
-	public String getCmd() {
-		return cmd;
 	}
 
 	/**
@@ -456,42 +410,6 @@ public class HiveParserContext {
 		}
 	}
 
-	public Path getTempDirForPath(Path path, boolean isFinalJob) {
-//		if (((BlobStorageUtils.isBlobStoragePath(conf, path) && !BlobStorageUtils.isBlobStorageAsScratchDir(
-//				conf)) || isPathLocal(path))) {
-//			if (!(isFinalJob && BlobStorageUtils.areOptimizationsEnabled(conf))) {
-//				// For better write performance, we use HDFS for temporary data when object store is used.
-//				// Note that the scratch directory configuration variable must use HDFS or any other non-blobstorage system
-//				// to take advantage of this performance.
-//				return getMRTmpPath();
-//			}
-//		}
-		return getExtTmpPathRelTo(path);
-	}
-
-	/**
-	 * Create a temporary directory depending of the path specified.
-	 * - If path is an Object store filesystem, then use the default MR scratch directory (HDFS)
-	 * - If path is on HDFS, then create a staging directory inside the path
-	 */
-	public Path getTempDirForPath(Path path) {
-		return getTempDirForPath(path, false);
-	}
-
-	/*
-	 * Checks if the path is for the local filesystem or not
-	 */
-	private boolean isPathLocal(Path path) {
-		boolean isLocal = false;
-		if (path != null) {
-			String scheme = path.toUri().getScheme();
-			if (scheme != null) {
-				isLocal = scheme.equals("file");
-			}
-		}
-		return isLocal;
-	}
-
 	private Path getExternalScratchDir(URI extURI) {
 		return getStagingDir(new Path(extURI.getScheme(), extURI.getAuthority(), extURI.getPath()), !isExplainSkipExecution());
 	}
@@ -540,15 +458,9 @@ public class HiveParserContext {
 		return Integer.toString(pathid++);
 	}
 
-
 	private static final String MR_PREFIX = "-mr-";
 	private static final String EXT_PREFIX = "-ext-";
 	private static final String LOCAL_PREFIX = "-local-";
-
-	// Check if path is for intermediate data.
-	public boolean isMRTmpFileURI(String uriStr) {
-		return uriStr.contains(executionId) && uriStr.contains(MR_PREFIX);
-	}
 
 	public Path getMRTmpPath(URI uri) {
 		return new Path(getStagingDir(new Path(uri), !isExplainSkipExecution()), MR_PREFIX + nextPathId());
@@ -560,8 +472,7 @@ public class HiveParserContext {
 	 * @return next available path for map-red intermediate data
 	 */
 	public Path getMRTmpPath() {
-		return new Path(getMRScratchDir(), MR_PREFIX +
-				nextPathId());
+		return new Path(getMRScratchDir(), MR_PREFIX + nextPathId());
 	}
 
 	/**
@@ -571,24 +482,6 @@ public class HiveParserContext {
 	 */
 	public Path getLocalTmpPath() {
 		return new Path(getLocalScratchDir(true), LOCAL_PREFIX + nextPathId());
-	}
-
-	/**
-	 * Get a path to store tmp data destined for external Path.
-	 *
-	 * @param path external Path to which the tmp data has to be eventually moved
-	 * @return next available tmp path on the file system corresponding extURI
-	 */
-	public Path getExternalTmpPath(Path path) {
-		URI extURI = path.toUri();
-		if (extURI.getScheme().equals("viewfs")) {
-			// if we are on viewfs we don't want to use /tmp as tmp dir since rename from /tmp/..
-			// to final /user/hive/warehouse/ will fail later, so instead pick tmp dir
-			// on same namespace as tbl dir.
-			return getExtTmpPathRelTo(path.getParent());
-		}
-		return new Path(getExternalScratchDir(extURI), EXT_PREFIX +
-				nextPathId());
 	}
 
 	/**
@@ -615,13 +508,6 @@ public class HiveParserContext {
 		resDir = null;
 		resDirPaths = null;
 		resDirFilesNum = 0;
-	}
-
-	/**
-	 * @return the resDir
-	 */
-	public Path getResDir() {
-		return resDir;
 	}
 
 	/**
@@ -661,77 +547,6 @@ public class HiveParserContext {
 		setNeedLockMgr(false);
 	}
 
-	public DataInput getStream() {
-		try {
-			if (!initialized) {
-				initialized = true;
-				if ((resFile == null) && (resDir == null)) {
-					return null;
-				}
-
-				if (resFile != null) {
-					return resFile.getFileSystem(conf).open(resFile);
-				}
-
-				resFs = resDir.getFileSystem(conf);
-				FileStatus status = resFs.getFileStatus(resDir);
-				assert status.isDir();
-				FileStatus[] resDirFS = resFs.globStatus(new Path(resDir + "/*"), HIDDEN_FILES_PATH_FILTER);
-				resDirPaths = new Path[resDirFS.length];
-				int pos = 0;
-				for (FileStatus resFS : resDirFS) {
-					if (!resFS.isDir()) {
-						resDirPaths[pos++] = resFS.getPath();
-					}
-				}
-				if (pos == 0) {
-					return null;
-				}
-
-				return resFs.open(resDirPaths[resDirFilesNum++]);
-			} else {
-				return getNextStream();
-			}
-		} catch (FileNotFoundException e) {
-			LOG.info("getStream error: " + StringUtils.stringifyException(e));
-			return null;
-		} catch (IOException e) {
-			LOG.info("getStream error: " + StringUtils.stringifyException(e));
-			return null;
-		}
-	}
-
-	private DataInput getNextStream() {
-		try {
-			if (resDir != null && resDirFilesNum < resDirPaths.length
-					&& (resDirPaths[resDirFilesNum] != null)) {
-				return resFs.open(resDirPaths[resDirFilesNum++]);
-			}
-		} catch (FileNotFoundException e) {
-			LOG.info("getNextStream error: " + StringUtils.stringifyException(e));
-			return null;
-		} catch (IOException e) {
-			LOG.info("getNextStream error: " + StringUtils.stringifyException(e));
-			return null;
-		}
-
-		return null;
-	}
-
-	public void resetStream() {
-		if (initialized) {
-			resDirFilesNum = 0;
-			initialized = false;
-		}
-	}
-
-	/**
-	 * Little abbreviation for StringUtils.
-	 */
-	private static boolean strEquals(String str1, String str2) {
-		return org.apache.commons.lang3.StringUtils.equals(str1, str2);
-	}
-
 	/**
 	 * Set the token rewrite stream being used to parse the current top-level SQL
 	 * statement. Note that this should <b>not</b> be used for other parsing
@@ -758,10 +573,6 @@ public class HiveParserContext {
 	public void addViewTokenRewriteStream(String viewFullyQualifiedName,
 			TokenRewriteStream tokenRewriteStream) {
 		viewsTokenRewriteStreams.put(viewFullyQualifiedName, tokenRewriteStream);
-	}
-
-	public TokenRewriteStream getViewTokenRewriteStream(String viewFullyQualifiedName) {
-		return viewsTokenRewriteStreams.get(viewFullyQualifiedName);
 	}
 
 	/**
@@ -794,132 +605,11 @@ public class HiveParserContext {
 		return ShimLoader.getHadoopShims().isLocalMode(conf);
 	}
 
-	public List<HiveLock> getHiveLocks() {
-		return hiveLocks;
-	}
-
-	public void setHiveLocks(List<HiveLock> hiveLocks) {
-		this.hiveLocks = hiveLocks;
-	}
-
-	public HiveTxnManager getHiveTxnManager() {
-		return hiveTxnManager;
-	}
-
-	public void setHiveTxnManager(HiveTxnManager txnMgr) {
-		hiveTxnManager = txnMgr;
-	}
-
-	public void setOriginalTracker(String originalTracker) {
-		this.originalTracker = originalTracker;
-	}
-
-	public void restoreOriginalTracker() {
-		if (originalTracker != null) {
-			ShimLoader.getHadoopShims().setJobLauncherRpcAddress(conf, originalTracker);
-			originalTracker = null;
-		}
-	}
-
-	public void addCS(String path, ContentSummary cs) {
-		pathToCS.put(path, cs);
-	}
-
-	public ContentSummary getCS(Path path) {
-		return getCS(path.toString());
-	}
-
-	public ContentSummary getCS(String path) {
-		return pathToCS.get(path);
-	}
-
-	public Map<String, ContentSummary> getPathToCS() {
-		return pathToCS;
-	}
-
 	public Configuration getConf() {
 		return conf;
 	}
 
-	/**
-	 * @return the isHDFSCleanup
-	 */
-	public boolean isHDFSCleanup() {
-		return isHDFSCleanup;
-	}
-
-	/**
-	 * @param isHDFSCleanup the isHDFSCleanup to set
-	 */
-	public void setHDFSCleanup(boolean isHDFSCleanup) {
-		this.isHDFSCleanup = isHDFSCleanup;
-	}
-
-	public boolean isNeedLockMgr() {
-		return needLockMgr;
-	}
-
 	public void setNeedLockMgr(boolean needLockMgr) {
 		this.needLockMgr = needLockMgr;
-	}
-
-	public int getTryCount() {
-		return tryCount;
-	}
-
-	public void setTryCount(int tryCount) {
-		this.tryCount = tryCount;
-	}
-
-	public String getCboInfo() {
-		return cboInfo;
-	}
-
-	public void setCboInfo(String cboInfo) {
-		this.cboInfo = cboInfo;
-	}
-
-	public boolean isCboSucceeded() {
-		return cboSucceeded;
-	}
-
-	public void setCboSucceeded(boolean cboSucceeded) {
-		this.cboSucceeded = cboSucceeded;
-	}
-
-	public Table getMaterializedTable(String cteName) {
-		return cteTables.get(cteName);
-	}
-
-	public void addMaterializedTable(String cteName, Table table) {
-		cteTables.put(cteName, table);
-	}
-
-	public AtomicInteger getSequencer() {
-		return sequencer;
-	}
-
-	public boolean isSkipTableMasking() {
-		return skipTableMasking;
-	}
-
-	public void setSkipTableMasking(boolean skipTableMasking) {
-		this.skipTableMasking = skipTableMasking;
-	}
-
-	public HiveParserExplainConfiguration getExplainConfig() {
-		return explainConfig;
-	}
-
-	public void setExplainConfig(HiveParserExplainConfiguration explainConfig) {
-		this.explainConfig = explainConfig;
-	}
-
-	public boolean getIsUpdateDeleteMerge() {
-		return isUpdateDeleteMerge;
-	}
-
-	public void setIsUpdateDeleteMerge(boolean isUpdate) {
-		this.isUpdateDeleteMerge = isUpdate;
 	}
 }
