@@ -45,10 +45,12 @@ public class HiveParserCreateTableDesc implements Serializable {
 	private final HiveParserRowFormatParams rowFormatParams;
 	private final HiveParserStorageFormat storageFormat;
 	private final List<PrimaryKey> primaryKeys;
+	private final List<NotNullConstraint> notNullConstraints;
 
 	public HiveParserCreateTableDesc(String compoundName, boolean isExternal, boolean ifNotExists, boolean isTemporary,
 			List<FieldSchema> cols, List<FieldSchema> partCols, String comment, String location, Map<String, String> tblProps,
-			HiveParserRowFormatParams rowFormatParams, HiveParserStorageFormat storageFormat, List<PrimaryKey> primaryKeys) {
+			HiveParserRowFormatParams rowFormatParams, HiveParserStorageFormat storageFormat,
+			List<PrimaryKey> primaryKeys, List<NotNullConstraint> notNullConstraints) {
 		this.compoundName = compoundName;
 		this.isExternal = isExternal;
 		this.ifNotExists = ifNotExists;
@@ -61,6 +63,7 @@ public class HiveParserCreateTableDesc implements Serializable {
 		this.rowFormatParams = rowFormatParams;
 		this.storageFormat = storageFormat;
 		this.primaryKeys = primaryKeys;
+		this.notNullConstraints = notNullConstraints;
 	}
 
 	public String getCompoundName() {
@@ -111,10 +114,69 @@ public class HiveParserCreateTableDesc implements Serializable {
 		return primaryKeys;
 	}
 
+	public List<NotNullConstraint> getNotNullConstraints() {
+		return notNullConstraints;
+	}
+
+	/**
+	 * Counterpart of hive's SQLNotNullConstraint.
+	 */
+	public static class NotNullConstraint implements Serializable {
+
+		private static final long serialVersionUID = 7642343368203203950L;
+
+		private final String dbName;
+		private final String tblName;
+		private final String colName;
+		private final String constraintName;
+		private final boolean enable;
+		private final boolean validate;
+		private final boolean rely;
+
+		public NotNullConstraint(String dbName, String tblName, String colName, String constraintName,
+				boolean enable, boolean validate, boolean rely) {
+			this.dbName = dbName;
+			this.tblName = tblName;
+			this.colName = colName;
+			this.constraintName = constraintName;
+			this.enable = enable;
+			this.validate = validate;
+			this.rely = rely;
+		}
+
+		public String getDbName() {
+			return dbName;
+		}
+
+		public String getTblName() {
+			return tblName;
+		}
+
+		public String getColName() {
+			return colName;
+		}
+
+		public String getConstraintName() {
+			return constraintName;
+		}
+
+		public boolean isEnable() {
+			return enable;
+		}
+
+		public boolean isValidate() {
+			return validate;
+		}
+
+		public boolean isRely() {
+			return rely;
+		}
+	}
+
 	/**
 	 * Counterpart of hive's SQLPrimaryKey.
 	 */
-	public static class PrimaryKey implements Serializable{
+	public static class PrimaryKey implements Serializable {
 
 		private static final long serialVersionUID = 3036210046732750293L;
 

@@ -101,12 +101,12 @@ public class HiveDialectITCase {
 	@Test
 	public void testCreateTableAs() throws Exception {
 		tableEnv.executeSql("create table src (x int,y string)");
-		tableEnv.executeSql("create table tbl1 as select x from src group by x");
+		tableEnv.executeSql("create table tbl1 as select x from src group by x").await();
 		Table hiveTable = hiveCatalog.getHiveTable(new ObjectPath("default", "tbl1"));
 		assertEquals(1, hiveTable.getSd().getCols().size());
 		assertEquals("x", hiveTable.getSd().getCols().get(0).getName());
 		assertEquals("int", hiveTable.getSd().getCols().get(0).getType());
-		tableEnv.executeSql("create table default.tbl2 stored as orc as select x,max(y) as m from src group by x order by x limit 1");
+		tableEnv.executeSql("create table default.tbl2 stored as orc as select x,max(y) as m from src group by x order by x limit 1").await();
 		hiveTable = hiveCatalog.getHiveTable(new ObjectPath("default", "tbl2"));
 		assertEquals(2, hiveTable.getSd().getCols().size());
 		assertEquals("x", hiveTable.getSd().getCols().get(0).getName());

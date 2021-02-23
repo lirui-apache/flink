@@ -19,6 +19,7 @@
 package org.apache.flink.table.planner.delegation.hive.parse;
 
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.NotNullConstraint;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 
 import org.antlr.runtime.tree.Tree;
@@ -73,7 +74,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	public static List<FieldSchema> getColumns(ASTNode ast, boolean lowerCase) throws SemanticException {
-		return getColumns(ast, lowerCase, new ArrayList<>());
+		return getColumns(ast, lowerCase, new ArrayList<>(), new ArrayList<>());
 	}
 
 	public static String getTypeStringFromAST(ASTNode typeNode)
@@ -138,7 +139,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	public static List<FieldSchema> getColumns(ASTNode ast, boolean lowerCase,
-			List<PrimaryKey> primaryKeys) throws SemanticException {
+			List<PrimaryKey> primaryKeys, List<NotNullConstraint> notNulls) throws SemanticException {
 		List<FieldSchema> colList = new ArrayList<>();
 		int numCh = ast.getChildCount();
 		List<PKInfo> pkInfos = new ArrayList<>();
@@ -167,8 +168,26 @@ public class HiveParserBaseSemanticAnalyzer {
 					col.setType(getTypeStringFromAST(typeChild));
 
 					// child 2 is the optional comment of the column
-					if (child.getChildCount() == 3) {
+					// child 3 is the optional constraint
+					ASTNode constraintChild = null;
+					if (child.getChildCount() == 4) {
 						col.setComment(unescapeSQLString(child.getChild(2).getText()));
+						constraintChild = (ASTNode) child.getChild(3);
+					} else if (child.getChildCount() == 3
+							&& ((ASTNode) child.getChild(2)).getToken().getType() == HiveASTParser.StringLiteral) {
+						col.setComment(unescapeSQLString(child.getChild(2).getText()));
+					} else if (child.getChildCount() == 3) {
+						constraintChild = (ASTNode) child.getChild(2);
+					}
+					if (constraintChild != null) {
+						String[] qualifiedTabName = getQualifiedTableName((ASTNode) parent.getChild(0));
+						switch (constraintChild.getToken().getType()) {
+							case HiveASTParser.TOK_NOT_NULL:
+								notNulls.add(processNotNull(constraintChild, qualifiedTabName[0], qualifiedTabName[1], col.getName()));
+								break;
+							default:
+								throw new SemanticException("Unsupported constraint node: " + constraintChild);
+						}
 					}
 				}
 				nametoFS.put(col.getName(), col);
@@ -179,6 +198,34 @@ public class HiveParserBaseSemanticAnalyzer {
 			processPrimaryKeys((ASTNode) parent, pkInfos, primaryKeys, nametoFS);
 		}
 		return colList;
+	}
+
+	private static NotNullConstraint processNotNull(ASTNode node, String dbName, String tblName, String colName)
+			throws SemanticException {
+		boolean enable = true;
+		boolean validate = false;
+		boolean rely = false;
+		for (int i = 0; i < node.getChildCount(); i++) {
+			ASTNode child = (ASTNode) node.getChild(i);
+			switch (child.getToken().getType()) {
+				case HiveASTParser.TOK_ENABLE:
+				case HiveASTParser.TOK_NOVALIDATE:
+				case HiveASTParser.TOK_NORELY:
+					break;
+				case HiveASTParser.TOK_DISABLE:
+					enable = false;
+					break;
+				case HiveASTParser.TOK_VALIDATE:
+					validate = true;
+					break;
+				case HiveASTParser.TOK_RELY:
+					rely = true;
+					break;
+				default:
+					throw new SemanticException("Unexpected node for NOT NULL constraint: " + child);
+			}
+		}
+		return new NotNullConstraint(dbName, tblName, colName, null, enable, validate, rely);
 	}
 
 	private static void processPrimaryKeys(ASTNode parent, List<PKInfo> pkInfos,

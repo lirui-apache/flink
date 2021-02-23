@@ -80,6 +80,7 @@ import org.apache.flink.table.operations.ddl.DropPartitionsOperation;
 import org.apache.flink.table.operations.ddl.DropTableOperation;
 import org.apache.flink.table.operations.ddl.DropTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropViewOperation;
+import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.NotNullConstraint;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowFormatParams;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserStorageFormat;
@@ -103,11 +104,13 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static org.apache.flink.sql.parser.hive.ddl.HiveDDLUtils.COL_DELIMITER;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabase.ALTER_DATABASE_OP;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabaseOwner.DATABASE_OWNER_NAME;
 import static org.apache.flink.sql.parser.hive.ddl.SqlAlterHiveDatabaseOwner.DATABASE_OWNER_TYPE;
@@ -130,6 +133,8 @@ import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableR
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableStoredAs.STORED_AS_FILE_FORMAT;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableStoredAs.STORED_AS_INPUT_FORMAT;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.HiveTableStoredAs.STORED_AS_OUTPUT_FORMAT;
+import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.NOT_NULL_COLS;
+import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.NOT_NULL_CONSTRAINT_TRAITS;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.PK_CONSTRAINT_TRAIT;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.TABLE_IS_EXTERNAL;
 import static org.apache.flink.sql.parser.hive.ddl.SqlCreateHiveTable.TABLE_LOCATION_URI;
@@ -371,7 +376,27 @@ public class DDLOperationConverter {
 			uniqueConstraint = UniqueConstraint.primaryKey(primaryKey.getConstraintName(),
 					desc.getPrimaryKeys().stream().map(PrimaryKey::getPk).collect(Collectors.toList()));
 		}
-		// TODO: support NOT NULL
+		// NOT NULL constraints
+		List<String> notNullCols = new ArrayList<>();
+		if (!desc.getNotNullConstraints().isEmpty()) {
+			List<String> traits = new ArrayList<>();
+			for (NotNullConstraint notNull : desc.getNotNullConstraints()) {
+				byte trait = 0;
+				if (notNull.isEnable()) {
+					trait = HiveDDLUtils.enableConstraint(trait);
+				}
+				if (notNull.isValidate()) {
+					trait = HiveDDLUtils.validateConstraint(trait);
+				}
+				if (notNull.isRely()) {
+					trait = HiveDDLUtils.relyConstraint(trait);
+				}
+				traits.add(String.valueOf(trait));
+				notNullCols.add(notNull.getColName());
+			}
+			props.put(NOT_NULL_CONSTRAINT_TRAITS, String.join(COL_DELIMITER, traits));
+			props.put(NOT_NULL_COLS, String.join(COL_DELIMITER, notNullCols));
+		}
 		// row format
 		if (desc.getRowFormatParams() != null) {
 			encodeRowFormat(desc.getRowFormatParams(), props);
@@ -385,8 +410,7 @@ public class DDLOperationConverter {
 			props.put(TABLE_LOCATION_URI, desc.getLocation());
 		}
 		ObjectIdentifier identifier = parseObjectIdentifier(desc.getCompoundName());
-		// TODO: support NOT NULL
-		TableSchema tableSchema = HiveTableUtil.createTableSchema(desc.getCols(), desc.getPartCols(), Collections.emptySet(), uniqueConstraint);
+		TableSchema tableSchema = HiveTableUtil.createTableSchema(desc.getCols(), desc.getPartCols(), new HashSet<>(notNullCols), uniqueConstraint);
 		return new CreateTableOperation(
 				identifier,
 				new CatalogTableImpl(tableSchema, HiveCatalog.getFieldNames(desc.getPartCols()), props, desc.getComment()),

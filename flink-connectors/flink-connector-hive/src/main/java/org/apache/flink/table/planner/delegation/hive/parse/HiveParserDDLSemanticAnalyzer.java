@@ -32,6 +32,7 @@ import org.apache.flink.table.planner.delegation.hive.HiveParserAlterTableDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAuthorizationParseUtils;
 import org.apache.flink.table.planner.delegation.hive.HiveParserContext;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc;
+import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.NotNullConstraint;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateViewDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserDropDatabaseDesc;
@@ -549,6 +550,7 @@ public class HiveParserDDLSemanticAnalyzer {
 		List<FieldSchema> partCols = new ArrayList<>();
 		List<String> bucketCols = new ArrayList<>();
 		List<PrimaryKey> primaryKeys = new ArrayList<>();
+		List<NotNullConstraint> notNulls = new ArrayList<>();
 //		List<SQLForeignKey> foreignKeys = new ArrayList<>();
 		List<Order> sortCols = new ArrayList<>();
 		int numBuckets = -1;
@@ -627,7 +629,7 @@ public class HiveParserDDLSemanticAnalyzer {
 					selectStmt = child;
 					break;
 				case HiveASTParser.TOK_TABCOLLIST:
-					cols = HiveParserBaseSemanticAnalyzer.getColumns(child, true, primaryKeys);
+					cols = HiveParserBaseSemanticAnalyzer.getColumns(child, true, primaryKeys, notNulls);
 					break;
 				case HiveASTParser.TOK_TABLECOMMENT:
 					comment = HiveParserBaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText());
@@ -682,7 +684,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			case createTable: // REGULAR CREATE TABLE DDL
 				tblProps = addDefaultProperties(tblProps);
 				return new HiveParserCreateTableDesc(dbDotTab, isExt, ifNotExists, isTemporary, cols, partCols,
-						comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys);
+						comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys, notNulls);
 
 			case ctlt: // create table like <tbl_name>
 				tblProps = addDefaultProperties(tblProps);
@@ -692,7 +694,7 @@ public class HiveParserDDLSemanticAnalyzer {
 				tblProps = addDefaultProperties(tblProps);
 
 				HiveParserCreateTableDesc createTableDesc = new HiveParserCreateTableDesc(dbDotTab, isExt, ifNotExists, isTemporary,
-						cols, partCols, comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys);
+						cols, partCols, comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys, notNulls);
 				return new CTASDesc(createTableDesc, selectStmt);
 			default:
 				throw new SemanticException("Unrecognized command.");
