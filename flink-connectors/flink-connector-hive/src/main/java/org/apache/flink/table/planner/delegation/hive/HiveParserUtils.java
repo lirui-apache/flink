@@ -151,7 +151,7 @@ import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserSem
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText;
 
 /**
- * Util class for the hive planner.
+ * Util class for the hive parser.
  */
 public class HiveParserUtils {
 
@@ -1221,12 +1221,6 @@ public class HiveParserUtils {
 
 	/**
 	 * Creates the directory and all necessary parent directories.
-	 * @param fs FileSystem to use
-	 * @param f path to create.
-	 * @param inheritPerms whether directory inherits the permission of the last-existing parent path
-	 * @param conf Hive configuration
-	 * @return true if directory created successfully.  False otherwise, including if it exists.
-	 * @throws IOException exception in creating the directory
 	 */
 	public static boolean mkdir(FileSystem fs, Path f, boolean inheritPerms, Configuration conf) throws IOException {
 		LOG.info("Creating directory if it doesn't exist: " + f);

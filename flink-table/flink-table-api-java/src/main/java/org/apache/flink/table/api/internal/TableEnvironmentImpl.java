@@ -115,6 +115,7 @@ import org.apache.flink.table.operations.ddl.AlterViewRenameOperation;
 import org.apache.flink.table.operations.ddl.CreateCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateCatalogOperation;
 import org.apache.flink.table.operations.ddl.CreateDatabaseOperation;
+import org.apache.flink.table.operations.ddl.CreateTableASOperation;
 import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.operations.ddl.CreateTempSystemCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateTempSystemFunctionOperation;
@@ -662,15 +663,11 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
 		if (operations.isEmpty()) {
 			return TableResultImpl.TABLE_RESULT_OK;
 		}
-		if (operations.size() == 1) {
-			return executeOperation(operations.get(0));
-		} else if (operations.size() == 2) {
-			if (operations.get(0) instanceof CreateTableOperation) {
-				executeOperation(operations.get(0));
-				return executeOperation(operations.get(1));
-			}
+		if (operations.size() != 1) {
+			throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
 		}
-		throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
+
+		return executeOperation(operations.get(0));
 	}
 
 	@Override
@@ -1075,6 +1072,9 @@ public class TableEnvironmentImpl implements TableEnvironmentInternal {
 			}
 		} else if (operation instanceof QueryOperation) {
 			return executeInternal((QueryOperation) operation);
+		} else if (operation instanceof CreateTableASOperation) {
+			executeOperation(((CreateTableASOperation) operation).getCreateTableOperation());
+			return executeOperation(((CreateTableASOperation) operation).getInsertOperation());
 		} else {
 			throw new TableException(UNSUPPORTED_QUERY_IN_EXECUTE_SQL_MSG);
 		}

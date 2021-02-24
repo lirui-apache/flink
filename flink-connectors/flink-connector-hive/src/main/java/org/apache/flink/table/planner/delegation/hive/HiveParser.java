@@ -33,6 +33,8 @@ import org.apache.flink.table.module.hive.udf.generic.HiveGenericUDFGrouping;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
 import org.apache.flink.table.operations.ExplainOperation;
 import org.apache.flink.table.operations.Operation;
+import org.apache.flink.table.operations.ddl.CreateTableASOperation;
+import org.apache.flink.table.operations.ddl.CreateTableOperation;
 import org.apache.flink.table.planner.calcite.CalciteParser;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.calcite.SqlExprToRexConverter;
@@ -202,6 +204,7 @@ public class HiveParser extends ParserImpl {
 				if (work == null) {
 					return super.parse(cmd);
 				} else {
+					DDLOperationConverter ddlConverter = new DDLOperationConverter(getCatalogManager(), hiveShim);
 					if (work instanceof HiveParserCreateViewDesc) {
 						// analyze and expand the view query
 						analyzeCreateView((HiveParserCreateViewDesc) work, context, queryState, hiveShim);
@@ -217,14 +220,13 @@ public class HiveParser extends ParserImpl {
 						Table destTable = new Table(Table.getEmptyTable(dbTblName[0], dbTblName[1]));
 						destTable.getSd().setCols(createTableDesc.getCols());
 						// create the insert operation
-						Operation insertOperation = createInsertOperation(
+						CatalogSinkModifyOperation insertOperation = createInsertOperation(
 								queryRelNode, destTable, Collections.emptyMap(), Collections.emptyList(), false);
-						Operation createTableOperation = new DDLOperationConverter(getCatalogManager(), hiveShim)
+						CreateTableOperation createTableOperation = (CreateTableOperation) ddlConverter
 								.convert(((CTASDesc) work).getCreateTableDesc());
-						return Arrays.asList(createTableOperation, insertOperation);
+						return Collections.singletonList(new CreateTableASOperation(createTableOperation, insertOperation));
 					}
-					return Collections.singletonList(new DDLOperationConverter(getCatalogManager(), hiveShim)
-							.convert(work));
+					return Collections.singletonList(ddlConverter.convert(work));
 				}
 			} else {
 				final boolean explain = node.getType() == HiveASTParser.TOK_EXPLAIN;
@@ -334,7 +336,7 @@ public class HiveParser extends ParserImpl {
 		}
 	}
 
-	private Operation createInsertOperation(RelNode queryRelNode, Table destTable, Map<String, String> staticPartSpec,
+	private CatalogSinkModifyOperation createInsertOperation(RelNode queryRelNode, Table destTable, Map<String, String> staticPartSpec,
 			List<String> destSchema, boolean overwrite) throws SemanticException {
 		// sanity check
 		Preconditions.checkArgument(queryRelNode instanceof Project || queryRelNode instanceof Sort || queryRelNode instanceof HiveDistribution,
