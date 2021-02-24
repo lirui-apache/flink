@@ -19,17 +19,56 @@
 package org.apache.flink.table.planner.delegation.hive.parse;
 
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.connectors.hive.FlinkHiveException;
+import org.apache.flink.table.planner.delegation.hive.ConvertSqlFunctionCopier;
+import org.apache.flink.table.planner.delegation.hive.HiveParserConstants;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.NotNullConstraint;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
+import org.apache.flink.table.planner.delegation.hive.HiveParserExprNodeDescUtils;
+import org.apache.flink.table.planner.delegation.hive.HiveParserRexNodeConverter;
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
+import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
+import org.apache.flink.util.Preconditions;
 
 import org.antlr.runtime.tree.Tree;
+import org.antlr.runtime.tree.TreeVisitor;
+import org.antlr.runtime.tree.TreeVisitorAction;
 import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.rel.RelCollations;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldCollation;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
+import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlUtil;
+import org.apache.calcite.sql.SqlWindow;
+import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.tools.FrameworkConfig;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.common.ObjectPair;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.exec.ColumnInfo;
+import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lib.Node;
 import org.apache.hadoop.hive.ql.metadata.Hive;
@@ -39,28 +78,50 @@ import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
+import org.apache.hadoop.hive.ql.parse.WindowingSpec;
+import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
+import org.apache.hadoop.hive.ql.plan.GroupByDesc;
 import org.apache.hadoop.hive.ql.plan.PlanUtils;
+import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
+import org.apache.hadoop.hive.serde2.typeinfo.ListTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import static org.apache.flink.table.planner.delegation.hive.HiveParserUtils.removeASTChild;
 
 /**
- * Contains static methods of hive's BaseSemanticAnalyzer.
+ * Counterpart of hive's BaseSemanticAnalyzer and only contains static methods needed.
  */
 public class HiveParserBaseSemanticAnalyzer {
 
@@ -664,6 +725,1017 @@ public class HiveParserBaseSemanticAnalyzer {
 		return val;
 	}
 
+	static List<ASTNode> doPhase1GetDistinctFuncExprs(HashMap<String, ASTNode> aggregationTrees) {
+		List<ASTNode> exprs = new ArrayList<>();
+		for (Map.Entry<String, ASTNode> entry : aggregationTrees.entrySet()) {
+			ASTNode value = entry.getValue();
+			if (value.getToken().getType() == HiveASTParser.TOK_FUNCTIONDI) {
+				exprs.add(value);
+			}
+		}
+		return exprs;
+	}
+
+	static String findSimpleTableName(ASTNode tabref, int aliasIndex) {
+		assert tabref.getType() == HiveASTParser.TOK_TABREF;
+		ASTNode tableTree = (ASTNode) (tabref.getChild(0));
+
+		String alias;
+		if (aliasIndex != 0) {
+			alias = unescapeIdentifier(tabref.getChild(aliasIndex).getText());
+		} else {
+			alias = getUnescapedUnqualifiedTableName(tableTree);
+		}
+		return alias;
+	}
+
+	static int[] findTabRefIdxs(ASTNode tabref) {
+		assert tabref.getType() == HiveASTParser.TOK_TABREF;
+		int aliasIndex = 0;
+		int propsIndex = -1;
+		int tsampleIndex = -1;
+		int ssampleIndex = -1;
+		for (int index = 1; index < tabref.getChildCount(); index++) {
+			ASTNode ct = (ASTNode) tabref.getChild(index);
+			if (ct.getToken().getType() == HiveASTParser.TOK_TABLEBUCKETSAMPLE) {
+				tsampleIndex = index;
+			} else if (ct.getToken().getType() == HiveASTParser.TOK_TABLESPLITSAMPLE) {
+				ssampleIndex = index;
+			} else if (ct.getToken().getType() == HiveASTParser.TOK_TABLEPROPERTIES) {
+				propsIndex = index;
+			} else {
+				aliasIndex = index;
+			}
+		}
+		return new int[]{aliasIndex, propsIndex, tsampleIndex, ssampleIndex};
+	}
+
+	// Take an expression in the values clause and turn it back into a string.  This is far from
+	// comprehensive.  At the moment it only supports:
+	// * literals (all types)
+	// * unary negatives
+	// * true/false
+	static String unparseExprForValuesClause(ASTNode expr) throws SemanticException {
+		switch (expr.getToken().getType()) {
+			case HiveASTParser.Number:
+				return expr.getText();
+			case HiveASTParser.StringLiteral:
+				return unescapeSQLString(expr.getText());
+			case HiveASTParser.KW_FALSE:
+				// UDFToBoolean casts any non-empty string to true, so set this to false
+				return "";
+			case HiveASTParser.KW_TRUE:
+				return "TRUE";
+			case HiveASTParser.MINUS:
+				return "-" + unparseExprForValuesClause((ASTNode) expr.getChildren().get(0));
+			case HiveASTParser.TOK_NULL:
+				// Hive's text input will translate this as a null
+				return "\\N";
+			default:
+				throw new SemanticException("Expression of type " + expr.getText() +
+						" not supported in insert/values");
+		}
+	}
+
+	public static String getColumnInternalName(int pos) {
+		return HiveConf.getColumnInternalName(pos);
+	}
+
+	static List<Integer> getGroupingSetsForRollup(int size) {
+		List<Integer> groupingSetKeys = new ArrayList<>();
+		for (int i = 0; i <= size; i++) {
+			groupingSetKeys.add((1 << i) - 1);
+		}
+		return groupingSetKeys;
+	}
+
+	static List<Integer> getGroupingSetsForCube(int size) {
+		int count = 1 << size;
+		List<Integer> results = new ArrayList<>(count);
+		for (int i = 0; i < count; ++i) {
+			results.add(i);
+		}
+		return results;
+	}
+
+	static List<Integer> getGroupingSets(List<ASTNode> groupByExpr, HiveParserQBParseInfo parseInfo,
+			String dest) throws SemanticException {
+		Map<String, Integer> exprPos = new HashMap<>();
+		for (int i = 0; i < groupByExpr.size(); ++i) {
+			ASTNode node = groupByExpr.get(i);
+			exprPos.put(node.toStringTree(), i);
+		}
+
+		ASTNode root = parseInfo.getGroupByForClause(dest);
+		List<Integer> result = new ArrayList<>(root == null ? 0 : root.getChildCount());
+		if (root != null) {
+			for (int i = 0; i < root.getChildCount(); ++i) {
+				ASTNode child = (ASTNode) root.getChild(i);
+				if (child.getType() != HiveASTParser.TOK_GROUPING_SETS_EXPRESSION) {
+					continue;
+				}
+				int bitmap = com.google.common.math.IntMath.pow(2, groupByExpr.size()) - 1;
+				for (int j = 0; j < child.getChildCount(); ++j) {
+					String treeAsString = child.getChild(j).toStringTree();
+					Integer pos = exprPos.get(treeAsString);
+					if (pos == null) {
+						throw new SemanticException(
+								HiveParserUtils.generateErrorMessage((ASTNode) child.getChild(j),
+										ErrorMsg.HIVE_GROUPING_SETS_EXPR_NOT_IN_GROUPBY.getErrorCodedMsg()));
+					}
+					bitmap = HiveParserUtils.unsetBit(bitmap, groupByExpr.size() - pos - 1);
+				}
+				result.add(bitmap);
+			}
+		}
+		if (checkForEmptyGroupingSets(result, com.google.common.math.IntMath.pow(2, groupByExpr.size()) - 1)) {
+			throw new SemanticException("Empty grouping sets not allowed");
+		}
+		return result;
+	}
+
+	static boolean checkForEmptyGroupingSets(List<Integer> bitmaps, int groupingIdAllSet) {
+		boolean ret = true;
+		for (int mask : bitmaps) {
+			ret &= mask == groupingIdAllSet;
+		}
+		return ret;
+	}
+
+	// This function is a wrapper of parseInfo.getGroupByForClause which automatically translates
+	// SELECT DISTINCT a,b,c to SELECT a,b,c GROUP BY a,b,c.
+	static List<ASTNode> getGroupByForClause(HiveParserQBParseInfo parseInfo, String dest) {
+		if (parseInfo.getSelForClause(dest).getToken().getType() == HiveASTParser.TOK_SELECTDI) {
+			ASTNode selectExprs = parseInfo.getSelForClause(dest);
+			List<ASTNode> result = new ArrayList<>(selectExprs == null ? 0
+					: selectExprs.getChildCount());
+			if (selectExprs != null) {
+				for (int i = 0; i < selectExprs.getChildCount(); ++i) {
+					if (((ASTNode) selectExprs.getChild(i)).getToken().getType() == HiveASTParser.QUERY_HINT) {
+						continue;
+					}
+					// table.column AS alias
+					ASTNode grpbyExpr = (ASTNode) selectExprs.getChild(i).getChild(0);
+					result.add(grpbyExpr);
+				}
+			}
+			return result;
+		} else {
+			ASTNode grpByExprs = parseInfo.getGroupByForClause(dest);
+			List<ASTNode> result = new ArrayList<>(grpByExprs == null ? 0
+					: grpByExprs.getChildCount());
+			if (grpByExprs != null) {
+				for (int i = 0; i < grpByExprs.getChildCount(); ++i) {
+					ASTNode grpbyExpr = (ASTNode) grpByExprs.getChild(i);
+					if (grpbyExpr.getType() != HiveASTParser.TOK_GROUPING_SETS_EXPRESSION) {
+						result.add(grpbyExpr);
+					}
+				}
+			}
+			return result;
+		}
+	}
+
+	static String getAliasId(String alias, HiveParserQB qb) {
+		return (qb.getId() == null ? alias : qb.getId() + ":" + alias).toLowerCase();
+	}
+
+	static RexWindowBound getBound(HiveParserWindowingSpec.BoundarySpec spec, RelOptCluster cluster) {
+		RexWindowBound res = null;
+
+		if (spec != null) {
+			SqlParserPos dummyPos = new SqlParserPos(1, 1);
+			SqlNode amt = spec.getAmt() == 0 || spec.getAmt() == HiveParserWindowingSpec.BoundarySpec.UNBOUNDED_AMOUNT ? null :
+					SqlLiteral.createExactNumeric(String.valueOf(spec.getAmt()), new SqlParserPos(2, 2));
+			RexNode amtLiteral = amt == null ? null :
+					cluster.getRexBuilder().makeLiteral(spec.getAmt(),
+							cluster.getTypeFactory().createSqlType(SqlTypeName.INTEGER), true);
+
+			switch (spec.getDirection()) {
+				case PRECEDING:
+					if (amt == null) {
+						res = RexWindowBound.create(SqlWindow.createUnboundedPreceding(dummyPos), null);
+					} else {
+						SqlCall call = (SqlCall) SqlWindow.createPreceding(amt, dummyPos);
+						res = RexWindowBound.create(call,
+								cluster.getRexBuilder().makeCall(call.getOperator(), amtLiteral));
+					}
+					break;
+
+				case CURRENT:
+					res = RexWindowBound.create(SqlWindow.createCurrentRow(dummyPos), null);
+					break;
+
+				case FOLLOWING:
+					if (amt == null) {
+						res = RexWindowBound.create(SqlWindow.createUnboundedFollowing(dummyPos), null);
+					} else {
+						SqlCall call = (SqlCall) SqlWindow.createFollowing(amt, dummyPos);
+						res = RexWindowBound.create(call,
+								cluster.getRexBuilder().makeCall(call.getOperator(), amtLiteral));
+					}
+					break;
+			}
+		}
+		return res;
+	}
+
+	public static Phase1Ctx initPhase1Ctx() {
+
+		Phase1Ctx ctx1 = new Phase1Ctx();
+		ctx1.nextNum = 0;
+		ctx1.dest = "reduce";
+
+		return ctx1;
+	}
+
+	static void warn(String msg) {
+		SessionState.getConsole().printInfo(String.format("Warning: %s", msg));
+	}
+
+	static void handleQueryWindowClauses(HiveParserQB qb, HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1, ASTNode node)
+			throws SemanticException {
+		HiveParserWindowingSpec spec = qb.getWindowingSpec(ctx1.dest);
+		for (int i = 0; i < node.getChildCount(); i++) {
+			processQueryWindowClause(spec, (ASTNode) node.getChild(i));
+		}
+	}
+
+	// Process the position alias in GROUPBY and ORDERBY
+	static void processPositionAlias(ASTNode ast, HiveConf conf) throws SemanticException {
+		boolean isBothByPos = HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS);
+		boolean isGbyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.groupby.position.alias", "false"));
+		boolean isObyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.orderby.position.alias", "true"));
+
+		Deque<ASTNode> stack = new ArrayDeque<>();
+		stack.push(ast);
+
+		while (!stack.isEmpty()) {
+			ASTNode next = stack.pop();
+
+			if (next.getChildCount() == 0) {
+				continue;
+			}
+
+			boolean isAllCol;
+			ASTNode selectNode = null;
+			ASTNode groupbyNode = null;
+			ASTNode orderbyNode = null;
+
+			// get node type
+			int childCount = next.getChildCount();
+			for (int childPos = 0; childPos < childCount; ++childPos) {
+				ASTNode node = (ASTNode) next.getChild(childPos);
+				int type = node.getToken().getType();
+				if (type == HiveASTParser.TOK_SELECT) {
+					selectNode = node;
+				} else if (type == HiveASTParser.TOK_GROUPBY) {
+					groupbyNode = node;
+				} else if (type == HiveASTParser.TOK_ORDERBY) {
+					orderbyNode = node;
+				}
+			}
+
+			if (selectNode != null) {
+				int selectExpCnt = selectNode.getChildCount();
+
+				// replace each of the position alias in GROUPBY with the actual column name
+				if (groupbyNode != null) {
+					for (int childPos = 0; childPos < groupbyNode.getChildCount(); ++childPos) {
+						ASTNode node = (ASTNode) groupbyNode.getChild(childPos);
+						if (node.getToken().getType() == HiveASTParser.Number) {
+							if (isGbyByPos) {
+								int pos = Integer.parseInt(node.getText());
+								if (pos > 0 && pos <= selectExpCnt) {
+									groupbyNode.setChild(childPos,
+											selectNode.getChild(pos - 1).getChild(0));
+								} else {
+									throw new SemanticException(
+											ErrorMsg.INVALID_POSITION_ALIAS_IN_GROUPBY.getMsg(
+													"Position alias: " + pos + " does not exist\n" +
+															"The Select List is indexed from 1 to " + selectExpCnt));
+								}
+							} else {
+								warn("Using constant number  " + node.getText() +
+										" in group by. If you try to use position alias when hive.groupby.position.alias is false, the position alias will be ignored.");
+							}
+						}
+					}
+				}
+
+				// replace each of the position alias in ORDERBY with the actual column name
+				if (orderbyNode != null) {
+					isAllCol = false;
+					for (int childPos = 0; childPos < selectNode.getChildCount(); ++childPos) {
+						ASTNode node = (ASTNode) selectNode.getChild(childPos).getChild(0);
+						if (node != null && node.getToken().getType() == HiveASTParser.TOK_ALLCOLREF) {
+							isAllCol = true;
+						}
+					}
+					for (int childPos = 0; childPos < orderbyNode.getChildCount(); ++childPos) {
+						ASTNode colNode = (ASTNode) orderbyNode.getChild(childPos).getChild(0);
+						ASTNode node = (ASTNode) colNode.getChild(0);
+						if (node != null && node.getToken().getType() == HiveASTParser.Number) {
+							if (isObyByPos) {
+								if (!isAllCol) {
+									int pos = Integer.parseInt(node.getText());
+									if (pos > 0 && pos <= selectExpCnt) {
+										colNode.setChild(0, selectNode.getChild(pos - 1).getChild(0));
+									} else {
+										throw new SemanticException(
+												ErrorMsg.INVALID_POSITION_ALIAS_IN_ORDERBY.getMsg(
+														"Position alias: " + pos + " does not exist\n" +
+																"The Select List is indexed from 1 to " + selectExpCnt));
+									}
+								} else {
+									throw new SemanticException(
+											ErrorMsg.NO_SUPPORTED_ORDERBY_ALLCOLREF_POS.getMsg());
+								}
+							} else { //if not using position alias and it is a number.
+								warn("Using constant number " + node.getText() +
+										" in order by. If you try to use position alias when hive.orderby.position.alias is false, the position alias will be ignored.");
+							}
+						}
+					}
+				}
+			}
+
+			for (int i = next.getChildren().size() - 1; i >= 0; i--) {
+				stack.push((ASTNode) next.getChildren().get(i));
+			}
+		}
+	}
+
+	static PTFInvocationSpec.PartitionSpec processPartitionSpec(ASTNode node) {
+		PTFInvocationSpec.PartitionSpec pSpec = new PTFInvocationSpec.PartitionSpec();
+		int exprCnt = node.getChildCount();
+		for (int i = 0; i < exprCnt; i++) {
+			PTFInvocationSpec.PartitionExpression exprSpec = new PTFInvocationSpec.PartitionExpression();
+			exprSpec.setExpression((ASTNode) node.getChild(i));
+			pSpec.addExpression(exprSpec);
+		}
+		return pSpec;
+	}
+
+	static HiveParserPTFInvocationSpec.OrderSpec processOrderSpec(ASTNode sortNode) {
+		HiveParserPTFInvocationSpec.OrderSpec oSpec = new HiveParserPTFInvocationSpec.OrderSpec();
+		int exprCnt = sortNode.getChildCount();
+		for (int i = 0; i < exprCnt; i++) {
+			HiveParserPTFInvocationSpec.OrderExpression exprSpec = new HiveParserPTFInvocationSpec.OrderExpression();
+			ASTNode orderSpec = (ASTNode) sortNode.getChild(i);
+			ASTNode nullOrderSpec = (ASTNode) orderSpec.getChild(0);
+			exprSpec.setExpression((ASTNode) nullOrderSpec.getChild(0));
+			if (orderSpec.getType() == HiveASTParser.TOK_TABSORTCOLNAMEASC) {
+				exprSpec.setOrder(PTFInvocationSpec.Order.ASC);
+			} else {
+				exprSpec.setOrder(PTFInvocationSpec.Order.DESC);
+			}
+			if (nullOrderSpec.getType() == HiveASTParser.TOK_NULLS_FIRST) {
+				exprSpec.setNullOrder(HiveParserPTFInvocationSpec.NullOrder.NULLS_FIRST);
+			} else {
+				exprSpec.setNullOrder(HiveParserPTFInvocationSpec.NullOrder.NULLS_LAST);
+			}
+			oSpec.addExpression(exprSpec);
+		}
+		return oSpec;
+	}
+
+	static HiveParserPTFInvocationSpec.PartitioningSpec processPTFPartitionSpec(ASTNode pSpecNode) {
+		HiveParserPTFInvocationSpec.PartitioningSpec partitioning = new HiveParserPTFInvocationSpec.PartitioningSpec();
+		ASTNode firstChild = (ASTNode) pSpecNode.getChild(0);
+		int type = firstChild.getType();
+
+		if (type == HiveASTParser.TOK_DISTRIBUTEBY || type == HiveASTParser.TOK_CLUSTERBY) {
+			PTFInvocationSpec.PartitionSpec pSpec = processPartitionSpec(firstChild);
+			partitioning.setPartSpec(pSpec);
+			ASTNode sortNode = pSpecNode.getChildCount() > 1 ? (ASTNode) pSpecNode.getChild(1) : null;
+			if (sortNode != null) {
+				HiveParserPTFInvocationSpec.OrderSpec oSpec = processOrderSpec(sortNode);
+				partitioning.setOrderSpec(oSpec);
+			}
+		} else if (type == HiveASTParser.TOK_SORTBY || type == HiveASTParser.TOK_ORDERBY) {
+			HiveParserPTFInvocationSpec.OrderSpec oSpec = processOrderSpec(firstChild);
+			partitioning.setOrderSpec(oSpec);
+		}
+		return partitioning;
+	}
+
+	static HiveParserWindowingSpec.WindowFunctionSpec processWindowFunction(ASTNode node, ASTNode wsNode)
+			throws SemanticException {
+		HiveParserWindowingSpec.WindowFunctionSpec wfSpec = new HiveParserWindowingSpec.WindowFunctionSpec();
+
+		switch (node.getType()) {
+			case HiveASTParser.TOK_FUNCTIONSTAR:
+				wfSpec.setStar(true);
+				break;
+			case HiveASTParser.TOK_FUNCTIONDI:
+				wfSpec.setDistinct(true);
+				break;
+		}
+
+		wfSpec.setExpression(node);
+
+		ASTNode nameNode = (ASTNode) node.getChild(0);
+		wfSpec.setName(nameNode.getText());
+
+		for (int i = 1; i < node.getChildCount() - 1; i++) {
+			ASTNode child = (ASTNode) node.getChild(i);
+			wfSpec.addArg(child);
+		}
+
+		if (wsNode != null) {
+			HiveParserWindowingSpec.WindowSpec ws = processWindowSpec(wsNode);
+			wfSpec.setWindowSpec(ws);
+		}
+
+		return wfSpec;
+	}
+
+	static boolean containsLeadLagUDF(ASTNode expressionTree) {
+		int exprTokenType = expressionTree.getToken().getType();
+		if (exprTokenType == HiveASTParser.TOK_FUNCTION) {
+			assert (expressionTree.getChildCount() != 0);
+			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
+				String functionName = unescapeIdentifier(expressionTree.getChild(0).getText());
+				functionName = functionName.toLowerCase();
+				if (FunctionRegistry.LAG_FUNC_NAME.equals(functionName) ||
+						FunctionRegistry.LEAD_FUNC_NAME.equals(functionName)) {
+					return true;
+				}
+			}
+		}
+		for (int i = 0; i < expressionTree.getChildCount(); i++) {
+			if (containsLeadLagUDF((ASTNode) expressionTree.getChild(i))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static void processQueryWindowClause(HiveParserWindowingSpec spec, ASTNode node)
+			throws SemanticException {
+		ASTNode nameNode = (ASTNode) node.getChild(0);
+		ASTNode wsNode = (ASTNode) node.getChild(1);
+		if (spec.getWindowSpecs() != null && spec.getWindowSpecs().containsKey(nameNode.getText())) {
+			throw new SemanticException(HiveParserUtils.generateErrorMessage(nameNode,
+					"Duplicate definition of window " + nameNode.getText() +
+							" is not allowed"));
+		}
+		HiveParserWindowingSpec.WindowSpec ws = processWindowSpec(wsNode);
+		spec.addWindowSpec(nameNode.getText(), ws);
+	}
+
+	static HiveParserWindowingSpec.WindowSpec processWindowSpec(ASTNode node) throws SemanticException {
+		boolean hasSrcId = false, hasPartSpec = false, hasWF = false;
+		int srcIdIdx = -1, partIdx = -1, wfIdx = -1;
+
+		for (int i = 0; i < node.getChildCount(); i++) {
+			int type = node.getChild(i).getType();
+			switch (type) {
+				case HiveASTParser.Identifier:
+					hasSrcId = true;
+					srcIdIdx = i;
+					break;
+				case HiveASTParser.TOK_PARTITIONINGSPEC:
+					hasPartSpec = true;
+					partIdx = i;
+					break;
+				case HiveASTParser.TOK_WINDOWRANGE:
+				case HiveASTParser.TOK_WINDOWVALUES:
+					hasWF = true;
+					wfIdx = i;
+					break;
+			}
+		}
+
+		HiveParserWindowingSpec.WindowSpec ws = new HiveParserWindowingSpec.WindowSpec();
+
+		if (hasSrcId) {
+			ASTNode nameNode = (ASTNode) node.getChild(srcIdIdx);
+			ws.setSourceId(nameNode.getText());
+		}
+
+		if (hasPartSpec) {
+			ASTNode partNode = (ASTNode) node.getChild(partIdx);
+			HiveParserPTFInvocationSpec.PartitioningSpec partitioning = processPTFPartitionSpec(partNode);
+			ws.setPartitioning(partitioning);
+		}
+
+		if (hasWF) {
+			ASTNode wfNode = (ASTNode) node.getChild(wfIdx);
+			HiveParserWindowingSpec.WindowFrameSpec wfSpec = processWindowFrame(wfNode);
+			ws.setWindowFrame(wfSpec);
+		}
+		return ws;
+	}
+
+	static HiveParserWindowingSpec.WindowFrameSpec processWindowFrame(ASTNode node) throws SemanticException {
+		int type = node.getType();
+		HiveParserWindowingSpec.BoundarySpec start = null, end = null;
+		// A WindowFrame may contain just the Start Boundary or in the between style of expressing
+		// a WindowFrame both boundaries are specified.
+		start = processBoundary((ASTNode) node.getChild(0));
+		if (node.getChildCount() > 1) {
+			end = processBoundary((ASTNode) node.getChild(1));
+		}
+		// Note: TOK_WINDOWVALUES means RANGE type, TOK_WINDOWRANGE means ROWS type
+		return new HiveParserWindowingSpec.WindowFrameSpec(type == HiveASTParser.TOK_WINDOWVALUES ? HiveParserWindowingSpec.WindowType.RANGE : HiveParserWindowingSpec.WindowType.ROWS, start, end);
+	}
+
+	static HiveParserWindowingSpec.BoundarySpec processBoundary(ASTNode node) throws SemanticException {
+		HiveParserWindowingSpec.BoundarySpec bs = new HiveParserWindowingSpec.BoundarySpec();
+		int type = node.getType();
+		boolean hasAmt = true;
+
+		switch (type) {
+			case HiveASTParser.KW_PRECEDING:
+				bs.setDirection(WindowingSpec.Direction.PRECEDING);
+				break;
+			case HiveASTParser.KW_FOLLOWING:
+				bs.setDirection(WindowingSpec.Direction.FOLLOWING);
+				break;
+			case HiveASTParser.KW_CURRENT:
+				bs.setDirection(WindowingSpec.Direction.CURRENT);
+				hasAmt = false;
+				break;
+		}
+
+		if (hasAmt) {
+			ASTNode amtNode = (ASTNode) node.getChild(0);
+			if (amtNode.getType() == HiveASTParser.KW_UNBOUNDED) {
+				bs.setAmt(HiveParserWindowingSpec.BoundarySpec.UNBOUNDED_AMOUNT);
+			} else {
+				int amt = Integer.parseInt(amtNode.getText());
+				if (amt <= 0) {
+					throw new SemanticException(
+							"Window Frame Boundary Amount must be a positive integer, provided amount is: " + amt);
+				}
+				bs.setAmt(amt);
+			}
+		}
+		return bs;
+	}
+
+	static void removeOBInSubQuery(HiveParserQBExpr qbExpr) {
+		if (qbExpr == null) {
+			return;
+		}
+
+		if (qbExpr.getOpcode() == HiveParserQBExpr.Opcode.NULLOP) {
+			HiveParserQB subQB = qbExpr.getQB();
+			HiveParserQBParseInfo parseInfo = subQB.getParseInfo();
+			String alias = qbExpr.getAlias();
+			Map<String, ASTNode> destToOrderBy = parseInfo.getDestToOrderBy();
+			Map<String, ASTNode> destToSortBy = parseInfo.getDestToSortBy();
+			final String warning = "WARNING: Order/Sort by without limit in sub query or view [" +
+					alias + "] is removed, as it's pointless and bad for performance.";
+			if (destToOrderBy != null) {
+				for (String dest : destToOrderBy.keySet()) {
+					if (parseInfo.getDestLimit(dest) == null) {
+						removeASTChild(destToOrderBy.get(dest));
+						destToOrderBy.remove(dest);
+						LOG.warn(warning);
+					}
+				}
+			}
+			if (destToSortBy != null) {
+				for (String dest : destToSortBy.keySet()) {
+					if (parseInfo.getDestLimit(dest) == null) {
+						removeASTChild(destToSortBy.get(dest));
+						destToSortBy.remove(dest);
+						LOG.warn(warning);
+					}
+				}
+			}
+			// recursively check sub-queries
+			for (String subAlias : subQB.getSubqAliases()) {
+				removeOBInSubQuery(subQB.getSubqForAlias(subAlias));
+			}
+		} else {
+			removeOBInSubQuery(qbExpr.getQBExpr1());
+			removeOBInSubQuery(qbExpr.getQBExpr2());
+		}
+	}
+
+	static TableType obtainTableType(Table tabMetaData) {
+		if (tabMetaData.getStorageHandler() != null &&
+				tabMetaData.getStorageHandler().toString().equals(
+						HiveParserConstants.DRUID_HIVE_STORAGE_HANDLER_ID)) {
+			return TableType.DRUID;
+		}
+		return TableType.NATIVE;
+	}
+
+	/* This method returns the flip big-endian representation of value */
+	static ImmutableBitSet convert(int value, int length) {
+		BitSet bits = new BitSet();
+		for (int index = length - 1; index >= 0; index--) {
+			if (value % 2 != 0) {
+				bits.set(index);
+			}
+			value = value >>> 1;
+		}
+		// We flip the bits because Calcite considers that '1'
+		// means that the column participates in the GroupBy
+		// and '0' does not, as opposed to grouping_id.
+		bits.flip(0, length);
+		return ImmutableBitSet.fromBitSet(bits);
+	}
+
+	static Map<String, Integer> buildHiveColNameToInputPosMap(
+			List<ExprNodeDesc> colList, HiveParserRowResolver inputRR) {
+		// Build a map of Hive column Names (ExprNodeColumnDesc Name) to the positions of those projections in the input
+		Map<Integer, ExprNodeDesc> hashCodeToColumnDesc = new HashMap<>();
+		HiveParserExprNodeDescUtils.getExprNodeColumnDesc(colList, hashCodeToColumnDesc);
+		Map<String, Integer> res = new HashMap<>();
+		String exprNodecolName;
+		for (ExprNodeDesc exprDesc : hashCodeToColumnDesc.values()) {
+			exprNodecolName = ((ExprNodeColumnDesc) exprDesc).getColumn();
+			res.put(exprNodecolName, inputRR.getPosition(exprNodecolName));
+		}
+
+		return res;
+	}
+
+	static Map<String, Integer> buildHiveToCalciteColumnMap(HiveParserRowResolver rr) {
+		Map<String, Integer> map = new HashMap<>();
+		for (ColumnInfo ci : rr.getRowSchema().getSignature()) {
+			map.put(ci.getInternalName(), rr.getPosition(ci.getInternalName()));
+		}
+		return Collections.unmodifiableMap(map);
+	}
+
+	static org.apache.calcite.util.Pair<List<CorrelationId>, ImmutableBitSet> getCorrelationUse(RexCall call) {
+		List<CorrelationId> correlIDs = new ArrayList<>();
+		ImmutableBitSet.Builder requiredColumns = ImmutableBitSet.builder();
+		call.accept(new HiveParserUtils.CorrelationCollector(correlIDs, requiredColumns));
+		if (correlIDs.isEmpty()) {
+			return null;
+		}
+		return org.apache.calcite.util.Pair.of(correlIDs, requiredColumns.build());
+	}
+
+	static boolean topLevelConjunctCheck(ASTNode searchCond, ObjectPair<Boolean, Integer> subqInfo) {
+		if (searchCond.getType() == HiveASTParser.KW_OR) {
+			subqInfo.setFirst(Boolean.TRUE);
+			if (subqInfo.getSecond() > 1) {
+				return false;
+			}
+		}
+		if (searchCond.getType() == HiveASTParser.TOK_SUBQUERY_EXPR) {
+			subqInfo.setSecond(subqInfo.getSecond() + 1);
+			return subqInfo.getSecond() <= 1 || !subqInfo.getFirst();
+		}
+		for (int i = 0; i < searchCond.getChildCount(); i++) {
+			boolean validSubQuery = topLevelConjunctCheck((ASTNode) searchCond.getChild(i), subqInfo);
+			if (!validSubQuery) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static void addToGBExpr(HiveParserRowResolver groupByOutputRowResolver,
+			HiveParserRowResolver groupByInputRowResolver, ASTNode grpbyExpr, ExprNodeDesc grpbyExprNDesc,
+			List<ExprNodeDesc> gbExprNDescLst, List<String> outputColumnNames) {
+		// TODO: Should we use grpbyExprNDesc.getTypeInfo()? what if expr is UDF
+		int i = gbExprNDescLst.size();
+		String field = getColumnInternalName(i);
+		outputColumnNames.add(field);
+		gbExprNDescLst.add(grpbyExprNDesc);
+
+		ColumnInfo outColInfo = new ColumnInfo(field, grpbyExprNDesc.getTypeInfo(), null, false);
+		groupByOutputRowResolver.putExpression(grpbyExpr, outColInfo);
+
+		addAlternateGByKeyMappings(grpbyExpr, outColInfo, groupByInputRowResolver, groupByOutputRowResolver);
+	}
+
+	static int getWindowSpecIndx(ASTNode wndAST) {
+		int wi = wndAST.getChildCount() - 1;
+		if (wi <= 0 || (wndAST.getChild(wi).getType() != HiveASTParser.TOK_WINDOWSPEC)) {
+			wi = -1;
+		}
+		return wi;
+	}
+
+	private static void addAlternateGByKeyMappings(ASTNode gByExpr, ColumnInfo colInfo,
+			HiveParserRowResolver inputRR, HiveParserRowResolver outputRR) {
+		if (gByExpr.getType() == HiveASTParser.DOT
+				&& gByExpr.getChild(0).getType() == HiveASTParser.TOK_TABLE_OR_COL) {
+			String tabAlias = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(gByExpr.getChild(0).getChild(0).getText().toLowerCase());
+			String colAlias = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(gByExpr.getChild(1).getText().toLowerCase());
+			outputRR.put(tabAlias, colAlias, colInfo);
+		} else if (gByExpr.getType() == HiveASTParser.TOK_TABLE_OR_COL) {
+			String colAlias = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(gByExpr.getChild(0).getText().toLowerCase());
+			String tabAlias = null;
+			/*
+			 * If the input to the GBy has a table alias for the column, then add an entry based on that tab_alias.
+			 * For e.g. this query: select b.x, count(*) from t1 b group by x needs (tab_alias=b, col_alias=x) in the
+			 * GBy RR. tab_alias=b comes from looking at the HiveParserRowResolver that is the
+			 * ancestor before any GBy/ReduceSinks added for the GBY operation.
+			 */
+			try {
+				ColumnInfo pColInfo = inputRR.get(tabAlias, colAlias);
+				tabAlias = pColInfo == null ? null : pColInfo.getTabAlias();
+			} catch (SemanticException se) {
+			}
+			outputRR.put(tabAlias, colAlias, colInfo);
+		}
+	}
+
+	// We support having referring alias just as in hive's semantic analyzer. This check only prints a warning now.
+	static void validateNoHavingReferenceToAlias(HiveParserQB qb, ASTNode havingExpr, HiveParserRowResolver inputRR, HiveParserSemanticAnalyzer semanticAnalyzer)
+			throws SemanticException {
+		HiveParserQBParseInfo qbPI = qb.getParseInfo();
+		Map<ASTNode, String> exprToAlias = qbPI.getAllExprToColumnAlias();
+
+		for (Map.Entry<ASTNode, String> exprAndAlias : exprToAlias.entrySet()) {
+			final ASTNode expr = exprAndAlias.getKey();
+			final String alias = exprAndAlias.getValue();
+			// put the alias in input RR so that we can generate ExprNodeDesc with it
+			if (inputRR.getExpression(expr) != null) {
+				inputRR.put("", alias, inputRR.getExpression(expr));
+			}
+			final Set<Object> aliasReferences = new HashSet<>();
+
+			TreeVisitorAction action = new TreeVisitorAction() {
+				@Override
+				public Object pre(Object t) {
+					if (HiveASTParseDriver.ADAPTOR.getType(t) == HiveASTParser.TOK_TABLE_OR_COL) {
+						Object c = HiveASTParseDriver.ADAPTOR.getChild(t, 0);
+						if (c != null && HiveASTParseDriver.ADAPTOR.getType(c) == HiveASTParser.Identifier
+								&& HiveASTParseDriver.ADAPTOR.getText(c).equals(alias)) {
+							aliasReferences.add(t);
+						}
+					}
+					return t;
+				}
+
+				@Override
+				public Object post(Object t) {
+					return t;
+				}
+			};
+			new TreeVisitor(HiveASTParseDriver.ADAPTOR).visit(havingExpr, action);
+
+			if (aliasReferences.size() > 0) {
+				String havingClause = semanticAnalyzer.ctx.getTokenRewriteStream().toString(
+						havingExpr.getTokenStartIndex(), havingExpr.getTokenStopIndex());
+				String msg = String.format("Encountered Select alias '%s' in having clause '%s'"
+						+ " This is non standard behavior.", alias, havingClause);
+				LOG.warn(msg);
+			}
+		}
+	}
+
+	static List<RexNode> getPartitionKeys(PTFInvocationSpec.PartitionSpec partitionSpec, HiveParserRexNodeConverter converter,
+			HiveParserRowResolver inputRR, HiveParserTypeCheckCtx typeCheckCtx, HiveParserSemanticAnalyzer semanticAnalyzer) throws SemanticException {
+		List<RexNode> res = new ArrayList<>();
+		if (partitionSpec != null) {
+			List<PTFInvocationSpec.PartitionExpression> expressions = partitionSpec.getExpressions();
+			for (PTFInvocationSpec.PartitionExpression expression : expressions) {
+				typeCheckCtx.setAllowStatefulFunctions(true);
+				ExprNodeDesc exp = semanticAnalyzer.genExprNodeDesc(expression.getExpression(), inputRR, typeCheckCtx);
+				res.add(converter.convert(exp));
+			}
+		}
+		return res;
+	}
+
+	static List<RexFieldCollation> getOrderKeys(HiveParserPTFInvocationSpec.OrderSpec orderSpec, HiveParserRexNodeConverter converter,
+			HiveParserRowResolver inputRR, HiveParserTypeCheckCtx typeCheckCtx, HiveParserSemanticAnalyzer semanticAnalyzer) throws SemanticException {
+		List<RexFieldCollation> orderKeys = new ArrayList<>();
+		if (orderSpec != null) {
+			List<HiveParserPTFInvocationSpec.OrderExpression> oExprs = orderSpec.getExpressions();
+			for (HiveParserPTFInvocationSpec.OrderExpression oExpr : oExprs) {
+				typeCheckCtx.setAllowStatefulFunctions(true);
+				ExprNodeDesc exp = semanticAnalyzer.genExprNodeDesc(oExpr.getExpression(), inputRR, typeCheckCtx);
+				RexNode ordExp = converter.convert(exp);
+				Set<SqlKind> flags = new HashSet<>();
+				if (oExpr.getOrder() == PTFInvocationSpec.Order.DESC) {
+					flags.add(SqlKind.DESCENDING);
+				}
+				if (oExpr.getNullOrder() == HiveParserPTFInvocationSpec.NullOrder.NULLS_FIRST) {
+					flags.add(SqlKind.NULLS_FIRST);
+				} else if (oExpr.getNullOrder() == HiveParserPTFInvocationSpec.NullOrder.NULLS_LAST) {
+					flags.add(SqlKind.NULLS_LAST);
+				} else {
+					throw new SemanticException("Unexpected null ordering option: " + oExpr.getNullOrder());
+				}
+				orderKeys.add(new RexFieldCollation(ordExp, flags));
+			}
+		}
+
+		return orderKeys;
+	}
+
+	static AggInfo getHiveAggInfo(ASTNode aggAst, int aggFnLstArgIndx, HiveParserRowResolver inputRR,
+			HiveParserWindowingSpec.WindowFunctionSpec winFuncSpec, HiveParserSemanticAnalyzer semanticAnalyzer,
+			FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
+		AggInfo aInfo;
+
+		// 1 Convert UDAF Params to ExprNodeDesc
+		ArrayList<ExprNodeDesc> aggParameters = new ArrayList<>();
+		for (int i = 1; i <= aggFnLstArgIndx; i++) {
+			ASTNode paraExpr = (ASTNode) aggAst.getChild(i);
+			ExprNodeDesc paraExprNode = semanticAnalyzer.genExprNodeDesc(paraExpr, inputRR);
+			aggParameters.add(paraExprNode);
+		}
+
+		// 2. Is this distinct UDAF
+		boolean isDistinct = aggAst.getType() == HiveASTParser.TOK_FUNCTIONDI;
+
+		// 3. Determine type of UDAF
+		TypeInfo udafRetType = null;
+
+		// 3.1 Obtain UDAF name
+		String aggName = unescapeIdentifier(aggAst.getChild(0).getText());
+
+		boolean isAllColumns = false;
+
+		// 3.2 Rank functions type is 'int'/'double'
+		if (FunctionRegistry.isRankingFunction(aggName)) {
+			if (aggName.equalsIgnoreCase("percent_rank")) {
+				udafRetType = TypeInfoFactory.doubleTypeInfo;
+			} else {
+				udafRetType = TypeInfoFactory.intTypeInfo;
+			}
+			// set arguments for rank functions
+			for (HiveParserPTFInvocationSpec.OrderExpression orderExpr : winFuncSpec.windowSpec.getOrder().getExpressions()) {
+				aggParameters.add(semanticAnalyzer.genExprNodeDesc(orderExpr.getExpression(), inputRR));
+			}
+		} else {
+			// 3.3 Try obtaining UDAF evaluators to determine the ret type
+			try {
+				isAllColumns = aggAst.getType() == HiveASTParser.TOK_FUNCTIONSTAR;
+
+				// 3.3.1 Get UDAF Evaluator
+				GenericUDAFEvaluator.Mode amode = HiveParserUtils.groupByDescModeToUDAFMode(GroupByDesc.Mode.COMPLETE,
+						isDistinct);
+
+				GenericUDAFEvaluator genericUDAFEvaluator;
+				if (aggName.toLowerCase().equals(FunctionRegistry.LEAD_FUNC_NAME)
+						|| aggName.toLowerCase().equals(FunctionRegistry.LAG_FUNC_NAME)) {
+					ArrayList<ObjectInspector> originalParameterTypeInfos = HiveParserUtils
+							.getWritableObjectInspector(aggParameters);
+					genericUDAFEvaluator = FunctionRegistry.getGenericWindowingEvaluator(aggName,
+							originalParameterTypeInfos, isDistinct, isAllColumns);
+					HiveParserBaseSemanticAnalyzer.GenericUDAFInfo udaf = HiveParserUtils.getGenericUDAFInfo(
+							genericUDAFEvaluator, amode, aggParameters);
+					udafRetType = ((ListTypeInfo) udaf.returnType).getListElementTypeInfo();
+				} else {
+					genericUDAFEvaluator = HiveParserUtils.getGenericUDAFEvaluator(aggName, aggParameters,
+							aggAst, isDistinct, isAllColumns, frameworkConfig.getOperatorTable());
+
+					// 3.3.2 Get UDAF Info using UDAF Evaluator
+					HiveParserBaseSemanticAnalyzer.GenericUDAFInfo udaf = HiveParserUtils.getGenericUDAFInfo(genericUDAFEvaluator, amode,
+							aggParameters);
+					if (HiveParserUtils.pivotResult(aggName)) {
+						udafRetType = ((ListTypeInfo) udaf.returnType).getListElementTypeInfo();
+					} else {
+						udafRetType = udaf.returnType;
+					}
+				}
+			} catch (Exception e) {
+				LOG.debug("CBO: Couldn't Obtain UDAF evaluators for " + aggName
+						+ ", trying to translate to GenericUDF");
+			}
+
+			// 3.4 Try GenericUDF translation
+			if (udafRetType == null) {
+				HiveParserTypeCheckCtx tcCtx = new HiveParserTypeCheckCtx(inputRR, frameworkConfig, cluster);
+				// We allow stateful functions in the SELECT list (but nowhere else)
+				tcCtx.setAllowStatefulFunctions(true);
+				tcCtx.setAllowDistinctFunctions(false);
+				ExprNodeDesc exp = semanticAnalyzer.genExprNodeDesc((ASTNode) aggAst.getChild(0), inputRR, tcCtx);
+				udafRetType = exp.getTypeInfo();
+			}
+		}
+
+		// 4. Construct AggInfo
+		aInfo = new AggInfo(aggParameters, udafRetType, aggName, isDistinct, isAllColumns);
+
+		return aInfo;
+	}
+
+	static AggregateCall toAggCall(AggInfo aggInfo, HiveParserRexNodeConverter converter, Map<String, Integer> rexNodeToPos,
+			int groupCount, RelNode input, RelOptCluster cluster, ConvertSqlFunctionCopier funcConverter) throws SemanticException {
+		// 1. Get agg fn ret type in Calcite
+		RelDataType aggFnRetType = HiveParserUtils.toRelDataType(aggInfo.getReturnType(), cluster.getTypeFactory());
+
+		// 2. Convert Agg Fn args and type of args to Calcite
+		// TODO: Does HQL allows expressions as aggregate args or can it only be projections from child?
+		List<Integer> argIndices = new ArrayList<>();
+		RelDataTypeFactory typeFactory = cluster.getTypeFactory();
+		List<RelDataType> calciteArgTypes = new ArrayList<>();
+		for (ExprNodeDesc expr : aggInfo.getAggParams()) {
+			RexNode paramRex = converter.convert(expr).accept(funcConverter);
+			Integer argIndex = Preconditions.checkNotNull(rexNodeToPos.get(paramRex.toString()));
+			argIndices.add(argIndex);
+
+			// TODO: does arg need type cast?
+			calciteArgTypes.add(HiveParserUtils.toRelDataType(expr.getTypeInfo(), typeFactory));
+		}
+
+		// 3. Get Aggregation FN from Calcite given name, ret type and input arg type
+		final SqlAggFunction aggFunc = HiveParserSqlFunctionConverter.getCalciteAggFn(aggInfo.getUdfName(), aggInfo.isDistinct(),
+				calciteArgTypes, aggFnRetType);
+
+		// If we have input arguments, set type to null (instead of aggFnRetType) to let AggregateCall
+		// infer the type, so as to avoid nullability mismatch
+		RelDataType type = null;
+		if (aggInfo.isAllColumns() && argIndices.isEmpty()) {
+			type = aggFnRetType;
+		}
+		return AggregateCall.create((SqlAggFunction) funcConverter.convertOperator(aggFunc), aggInfo.isDistinct(),
+				false, false, argIndices, -1, RelCollations.EMPTY, groupCount, input, type, null);
+	}
+
+	static RelNode genValues(String tabAlias, Table tmpTable, HiveParserRowResolver rowResolver,
+			HiveParserSemanticAnalyzer semanticAnalyzer, RelOptCluster cluster) {
+		try {
+			Path dataFile = new Path(tmpTable.getSd().getLocation(), "data_file");
+			FileSystem fs = dataFile.getFileSystem(semanticAnalyzer.getConf());
+			List<List<RexLiteral>> rows = new ArrayList<>();
+			// TODO: leverage Hive to read the data
+			try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(dataFile)))) {
+				List<TypeInfo> tmpTableTypes = tmpTable.getCols().stream()
+						.map(f -> TypeInfoUtils.getTypeInfoFromTypeString(f.getType())).collect(Collectors.toList());
+
+				RexBuilder rexBuilder = cluster.getRexBuilder();
+
+				// calcite types for each field
+				List<RelDataType> calciteTargetTypes = tmpTableTypes.stream()
+						.map(i -> HiveParserTypeConverter.convert((PrimitiveTypeInfo) i, rexBuilder.getTypeFactory()))
+						.collect(Collectors.toList());
+
+				// calcite field names
+				List<String> calciteFieldNames = IntStream.range(0, calciteTargetTypes.size())
+						.mapToObj(SqlUtil::deriveAliasFromOrdinal).collect(Collectors.toList());
+
+				// calcite type for each row
+				List<RelDataType> calciteRowTypes = new ArrayList<>();
+
+				String line = reader.readLine();
+				while (line != null) {
+					String[] values = line.split("\u0001");
+					List<RexLiteral> row = new ArrayList<>();
+					for (int i = 0; i < tmpTableTypes.size(); i++) {
+						PrimitiveTypeInfo primitiveTypeInfo = (PrimitiveTypeInfo) tmpTableTypes.get(i);
+						RelDataType calciteType = calciteTargetTypes.get(i);
+						if (i >= values.length || values[i].equals("\\N")) {
+							row.add(rexBuilder.makeNullLiteral(calciteType));
+						} else {
+							String val = values[i];
+							switch (primitiveTypeInfo.getPrimitiveCategory()) {
+								case BYTE:
+								case SHORT:
+								case INT:
+								case LONG:
+									row.add(rexBuilder.makeExactLiteral(new BigDecimal(val), calciteType));
+									break;
+								case DECIMAL:
+									BigDecimal bigDec = new BigDecimal(val);
+									row.add(SqlTypeUtil.isValidDecimalValue(bigDec, calciteType) ?
+											rexBuilder.makeExactLiteral(bigDec, calciteType) :
+											rexBuilder.makeNullLiteral(calciteType));
+									break;
+								case FLOAT:
+								case DOUBLE:
+									row.add(rexBuilder.makeApproxLiteral(new BigDecimal(val), calciteType));
+									break;
+								case BOOLEAN:
+									row.add(rexBuilder.makeLiteral(Boolean.parseBoolean(val)));
+									break;
+								default:
+									row.add(rexBuilder.makeCharLiteral(HiveParserUtils.asUnicodeString(val)));
+							}
+						}
+					}
+
+					calciteRowTypes.add(rexBuilder.getTypeFactory().createStructType(
+							row.stream().map(RexLiteral::getType).collect(Collectors.toList()),
+							calciteFieldNames));
+					rows.add(row);
+					line = reader.readLine();
+				}
+
+				// compute the final row type
+				RelDataType calciteRowType = rexBuilder.getTypeFactory().leastRestrictive(calciteRowTypes);
+				for (int i = 0; i < calciteFieldNames.size(); i++) {
+					ColumnInfo colInfo = new ColumnInfo(calciteFieldNames.get(i),
+							HiveParserTypeConverter.convert(calciteRowType.getFieldList().get(i).getType()),
+							tabAlias, false);
+					rowResolver.put(tabAlias, calciteFieldNames.get(i), colInfo);
+				}
+				return HiveParserUtils.genValuesRelNode(cluster,
+						rexBuilder.getTypeFactory().createStructType(calciteRowType.getFieldList()), rows);
+			}
+		} catch (Exception e) {
+			throw new FlinkHiveException("Failed to convert temp table to LogicalValues", e);
+		}
+	}
+
 	private static void validatePartColumnType(Table tbl, Map<String, String> partSpec,
 			ASTNode astNode, HiveConf conf, FrameworkConfig frameworkConfig, RelOptCluster cluster) throws SemanticException {
 		if (!HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_TYPE_CHECK_ON_INSERT)) {
@@ -747,7 +1819,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * TableSpec.
+	 * Counterpart of hive's TableSpec.
 	 */
 	public static class TableSpec {
 		public String tableName;
@@ -910,9 +1982,9 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * AnalyzeRewriteContext.
+	 * Counterpart of hive's AnalyzeRewriteContext.
 	 */
-	public class AnalyzeRewriteContext {
+	public static class AnalyzeRewriteContext {
 
 		private String tableName;
 		private List<String> colName;
@@ -953,6 +2025,9 @@ public class HiveParserBaseSemanticAnalyzer {
 
 	}
 
+	/**
+	 * Counterpart of hive's PKInfo.
+	 */
 	private static class PKInfo {
 		public String colName;
 		public String constraintName;
@@ -962,6 +2037,93 @@ public class HiveParserBaseSemanticAnalyzer {
 			this.colName = colName;
 			this.constraintName = constraintName;
 			this.rely = rely;
+		}
+	}
+
+	/**
+	 * Counterpart of hive's CTEClause.
+	 */
+	static class CTEClause {
+		CTEClause(String alias, ASTNode cteNode) {
+			this.alias = alias;
+			this.cteNode = cteNode;
+		}
+
+		String alias;
+		ASTNode cteNode;
+		boolean materialize;
+		int reference;
+		HiveParserQBExpr qbExpr;
+		List<CTEClause> parents = new ArrayList<>();
+
+		@Override
+		public String toString() {
+			return alias == null ? "<root>" : alias;
+		}
+	}
+
+	/**
+	 * Counterpart of hive's Phase1Ctx.
+	 */
+	static class Phase1Ctx {
+		String dest;
+		int nextNum;
+	}
+
+	/**
+	 * Counterpart of hive's GenericUDAFInfo.
+	 */
+	public static class GenericUDAFInfo {
+		public ArrayList<ExprNodeDesc> convertedParameters;
+		public GenericUDAFEvaluator genericUDAFEvaluator;
+		public TypeInfo returnType;
+	}
+
+	/**
+	 * Type of a hive table.
+	 */
+	public enum TableType {
+		DRUID,
+		NATIVE
+	}
+
+	/**
+	 * Counterpart of hive's AggInfo.
+	 */
+	static class AggInfo {
+		private final List<ExprNodeDesc> aggParams;
+		private final TypeInfo returnType;
+		private final String udfName;
+		private final boolean distinct;
+		private final boolean isAllColumns;
+
+		AggInfo(List<ExprNodeDesc> aggParams, TypeInfo returnType, String udfName,
+				boolean isDistinct, boolean isAllColumns) {
+			this.aggParams = aggParams;
+			this.returnType = returnType;
+			this.udfName = udfName;
+			distinct = isDistinct;
+			this.isAllColumns = isAllColumns;
+		}
+
+		public List<ExprNodeDesc> getAggParams() {
+			return aggParams;
+		}
+
+		public TypeInfo getReturnType() {
+			return returnType;
+		}
+
+		public String getUdfName() {
+			return udfName;
+		}
+
+		public boolean isDistinct() {
+			return distinct;
+		}
+
+		public boolean isAllColumns() {
+			return isAllColumns;
 		}
 	}
 }

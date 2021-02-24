@@ -555,13 +555,6 @@ public class HiveParserQBSubQuery {
 				originalSQASTOrigin.getUsageNode());
 	}
 
-	/**
-	 * @param parentQueryRR
-	 * @param forHavingClause
-	 * @param outerQueryAlias
-	 * @return true if it is correlated scalar subquery with an aggregate
-	 * @throws SemanticException
-	 */
 	boolean subqueryRestrictionsCheck(HiveParserRowResolver parentQueryRR,
 			boolean forHavingClause,
 			String outerQueryAlias)

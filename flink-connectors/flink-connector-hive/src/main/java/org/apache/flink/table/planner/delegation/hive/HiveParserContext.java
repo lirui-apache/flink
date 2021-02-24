@@ -316,7 +316,7 @@ public class HiveParserContext {
 			if (mkdir) {
 				try {
 					boolean inheritPerms = Boolean.parseBoolean(conf.get("hive.warehouse.subdir.inherit.perms", "true"));
-					if (!HiveParserUtils.mkdir(fs, dir, inheritPerms, conf)) {
+					if (!fs.mkdirs(dir)) {
 						throw new IllegalStateException("Cannot create staging directory  '" + dir.toString() + "'");
 					}
 

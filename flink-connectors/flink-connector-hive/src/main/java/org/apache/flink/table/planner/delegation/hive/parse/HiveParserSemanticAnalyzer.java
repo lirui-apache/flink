@@ -28,15 +28,9 @@ import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 import org.apache.flink.table.planner.delegation.hive.lib.HiveParserDefaultGraphWalker;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.TableSpec;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.TableSpec.SpecType;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserPTFInvocationSpec.OrderExpression;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserPTFInvocationSpec.OrderSpec;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserPTFInvocationSpec.PartitionedTableFunctionSpec;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserPTFInvocationSpec.PartitioningSpec;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserWindowingSpec.BoundarySpec;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserWindowingSpec.WindowFrameSpec;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserWindowingSpec.WindowFunctionSpec;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserWindowingSpec.WindowSpec;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserWindowingSpec.WindowType;
 
 import org.antlr.runtime.ClassicToken;
 import org.antlr.runtime.Token;
@@ -79,18 +73,14 @@ import org.apache.hadoop.hive.ql.parse.ASTNodeOrigin;
 import org.apache.hadoop.hive.ql.parse.ColumnAccessInfo;
 import org.apache.hadoop.hive.ql.parse.GlobalLimitCtx;
 import org.apache.hadoop.hive.ql.parse.JoinType;
-import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.Order;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFInputSpec;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFQueryInputSpec;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFQueryInputType;
-import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionExpression;
-import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PartitionSpec;
 import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.SplitSample;
 import org.apache.hadoop.hive.ql.parse.StorageFormat;
 import org.apache.hadoop.hive.ql.parse.TableSample;
-import org.apache.hadoop.hive.ql.parse.WindowingSpec.Direction;
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.apache.hadoop.hive.ql.plan.CreateViewDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -100,18 +90,14 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.PlanUtils;
 import org.apache.hadoop.hive.ql.session.SessionState;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFEvaluator;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.mapred.InputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -123,17 +109,27 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.containsLeadLagUDF;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.doPhase1GetDistinctFuncExprs;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.findSimpleTableName;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.findTabRefIdxs;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getAliasId;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getColumnInternalName;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getQualifiedTableName;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getUnescapedName;
-import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getUnescapedUnqualifiedTableName;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.handleQueryWindowClauses;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.initPhase1Ctx;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.processPTFPartitionSpec;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.processWindowFunction;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.readProps;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.stripQuotes;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeSQLString;
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unparseExprForValuesClause;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.validatePartSpec;
 
 /**
- * Copied from hive-2.3.4 and adapted to our needs.
+ * Counterpart of hive's SemanticAnalyzer and adapted to our needs.
  */
 public class HiveParserSemanticAnalyzer {
 
@@ -184,7 +180,7 @@ public class HiveParserSemanticAnalyzer {
 	protected final boolean defaultJoinMerge;
 
 	// Capture the CTE definitions in a Query.
-	final Map<String, CTEClause> aliasToCTEs;
+	final Map<String, HiveParserBaseSemanticAnalyzer.CTEClause> aliasToCTEs;
 
 	// Used to check recursive CTE invocations. Similar to viewsExpanded
 	ArrayList<String> ctesExpanded;
@@ -257,7 +253,7 @@ public class HiveParserSemanticAnalyzer {
 		return queryProperties;
 	}
 
-	protected void reset(boolean clearPartsCache) {
+	private void reset(boolean clearPartsCache) {
 		if (clearPartsCache) {
 			prunedPartitions.clear();
 			//When init(true) combine with genResolvedParseTree, it will generate Resolved Parse tree from syntax tree
@@ -297,7 +293,7 @@ public class HiveParserSemanticAnalyzer {
 		if (ast.getToken().getType() == HiveASTParser.TOK_QUERY) {
 			HiveParserQB qb = new HiveParserQB(id, alias, true);
 			qb.setInsideView(insideView);
-			Phase1Ctx ctx1 = initPhase1Ctx();
+			HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1 = initPhase1Ctx();
 			doPhase1(ast, qb, ctx1, null);
 
 			qbexpr.setOpcode(HiveParserQBExpr.Opcode.NULLOP);
@@ -418,7 +414,6 @@ public class HiveParserSemanticAnalyzer {
 			}
 			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
 				String functionName = unescapeIdentifier(expressionTree.getChild(0).getText());
-				// Validate the function name
 				SqlOperator sqlOperator = HiveParserUtils.getAnySqlOperator(functionName, frameworkConfig.getOperatorTable());
 				if (sqlOperator == null) {
 					throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(functionName));
@@ -443,59 +438,10 @@ public class HiveParserSemanticAnalyzer {
 		}
 	}
 
-	private List<ASTNode> doPhase1GetDistinctFuncExprs(
-			HashMap<String, ASTNode> aggregationTrees) throws SemanticException {
-		List<ASTNode> exprs = new ArrayList<ASTNode>();
-		for (Map.Entry<String, ASTNode> entry : aggregationTrees.entrySet()) {
-			ASTNode value = entry.getValue();
-			assert (value != null);
-			if (value.getToken().getType() == HiveASTParser.TOK_FUNCTIONDI) {
-				exprs.add(value);
-			}
-		}
-		return exprs;
-	}
-
-	int[] findTabRefIdxs(ASTNode tabref) {
-		assert tabref.getType() == HiveASTParser.TOK_TABREF;
-		int aliasIndex = 0;
-		int propsIndex = -1;
-		int tsampleIndex = -1;
-		int ssampleIndex = -1;
-		for (int index = 1; index < tabref.getChildCount(); index++) {
-			ASTNode ct = (ASTNode) tabref.getChild(index);
-			if (ct.getToken().getType() == HiveASTParser.TOK_TABLEBUCKETSAMPLE) {
-				tsampleIndex = index;
-			} else if (ct.getToken().getType() == HiveASTParser.TOK_TABLESPLITSAMPLE) {
-				ssampleIndex = index;
-			} else if (ct.getToken().getType() == HiveASTParser.TOK_TABLEPROPERTIES) {
-				propsIndex = index;
-			} else {
-				aliasIndex = index;
-			}
-		}
-		return new int[]{aliasIndex, propsIndex, tsampleIndex, ssampleIndex};
-	}
-
-	String findSimpleTableName(ASTNode tabref, int aliasIndex) {
-		assert tabref.getType() == HiveASTParser.TOK_TABREF;
-		ASTNode tableTree = (ASTNode) (tabref.getChild(0));
-
-		String alias;
-		if (aliasIndex != 0) {
-			alias = unescapeIdentifier(tabref.getChild(aliasIndex).getText());
-		} else {
-			alias = getUnescapedUnqualifiedTableName(tableTree);
-		}
-		return alias;
-	}
-
 	/**
 	 * Goes though the tabref tree and finds the alias for the table. Once found,
 	 * it records the table name-> alias association in aliasToTabs. It also makes
 	 * an association from the alias to the table AST in parse info.
-	 *
-	 * @return the alias of the table
 	 */
 	private String processTable(HiveParserQB qb, ASTNode tabref) throws SemanticException {
 		// For each table reference get the table name
@@ -667,8 +613,8 @@ public class HiveParserSemanticAnalyzer {
 			if (dataDir == null) {
 				tablePath = Warehouse.getDnsPath(new Path(ss.getTempTableSpace(), tableName), conf);
 			} else {
-				//if target table of insert is encrypted, make sure temporary table data is stored
-				//similarly encrypted
+				// if target table of insert is encrypted, make sure temporary table data is stored
+				// similarly encrypted
 				tablePath = Warehouse.getDnsPath(new Path(dataDir, tableName), conf);
 			}
 			fs = tablePath.getFileSystem(conf);
@@ -739,40 +685,6 @@ public class HiveParserSemanticAnalyzer {
 		return tabRef;
 	}
 
-	// Take an expression in the values clause and turn it back into a string.  This is far from
-	// comprehensive.  At the moment it only supports:
-	// * literals (all types)
-	// * unary negatives
-	// * true/false
-	private String unparseExprForValuesClause(ASTNode expr) throws SemanticException {
-		switch (expr.getToken().getType()) {
-			case HiveASTParser.Number:
-				return expr.getText();
-
-			case HiveASTParser.StringLiteral:
-				return unescapeSQLString(expr.getText());
-
-			case HiveASTParser.KW_FALSE:
-				// UDFToBoolean casts any non-empty string to true, so set this to false
-				return "";
-
-			case HiveASTParser.KW_TRUE:
-				return "TRUE";
-
-			case HiveASTParser.MINUS:
-				return "-" + unparseExprForValuesClause((ASTNode) expr.getChildren().get(0));
-
-			case HiveASTParser.TOK_NULL:
-				// Hive's text input will translate this as a null
-				return "\\N";
-
-			default:
-				throw new SemanticException("Expression of type " + expr.getText() +
-						" not supported in insert/values");
-		}
-
-	}
-
 	private void assertCombineInputFormat(Tree numerator, String message) throws SemanticException {
 		String inputFormat = conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez") ?
 				HiveConf.getVar(conf, HiveConf.ConfVars.HIVETEZINPUTFORMAT) :
@@ -830,7 +742,7 @@ public class HiveParserSemanticAnalyzer {
 			if (aliasToCTEs.containsKey(qName)) {
 				throw new SemanticException(ErrorMsg.AMBIGUOUS_TABLE_ALIAS.getMsg(cte.getChild(1)));
 			}
-			aliasToCTEs.put(qName, new CTEClause(qName, cteQry));
+			aliasToCTEs.put(qName, new HiveParserBaseSemanticAnalyzer.CTEClause(qName, cteQry));
 		}
 	}
 
@@ -845,7 +757,7 @@ public class HiveParserSemanticAnalyzer {
 	 * they appear in when adding them to the <code>aliasToCTEs</code> map.
 	 *
 	 */
-	private CTEClause findCTEFromName(HiveParserQB qb, String cteName) {
+	private HiveParserBaseSemanticAnalyzer.CTEClause findCTEFromName(HiveParserQB qb, String cteName) {
 		StringBuilder qId = new StringBuilder();
 		if (qb.getId() != null) {
 			qId.append(qb.getId());
@@ -853,12 +765,12 @@ public class HiveParserSemanticAnalyzer {
 
 		while (qId.length() > 0) {
 			String nm = qId + ":" + cteName;
-			CTEClause cte = aliasToCTEs.get(nm);
+			HiveParserBaseSemanticAnalyzer.CTEClause cte = aliasToCTEs.get(nm);
 			if (cte != null) {
 				return cte;
 			}
 			int lastIndex = qId.lastIndexOf(":");
-			lastIndex = lastIndex < 0 ? 0 : lastIndex;
+			lastIndex = Math.max(lastIndex, 0);
 			qId.setLength(lastIndex);
 		}
 		return aliasToCTEs.get(cteName);
@@ -878,14 +790,14 @@ public class HiveParserSemanticAnalyzer {
 	private void addCTEAsSubQuery(HiveParserQB qb, String cteName, String cteAlias)
 			throws SemanticException {
 		cteAlias = cteAlias == null ? cteName : cteAlias;
-		CTEClause cte = findCTEFromName(qb, cteName);
+		HiveParserBaseSemanticAnalyzer.CTEClause cte = findCTEFromName(qb, cteName);
 		ASTNode cteQryNode = cte.cteNode;
 		HiveParserQBExpr cteQBExpr = new HiveParserQBExpr(cteAlias);
 		doPhase1QBExpr(cteQryNode, cteQBExpr, qb.getId(), cteAlias);
 		qb.rewriteCTEToSubq(cteAlias, cteName, cteQBExpr);
 	}
 
-	private final CTEClause rootClause = new CTEClause(null, null);
+	private final HiveParserBaseSemanticAnalyzer.CTEClause rootClause = new HiveParserBaseSemanticAnalyzer.CTEClause(null, null);
 
 	/**
 	 * Given the AST with TOK_JOIN as the root, get all the aliases for the tables
@@ -923,8 +835,7 @@ public class HiveParserSemanticAnalyzer {
 				// is not supported. Instead, the lateral view must be in a subquery
 				// SELECT * FROM (SELECT * FROM src1 LATERAL VIEW udtf() AS myTable) a
 				// JOIN src2 ...
-				throw new SemanticException(ErrorMsg.LATERAL_VIEW_WITH_JOIN
-						.getMsg(join));
+				throw new SemanticException(ErrorMsg.LATERAL_VIEW_WITH_JOIN.getMsg(join));
 			} else if (HiveParserUtils.isJoinToken(child)) {
 				processJoin(qb, child);
 			}
@@ -977,7 +888,7 @@ public class HiveParserSemanticAnalyzer {
 	 * AST's in aliasToLateralViews
 	 */
 	@SuppressWarnings({"fallthrough", "nls"})
-	public boolean doPhase1(ASTNode ast, HiveParserQB qb, Phase1Ctx ctx1, HiveParserPlannerContext plannerCtx) throws SemanticException {
+	public boolean doPhase1(ASTNode ast, HiveParserQB qb, HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1, HiveParserPlannerContext plannerCtx) throws SemanticException {
 
 		boolean phase1Result = true;
 		HiveParserQBParseInfo qbp = qb.getParseInfo();
@@ -1264,7 +1175,7 @@ public class HiveParserSemanticAnalyzer {
 		return phase1Result;
 	}
 
-	private void handleTokDestination(Phase1Ctx ctx1, ASTNode ast, HiveParserQBParseInfo qbp, HiveParserPlannerContext plannerCtx)
+	private void handleTokDestination(HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1, ASTNode ast, HiveParserQBParseInfo qbp, HiveParserPlannerContext plannerCtx)
 			throws SemanticException {
 		ctx1.dest = this.ctx.getDestNamePrefix(ast).toString() + ctx1.nextNum;
 		ctx1.nextNum++;
@@ -1319,7 +1230,7 @@ public class HiveParserSemanticAnalyzer {
 
 	// This is phase1 of supporting specifying schema in insert statement.
 	// insert into foo(z,y) select a,b from bar;
-	private void handleInsertStatementSpecPhase1(ASTNode ast, HiveParserQBParseInfo qbp, Phase1Ctx ctx1) throws SemanticException {
+	private void handleInsertStatementSpecPhase1(ASTNode ast, HiveParserQBParseInfo qbp, HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1) throws SemanticException {
 		ASTNode tabColName = (ASTNode) ast.getChild(1);
 		if (ast.getType() == HiveASTParser.TOK_INSERT_INTO && tabColName != null && tabColName.getType() == HiveASTParser.TOK_TABCOLNAME) {
 			//we have "insert into foo(a,b)..."; parser will enforce that 1+ columns are listed if TOK_TABCOLNAME is present
@@ -1332,8 +1243,7 @@ public class HiveParserSemanticAnalyzer {
 			String fullTableName = getUnescapedName((ASTNode) ast.getChild(0).getChild(0),
 					SessionState.get().getCurrentDatabase());
 			qbp.setDestSchemaForClause(ctx1.dest, targetColNames);
-			Set<String> targetColumns = new HashSet<>();
-			targetColumns.addAll(targetColNames);
+			Set<String> targetColumns = new HashSet<>(targetColNames);
 			if (targetColNames.size() != targetColumns.size()) {
 				throw new SemanticException(HiveParserUtils.generateErrorMessage(tabColName,
 						"Duplicate column name detected in " + fullTableName + " table schema specification"));
@@ -1406,7 +1316,7 @@ public class HiveParserSemanticAnalyzer {
 		try {
 			gatherCTEReferences(qb, rootClause);
 			int threshold = Integer.parseInt(conf.get("hive.optimize.cte.materialize.threshold", "-1"));
-			for (CTEClause cte : new HashSet<>(aliasToCTEs.values())) {
+			for (HiveParserBaseSemanticAnalyzer.CTEClause cte : new HashSet<>(aliasToCTEs.values())) {
 				if (threshold >= 0 && cte.reference >= threshold) {
 					cte.materialize = true;
 				}
@@ -1420,7 +1330,7 @@ public class HiveParserSemanticAnalyzer {
 		}
 	}
 
-	private void gatherCTEReferences(HiveParserQBExpr qbexpr, CTEClause parent) throws HiveException {
+	private void gatherCTEReferences(HiveParserQBExpr qbexpr, HiveParserBaseSemanticAnalyzer.CTEClause parent) throws HiveException {
 		if (qbexpr.getOpcode() == HiveParserQBExpr.Opcode.NULLOP) {
 			gatherCTEReferences(qbexpr.getQB(), parent);
 		} else {
@@ -1430,12 +1340,12 @@ public class HiveParserSemanticAnalyzer {
 	}
 
 	// TODO: check view references, too
-	private void gatherCTEReferences(HiveParserQB qb, CTEClause current) throws HiveException {
+	private void gatherCTEReferences(HiveParserQB qb, HiveParserBaseSemanticAnalyzer.CTEClause current) throws HiveException {
 		for (String alias : qb.getTabAliases()) {
 			String tabName = qb.getTabNameForAlias(alias);
 			String cteName = tabName.toLowerCase();
 
-			CTEClause cte = findCTEFromName(qb, cteName);
+			HiveParserBaseSemanticAnalyzer.CTEClause cte = findCTEFromName(qb, cteName);
 			if (cte != null) {
 				if (ctesExpanded.contains(cteName)) {
 					throw new SemanticException("Recursive cte " + cteName +
@@ -1490,8 +1400,7 @@ public class HiveParserSemanticAnalyzer {
 	}
 
 	@SuppressWarnings("nls")
-	private void getMetaData(HiveParserQB qb, ReadEntity parentInput)
-			throws HiveException {
+	private void getMetaData(HiveParserQB qb, ReadEntity parentInput) throws HiveException {
 		LOG.info("Get metadata for source tables");
 
 		// Go over the tables and populate the related structures. We have to materialize the table alias list since we might
@@ -1518,7 +1427,7 @@ public class HiveParserSemanticAnalyzer {
 				Table materializedTab = null;
 				if (materializedTab == null) {
 					// we first look for this alias from CTE, and then from catalog.
-					CTEClause cte = findCTEFromName(qb, cteName);
+					HiveParserBaseSemanticAnalyzer.CTEClause cte = findCTEFromName(qb, cteName);
 					if (cte != null) {
 						if (!cte.materialize) {
 							addCTEAsSubQuery(qb, cteName, alias);
@@ -1606,7 +1515,6 @@ public class HiveParserSemanticAnalyzer {
 						default:
 							assert false;
 					}
-					// throw a HiveException for formats other than rcfile or orcfile.
 					if (!(inputFormatClass.equals(RCFileInputFormat.class) ||
 							inputFormatClass.equals(OrcInputFormat.class))) {
 						throw new SemanticException("ANALYZE TABLE PARTIALSCAN doesn't support non-RCfile.");
@@ -1742,7 +1650,7 @@ public class HiveParserSemanticAnalyzer {
 						} else {
 							// This is the only place where isQuery is set to true; it defaults to false.
 							qb.setIsQuery(true);
-							Path stagingPath = getStagingDirectoryPathname(qb);
+							Path stagingPath = getStagingDirectoryPathname();
 							fname = stagingPath.toString();
 							ctx.setResDir(stagingPath);
 						}
@@ -1803,7 +1711,7 @@ public class HiveParserSemanticAnalyzer {
 		}
 	}
 
-	private Path getStagingDirectoryPathname(HiveParserQB qb) throws HiveException {
+	private Path getStagingDirectoryPathname() {
 		return ctx.getMRTmpPath();
 	}
 
@@ -1856,7 +1764,7 @@ public class HiveParserSemanticAnalyzer {
 	}
 
 	@SuppressWarnings("nls")
-		// TODO: make aliases unique, otherwise needless rewriting takes place
+	// TODO: make aliases unique, otherwise needless rewriting takes place
 	Integer genColListRegex(String colRegex, String tabAlias, ASTNode sel,
 			ArrayList<ExprNodeDesc> colList, HashSet<ColumnInfo> excludeCols, HiveParserRowResolver input,
 			HiveParserRowResolver colSrcRR, Integer pos, HiveParserRowResolver output, List<String> aliases,
@@ -2052,105 +1960,6 @@ public class HiveParserSemanticAnalyzer {
 		return pos;
 	}
 
-	public static String getColumnInternalName(int pos) {
-		return HiveConf.getColumnInternalName(pos);
-	}
-
-	protected List<Integer> getGroupingSetsForRollup(int size) {
-		List<Integer> groupingSetKeys = new ArrayList<>();
-		for (int i = 0; i <= size; i++) {
-			groupingSetKeys.add((1 << i) - 1);
-		}
-		return groupingSetKeys;
-	}
-
-	protected List<Integer> getGroupingSetsForCube(int size) {
-		int count = 1 << size;
-		List<Integer> results = new ArrayList<>(count);
-		for (int i = 0; i < count; ++i) {
-			results.add(i);
-		}
-		return results;
-	}
-
-	protected List<Integer> getGroupingSets(List<ASTNode> groupByExpr, HiveParserQBParseInfo parseInfo,
-			String dest) throws SemanticException {
-		Map<String, Integer> exprPos = new HashMap<>();
-		for (int i = 0; i < groupByExpr.size(); ++i) {
-			ASTNode node = groupByExpr.get(i);
-			exprPos.put(node.toStringTree(), i);
-		}
-
-		ASTNode root = parseInfo.getGroupByForClause(dest);
-		List<Integer> result = new ArrayList<>(root == null ? 0 : root.getChildCount());
-		if (root != null) {
-			for (int i = 0; i < root.getChildCount(); ++i) {
-				ASTNode child = (ASTNode) root.getChild(i);
-				if (child.getType() != HiveASTParser.TOK_GROUPING_SETS_EXPRESSION) {
-					continue;
-				}
-				int bitmap = com.google.common.math.IntMath.pow(2, groupByExpr.size()) - 1;
-				for (int j = 0; j < child.getChildCount(); ++j) {
-					String treeAsString = child.getChild(j).toStringTree();
-					Integer pos = exprPos.get(treeAsString);
-					if (pos == null) {
-						throw new SemanticException(
-								HiveParserUtils.generateErrorMessage((ASTNode) child.getChild(j),
-										ErrorMsg.HIVE_GROUPING_SETS_EXPR_NOT_IN_GROUPBY.getErrorCodedMsg()));
-					}
-					bitmap = HiveParserUtils.unsetBit(bitmap, groupByExpr.size() - pos - 1);
-				}
-				result.add(bitmap);
-			}
-		}
-		if (checkForEmptyGroupingSets(result, com.google.common.math.IntMath.pow(2, groupByExpr.size()) - 1)) {
-			throw new SemanticException("Empty grouping sets not allowed");
-		}
-		return result;
-	}
-
-	private boolean checkForEmptyGroupingSets(List<Integer> bitmaps, int groupingIdAllSet) {
-		boolean ret = true;
-		for (int mask : bitmaps) {
-			ret &= mask == groupingIdAllSet;
-		}
-		return ret;
-	}
-
-	// This function is a wrapper of parseInfo.getGroupByForClause which automatically translates
-	// SELECT DISTINCT a,b,c to SELECT a,b,c GROUP BY a,b,c.
-	List<ASTNode> getGroupByForClause(HiveParserQBParseInfo parseInfo, String dest) throws SemanticException {
-		if (parseInfo.getSelForClause(dest).getToken().getType() == HiveASTParser.TOK_SELECTDI) {
-			ASTNode selectExprs = parseInfo.getSelForClause(dest);
-			List<ASTNode> result = new ArrayList<>(selectExprs == null ? 0
-					: selectExprs.getChildCount());
-			if (selectExprs != null) {
-				for (int i = 0; i < selectExprs.getChildCount(); ++i) {
-					if (((ASTNode) selectExprs.getChild(i)).getToken().getType() == HiveASTParser.QUERY_HINT) {
-						continue;
-					}
-					// table.column AS alias
-					ASTNode grpbyExpr = (ASTNode) selectExprs.getChild(i).getChild(0);
-					result.add(grpbyExpr);
-				}
-			}
-			return result;
-		} else {
-			ASTNode grpByExprs = parseInfo.getGroupByForClause(dest);
-			List<ASTNode> result = new ArrayList<>(grpByExprs == null ? 0
-					: grpByExprs.getChildCount());
-			if (grpByExprs != null) {
-				for (int i = 0; i < grpByExprs.getChildCount(); ++i) {
-					ASTNode grpbyExpr = (ASTNode) grpByExprs.getChild(i);
-					if (grpbyExpr.getType() != HiveASTParser.TOK_GROUPING_SETS_EXPRESSION) {
-						result.add(grpbyExpr);
-					}
-				}
-			}
-			return result;
-		}
-	}
-
 	String recommendName(ExprNodeDesc exp, String colAlias) {
 		if (!colAlias.startsWith(autogenColAliasPrfxLbl)) {
 			return null;
@@ -2220,20 +2029,6 @@ public class HiveParserSemanticAnalyzer {
 		}
 	}
 
-	protected String getAliasId(String alias, HiveParserQB qb) {
-		return (qb.getId() == null ? alias : qb.getId() + ":" + alias).toLowerCase();
-	}
-
-	@SuppressWarnings("nls")
-	public Phase1Ctx initPhase1Ctx() {
-
-		Phase1Ctx ctx1 = new Phase1Ctx();
-		ctx1.nextNum = 0;
-		ctx1.dest = "reduce";
-
-		return ctx1;
-	}
-
 	public void init(boolean clearPartsCache) {
 		// clear most members
 		reset(clearPartsCache);
@@ -2253,7 +2048,6 @@ public class HiveParserSemanticAnalyzer {
 	}
 
 	boolean genResolvedParseTree(ASTNode ast, HiveParserPlannerContext plannerCtx) throws SemanticException {
-		ASTNode child = ast;
 		this.ast = ast;
 		viewsExpanded = new ArrayList<>();
 		ctesExpanded = new ArrayList<>();
@@ -2269,9 +2063,9 @@ public class HiveParserSemanticAnalyzer {
 		// create view won't get here
 
 		// 4. continue analyzing from the child ASTNode.
-		Phase1Ctx ctx1 = initPhase1Ctx();
-		preProcessForInsert(child, qb);
-		if (!doPhase1(child, qb, ctx1, plannerCtx)) {
+		HiveParserBaseSemanticAnalyzer.Phase1Ctx ctx1 = initPhase1Ctx();
+		preProcessForInsert(ast);
+		if (!doPhase1(ast, qb, ctx1, plannerCtx)) {
 			// if phase1Result false return
 			return false;
 		}
@@ -2281,7 +2075,7 @@ public class HiveParserSemanticAnalyzer {
 		// Materialization is allowed if it is not a view definition
 		getMetaData(qb, createVwDesc == null);
 		LOG.info("Completed getting MetaData in Semantic Analysis");
-		plannerCtx.setParseTreeAttr(child, ctx1);
+		plannerCtx.setParseTreeAttr(ast, ctx1);
 		return true;
 	}
 
@@ -2291,7 +2085,7 @@ public class HiveParserSemanticAnalyzer {
 	 * the data from values clause of Insert ... select values(...) is stored securely.
 	 * See also {@link #genValuesTempTable(ASTNode, HiveParserQB)}
 	 */
-	private void preProcessForInsert(ASTNode node, HiveParserQB qb) throws SemanticException {
+	private void preProcessForInsert(ASTNode node) throws SemanticException {
 		try {
 			if (!(node != null && node.getToken() != null && node.getToken().getType() == HiveASTParser.TOK_QUERY)) {
 				return;
@@ -2482,111 +2276,6 @@ public class HiveParserSemanticAnalyzer {
 		return map;
 	}
 
-	// Process the position alias in GROUPBY and ORDERBY
-	public void processPositionAlias(ASTNode ast) throws SemanticException {
-		boolean isBothByPos = HiveConf.getBoolVar(conf, ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS);
-		boolean isGbyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.groupby.position.alias", "false"));
-		boolean isObyByPos = isBothByPos || Boolean.parseBoolean(conf.get("hive.orderby.position.alias", "true"));
-
-		Deque<ASTNode> stack = new ArrayDeque<>();
-		stack.push(ast);
-
-		while (!stack.isEmpty()) {
-			ASTNode next = stack.pop();
-
-			if (next.getChildCount() == 0) {
-				continue;
-			}
-
-			boolean isAllCol;
-			ASTNode selectNode = null;
-			ASTNode groupbyNode = null;
-			ASTNode orderbyNode = null;
-
-			// get node type
-			int childCount = next.getChildCount();
-			for (int childPos = 0; childPos < childCount; ++childPos) {
-				ASTNode node = (ASTNode) next.getChild(childPos);
-				int type = node.getToken().getType();
-				if (type == HiveASTParser.TOK_SELECT) {
-					selectNode = node;
-				} else if (type == HiveASTParser.TOK_GROUPBY) {
-					groupbyNode = node;
-				} else if (type == HiveASTParser.TOK_ORDERBY) {
-					orderbyNode = node;
-				}
-			}
-
-			if (selectNode != null) {
-				int selectExpCnt = selectNode.getChildCount();
-
-				// replace each of the position alias in GROUPBY with the actual column name
-				if (groupbyNode != null) {
-					for (int childPos = 0; childPos < groupbyNode.getChildCount(); ++childPos) {
-						ASTNode node = (ASTNode) groupbyNode.getChild(childPos);
-						if (node.getToken().getType() == HiveASTParser.Number) {
-							if (isGbyByPos) {
-								int pos = Integer.parseInt(node.getText());
-								if (pos > 0 && pos <= selectExpCnt) {
-									groupbyNode.setChild(childPos,
-											selectNode.getChild(pos - 1).getChild(0));
-								} else {
-									throw new SemanticException(
-											ErrorMsg.INVALID_POSITION_ALIAS_IN_GROUPBY.getMsg(
-													"Position alias: " + pos + " does not exist\n" +
-															"The Select List is indexed from 1 to " + selectExpCnt));
-								}
-							} else {
-								warn("Using constant number  " + node.getText() +
-										" in group by. If you try to use position alias when hive.groupby.position.alias is false, the position alias will be ignored.");
-							}
-						}
-					}
-				}
-
-				// replace each of the position alias in ORDERBY with the actual column name
-				if (orderbyNode != null) {
-					isAllCol = false;
-					for (int childPos = 0; childPos < selectNode.getChildCount(); ++childPos) {
-						ASTNode node = (ASTNode) selectNode.getChild(childPos).getChild(0);
-						if (node != null && node.getToken().getType() == HiveASTParser.TOK_ALLCOLREF) {
-							isAllCol = true;
-						}
-					}
-					for (int childPos = 0; childPos < orderbyNode.getChildCount(); ++childPos) {
-						ASTNode colNode = (ASTNode) orderbyNode.getChild(childPos).getChild(0);
-						ASTNode node = (ASTNode) colNode.getChild(0);
-						if (node != null && node.getToken().getType() == HiveASTParser.Number) {
-							if (isObyByPos) {
-								if (!isAllCol) {
-									int pos = Integer.parseInt(node.getText());
-									if (pos > 0 && pos <= selectExpCnt) {
-										colNode.setChild(0, selectNode.getChild(pos - 1).getChild(0));
-									} else {
-										throw new SemanticException(
-												ErrorMsg.INVALID_POSITION_ALIAS_IN_ORDERBY.getMsg(
-														"Position alias: " + pos + " does not exist\n" +
-																"The Select List is indexed from 1 to " + selectExpCnt));
-									}
-								} else {
-									throw new SemanticException(
-											ErrorMsg.NO_SUPPORTED_ORDERBY_ALLCOLREF_POS.getMsg());
-								}
-							} else { //if not using position alias and it is a number.
-								warn("Using constant number " + node.getText() +
-										" in order by. If you try to use position alias when hive.orderby.position.alias is false, the position alias will be ignored.");
-							}
-						}
-					}
-				}
-			}
-
-			for (int i = next.getChildren().size() - 1; i >= 0; i--) {
-				stack.push((ASTNode) next.getChildren().get(i));
-			}
-		}
-	}
-
 	public HiveParserQB getQB() {
 		return qb;
 	}
@@ -2705,266 +2394,5 @@ public class HiveParserSemanticAnalyzer {
 		HiveParserPTFInvocationSpec spec = new HiveParserPTFInvocationSpec();
 		spec.setFunction(ptfSpec);
 		qb.addPTFNodeToSpec(ptf, spec);
-	}
-
-	private void handleQueryWindowClauses(HiveParserQB qb, Phase1Ctx ctx1, ASTNode node)
-			throws SemanticException {
-		HiveParserWindowingSpec spec = qb.getWindowingSpec(ctx1.dest);
-		for (int i = 0; i < node.getChildCount(); i++) {
-			processQueryWindowClause(spec, (ASTNode) node.getChild(i));
-		}
-	}
-
-	private PartitionSpec processPartitionSpec(ASTNode node) {
-		PartitionSpec pSpec = new PartitionSpec();
-		int exprCnt = node.getChildCount();
-		for (int i = 0; i < exprCnt; i++) {
-			PartitionExpression exprSpec = new PartitionExpression();
-			exprSpec.setExpression((ASTNode) node.getChild(i));
-			pSpec.addExpression(exprSpec);
-		}
-		return pSpec;
-	}
-
-	private OrderSpec processOrderSpec(ASTNode sortNode) {
-		OrderSpec oSpec = new OrderSpec();
-		int exprCnt = sortNode.getChildCount();
-		for (int i = 0; i < exprCnt; i++) {
-			OrderExpression exprSpec = new OrderExpression();
-			ASTNode orderSpec = (ASTNode) sortNode.getChild(i);
-			ASTNode nullOrderSpec = (ASTNode) orderSpec.getChild(0);
-			exprSpec.setExpression((ASTNode) nullOrderSpec.getChild(0));
-			if (orderSpec.getType() == HiveASTParser.TOK_TABSORTCOLNAMEASC) {
-				exprSpec.setOrder(Order.ASC);
-			} else {
-				exprSpec.setOrder(Order.DESC);
-			}
-			if (nullOrderSpec.getType() == HiveASTParser.TOK_NULLS_FIRST) {
-				exprSpec.setNullOrder(HiveParserPTFInvocationSpec.NullOrder.NULLS_FIRST);
-			} else {
-				exprSpec.setNullOrder(HiveParserPTFInvocationSpec.NullOrder.NULLS_LAST);
-			}
-			oSpec.addExpression(exprSpec);
-		}
-		return oSpec;
-	}
-
-	private PartitioningSpec processPTFPartitionSpec(ASTNode pSpecNode) {
-		PartitioningSpec partitioning = new PartitioningSpec();
-		ASTNode firstChild = (ASTNode) pSpecNode.getChild(0);
-		int type = firstChild.getType();
-
-		if (type == HiveASTParser.TOK_DISTRIBUTEBY || type == HiveASTParser.TOK_CLUSTERBY) {
-			PartitionSpec pSpec = processPartitionSpec(firstChild);
-			partitioning.setPartSpec(pSpec);
-			ASTNode sortNode = pSpecNode.getChildCount() > 1 ? (ASTNode) pSpecNode.getChild(1) : null;
-			if (sortNode != null) {
-				OrderSpec oSpec = processOrderSpec(sortNode);
-				partitioning.setOrderSpec(oSpec);
-			}
-		} else if (type == HiveASTParser.TOK_SORTBY || type == HiveASTParser.TOK_ORDERBY) {
-			ASTNode sortNode = firstChild;
-			OrderSpec oSpec = processOrderSpec(sortNode);
-			partitioning.setOrderSpec(oSpec);
-		}
-		return partitioning;
-	}
-
-	private WindowFunctionSpec processWindowFunction(ASTNode node, ASTNode wsNode)
-			throws SemanticException {
-		WindowFunctionSpec wfSpec = new WindowFunctionSpec();
-
-		switch (node.getType()) {
-			case HiveASTParser.TOK_FUNCTIONSTAR:
-				wfSpec.setStar(true);
-				break;
-			case HiveASTParser.TOK_FUNCTIONDI:
-				wfSpec.setDistinct(true);
-				break;
-		}
-
-		wfSpec.setExpression(node);
-
-		ASTNode nameNode = (ASTNode) node.getChild(0);
-		wfSpec.setName(nameNode.getText());
-
-		for (int i = 1; i < node.getChildCount() - 1; i++) {
-			ASTNode child = (ASTNode) node.getChild(i);
-			wfSpec.addArg(child);
-		}
-
-		if (wsNode != null) {
-			WindowSpec ws = processWindowSpec(wsNode);
-			wfSpec.setWindowSpec(ws);
-		}
-
-		return wfSpec;
-	}
-
-	private boolean containsLeadLagUDF(ASTNode expressionTree) {
-		int exprTokenType = expressionTree.getToken().getType();
-		if (exprTokenType == HiveASTParser.TOK_FUNCTION) {
-			assert (expressionTree.getChildCount() != 0);
-			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
-				String functionName = unescapeIdentifier(expressionTree.getChild(0).getText());
-				functionName = functionName.toLowerCase();
-				if (FunctionRegistry.LAG_FUNC_NAME.equals(functionName) ||
-						FunctionRegistry.LEAD_FUNC_NAME.equals(functionName)
-				) {
-					return true;
-				}
-			}
-		}
-		for (int i = 0; i < expressionTree.getChildCount(); i++) {
-			if (containsLeadLagUDF((ASTNode) expressionTree.getChild(i))) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private void processQueryWindowClause(HiveParserWindowingSpec spec, ASTNode node)
-			throws SemanticException {
-		ASTNode nameNode = (ASTNode) node.getChild(0);
-		ASTNode wsNode = (ASTNode) node.getChild(1);
-		if (spec.getWindowSpecs() != null && spec.getWindowSpecs().containsKey(nameNode.getText())) {
-			throw new SemanticException(HiveParserUtils.generateErrorMessage(nameNode,
-					"Duplicate definition of window " + nameNode.getText() +
-							" is not allowed"));
-		}
-		WindowSpec ws = processWindowSpec(wsNode);
-		spec.addWindowSpec(nameNode.getText(), ws);
-	}
-
-	private WindowSpec processWindowSpec(ASTNode node) throws SemanticException {
-		boolean hasSrcId = false, hasPartSpec = false, hasWF = false;
-		int srcIdIdx = -1, partIdx = -1, wfIdx = -1;
-
-		for (int i = 0; i < node.getChildCount(); i++) {
-			int type = node.getChild(i).getType();
-			switch (type) {
-				case HiveASTParser.Identifier:
-					hasSrcId = true;
-					srcIdIdx = i;
-					break;
-				case HiveASTParser.TOK_PARTITIONINGSPEC:
-					hasPartSpec = true;
-					partIdx = i;
-					break;
-				case HiveASTParser.TOK_WINDOWRANGE:
-				case HiveASTParser.TOK_WINDOWVALUES:
-					hasWF = true;
-					wfIdx = i;
-					break;
-			}
-		}
-
-		WindowSpec ws = new WindowSpec();
-
-		if (hasSrcId) {
-			ASTNode nameNode = (ASTNode) node.getChild(srcIdIdx);
-			ws.setSourceId(nameNode.getText());
-		}
-
-		if (hasPartSpec) {
-			ASTNode partNode = (ASTNode) node.getChild(partIdx);
-			PartitioningSpec partitioning = processPTFPartitionSpec(partNode);
-			ws.setPartitioning(partitioning);
-		}
-
-		if (hasWF) {
-			ASTNode wfNode = (ASTNode) node.getChild(wfIdx);
-			WindowFrameSpec wfSpec = processWindowFrame(wfNode);
-			ws.setWindowFrame(wfSpec);
-		}
-		return ws;
-	}
-
-	private WindowFrameSpec processWindowFrame(ASTNode node) throws SemanticException {
-		int type = node.getType();
-		BoundarySpec start = null, end = null;
-		// A WindowFrame may contain just the Start Boundary or in the between style of expressing
-		// a WindowFrame both boundaries are specified.
-		start = processBoundary(type, (ASTNode) node.getChild(0));
-		if (node.getChildCount() > 1) {
-			end = processBoundary(type, (ASTNode) node.getChild(1));
-		}
-		// Note: TOK_WINDOWVALUES means RANGE type, TOK_WINDOWRANGE means ROWS type
-		return new WindowFrameSpec(type == HiveASTParser.TOK_WINDOWVALUES ? WindowType.RANGE : WindowType.ROWS, start, end);
-	}
-
-	private BoundarySpec processBoundary(int frameType, ASTNode node) throws SemanticException {
-		BoundarySpec bs = new BoundarySpec();
-		int type = node.getType();
-		boolean hasAmt = true;
-
-		switch (type) {
-			case HiveASTParser.KW_PRECEDING:
-				bs.setDirection(Direction.PRECEDING);
-				break;
-			case HiveASTParser.KW_FOLLOWING:
-				bs.setDirection(Direction.FOLLOWING);
-				break;
-			case HiveASTParser.KW_CURRENT:
-				bs.setDirection(Direction.CURRENT);
-				hasAmt = false;
-				break;
-		}
-
-		if (hasAmt) {
-			ASTNode amtNode = (ASTNode) node.getChild(0);
-			if (amtNode.getType() == HiveASTParser.KW_UNBOUNDED) {
-				bs.setAmt(BoundarySpec.UNBOUNDED_AMOUNT);
-			} else {
-				int amt = Integer.parseInt(amtNode.getText());
-				if (amt <= 0) {
-					throw new SemanticException(
-							"Window Frame Boundary Amount must be a positive integer, provided amount is: " + amt);
-				}
-				bs.setAmt(amt);
-			}
-		}
-		return bs;
-	}
-
-	private void warn(String msg) {
-		SessionState.getConsole().printInfo(
-				String.format("Warning: %s", msg));
-	}
-
-	class CTEClause {
-		CTEClause(String alias, ASTNode cteNode) {
-			this.alias = alias;
-			this.cteNode = cteNode;
-		}
-
-		String alias;
-		ASTNode cteNode;
-		boolean materialize;
-		int reference;
-		HiveParserQBExpr qbExpr;
-		List<CTEClause> parents = new ArrayList<>();
-
-		@Override
-		public String toString() {
-			return alias == null ? "<root>" : alias;
-		}
-	}
-
-	/**
-	 * Counterpart of hive's Phase1Ctx.
-	 */
-	static class Phase1Ctx {
-		String dest;
-		int nextNum;
-	}
-
-	/**
-	 * Counterpart of hive's GenericUDAFInfo.
-	 */
-	public static class GenericUDAFInfo {
-		public ArrayList<ExprNodeDesc> convertedParameters;
-		public GenericUDAFEvaluator genericUDAFEvaluator;
-		public TypeInfo returnType;
 	}
 }

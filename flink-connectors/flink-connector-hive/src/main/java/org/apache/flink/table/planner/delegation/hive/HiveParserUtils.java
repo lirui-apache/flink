@@ -32,11 +32,12 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserJoinCondTypeCheckProcFactory;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseDriver;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseUtils;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.GenericUDAFInfo;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserQB;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowResolver;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer.GenericUDAFInfo;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckCtx;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckProcFactory;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
@@ -92,12 +93,8 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.commons.lang3.mutable.MutableBoolean;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.io.HdfsUtils;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
@@ -114,7 +111,6 @@ import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
@@ -132,7 +128,6 @@ import org.apache.hadoop.io.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -146,8 +141,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.getColumnInternalName;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
-import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserSemanticAnalyzer.getColumnInternalName;
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserTypeCheckProcFactory.DefaultExprProcessor.getFunctionText;
 
 /**
@@ -302,17 +297,6 @@ public class HiveParserUtils {
 			return (RexSubQuery) method.invoke(null, relNode, toImmutableList(rexNodes));
 		} catch (IllegalAccessException | InvocationTargetException e) {
 			throw new FlinkHiveException("Failed to create RexSubQuery", e);
-		}
-	}
-
-	// Process the position alias in GROUPBY and ORDERBY
-	public static void processPositionAlias(SemanticAnalyzer analyzer, ASTNode node) {
-		try {
-			Method method = analyzer.getClass().getMethod("processPositionAlias", ASTNode.class);
-			method.setAccessible(true);
-			method.invoke(analyzer, node);
-		} catch (Exception e) {
-			throw new FlinkHiveException(e);
 		}
 	}
 
@@ -485,12 +469,6 @@ public class HiveParserUtils {
 
 	/**
 	 * Returns the GenericUDAFInfo struct for the aggregation.
-	 *
-	 * @param evaluator
-	 * @param emode
-	 * @param aggParameters The exprNodeDesc of the original parameters
-	 * @return GenericUDAFInfo
-	 * @throws SemanticException when the UDAF is not found or has problems.
 	 */
 	public static GenericUDAFInfo getGenericUDAFInfo(GenericUDAFEvaluator evaluator,
 			GenericUDAFEvaluator.Mode emode, ArrayList<ExprNodeDesc> aggParameters) throws SemanticException {
@@ -1219,38 +1197,30 @@ public class HiveParserUtils {
 		return sb.toString();
 	}
 
-	/**
-	 * Creates the directory and all necessary parent directories.
-	 */
-	public static boolean mkdir(FileSystem fs, Path f, boolean inheritPerms, Configuration conf) throws IOException {
-		LOG.info("Creating directory if it doesn't exist: " + f);
-		if (!inheritPerms) {
-			//just create the directory
-			return fs.mkdirs(f);
-		} else {
-			//Check if the directory already exists. We want to change the permission
-			//to that of the parent directory only for newly created directories.
-			try {
-				return fs.getFileStatus(f).isDir();
-			} catch (FileNotFoundException ignore) {
-			}
-			// inherit perms: need to find last existing parent path, and apply its permission on entire subtree.
-			Path lastExistingParent = f;
-			Path firstNonExistentParent = null;
-			while (!fs.exists(lastExistingParent)) {
-				firstNonExistentParent = lastExistingParent;
-				lastExistingParent = lastExistingParent.getParent();
-			}
-			boolean success = fs.mkdirs(f);
-			if (!success) {
-				return false;
-			} else {
-				//set on the entire subtree
-				HdfsUtils.setFullFileStatus(conf,
-						new HdfsUtils.HadoopFileStatus(conf, fs, lastExistingParent), fs,
-						firstNonExistentParent, true);
-				return true;
-			}
+	public static void verifyCanHandleAst(ASTNode ast, HiveParserQB qb, QueryProperties queryProperties) throws SemanticException {
+		int root = ast.getToken().getType();
+		boolean isSupportedRoot = root == HiveASTParser.TOK_QUERY || root == HiveASTParser.TOK_EXPLAIN
+				|| qb.isCTAS() || qb.isMaterializedView();
+		// To support queries without a source table
+		// If it's neither a query nor a multi-insert, consider it as an ordinary insert. Implement our own PreCboCtx to be sure.
+		boolean isSupportedType = qb.getIsQuery() || qb.isCTAS() || qb.isMaterializedView() || !queryProperties.hasMultiDestQuery();
+		// don't call HiveCalciteUtil::validateASTForUnsupportedTokens to support TOK_CHARSETLITERAL
+		boolean noBadTokens = !HiveASTParseUtils.containsTokenOfType(ast, HiveASTParser.TOK_TABLESPLITSAMPLE);
+
+		if (!isSupportedRoot) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement due to unsupported AST root type");
+		}
+		if (!isSupportedType) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement due to unsupported query type");
+		}
+		if (!noBadTokens) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement because AST contains unsupported tokens");
+		}
+
+		// Now check HiveParserQB in more detail.
+		String reason = HiveParserUtils.canHandleQbForCbo(queryProperties);
+		if (reason != null) {
+			throw new SemanticException("HiveParser doesn't support the SQL statement because it " + reason);
 		}
 	}
 
