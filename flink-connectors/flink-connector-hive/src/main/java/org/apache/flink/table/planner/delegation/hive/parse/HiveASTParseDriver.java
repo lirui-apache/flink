@@ -194,7 +194,6 @@ public class HiveASTParseDriver {
 		try {
 			r = parser.statement();
 		} catch (RecognitionException e) {
-			e.printStackTrace();
 			throw new HiveASTParseException(parser.errors);
 		}
 
@@ -225,7 +224,6 @@ public class HiveASTParseDriver {
 		try {
 			r = parser.hint();
 		} catch (RecognitionException e) {
-			e.printStackTrace();
 			throw new HiveASTParseException(parser.errors);
 		}
 

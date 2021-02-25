@@ -774,7 +774,7 @@ public class HiveParser extends ParserImpl {
 						closeRegistryLoaders.invoke(registry);
 					}
 				} catch (IllegalAccessException | InvocationTargetException e) {
-					e.printStackTrace();
+					LOG.warn("Failed to clear session registry", e);
 				}
 			}
 		}
