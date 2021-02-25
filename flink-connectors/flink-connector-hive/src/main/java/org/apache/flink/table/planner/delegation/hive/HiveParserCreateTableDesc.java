@@ -18,7 +18,7 @@
 
 package org.apache.flink.table.planner.delegation.hive;
 
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowFormatParams;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserStorageFormat;
 
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -42,14 +42,14 @@ public class HiveParserCreateTableDesc implements Serializable {
 	private final String comment;
 	private final String location;
 	private final Map<String, String> tblProps;
-	private final HiveParserRowFormatParams rowFormatParams;
+	private final HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams;
 	private final HiveParserStorageFormat storageFormat;
 	private final List<PrimaryKey> primaryKeys;
 	private final List<NotNullConstraint> notNullConstraints;
 
 	public HiveParserCreateTableDesc(String compoundName, boolean isExternal, boolean ifNotExists, boolean isTemporary,
 			List<FieldSchema> cols, List<FieldSchema> partCols, String comment, String location, Map<String, String> tblProps,
-			HiveParserRowFormatParams rowFormatParams, HiveParserStorageFormat storageFormat,
+			HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams, HiveParserStorageFormat storageFormat,
 			List<PrimaryKey> primaryKeys, List<NotNullConstraint> notNullConstraints) {
 		this.compoundName = compoundName;
 		this.isExternal = isExternal;
@@ -102,7 +102,7 @@ public class HiveParserCreateTableDesc implements Serializable {
 		return tblProps;
 	}
 
-	public HiveParserRowFormatParams getRowFormatParams() {
+	public HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams getRowFormatParams() {
 		return rowFormatParams;
 	}
 

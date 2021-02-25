@@ -19,7 +19,7 @@
 package org.apache.flink.table.planner.delegation.hive;
 
 /**
- * Conterpart of hive's Constants.
+ * Counterpart of hive's org.apache.hadoop.hive.conf.Constants.
  */
 public class HiveParserConstants {
 	/* Constants for LLAP */

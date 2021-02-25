@@ -1554,7 +1554,7 @@ public class HiveParserSemanticAnalyzer {
 			}
 		}
 
-		HiveParserRowFormatParams rowFormatParams = new HiveParserRowFormatParams();
+		HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams = new HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams();
 		StorageFormat storageFormat = new StorageFormat(conf);
 
 		LOG.info("Get metadata for destination tables");

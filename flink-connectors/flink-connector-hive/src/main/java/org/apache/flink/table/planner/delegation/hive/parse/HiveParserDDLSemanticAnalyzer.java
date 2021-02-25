@@ -25,7 +25,7 @@ import org.apache.flink.table.catalog.exceptions.PartitionNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.table.catalog.hive.client.HiveShim;
-import org.apache.flink.table.planner.delegation.hive.CTASDesc;
+import org.apache.flink.table.planner.delegation.hive.CreateTableASDesc;
 import org.apache.flink.table.planner.delegation.hive.DropPartitionDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAlterDatabaseDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserAlterTableDesc;
@@ -98,7 +98,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Counterpart of hive's DDLSemanticAnalyzer, but also incorporated functionalities from SemanticAnalyzer and FunctionSemanticAnalyzer.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.DDLSemanticAnalyzer,
+ * but also incorporated functionalities from SemanticAnalyzer and FunctionSemanticAnalyzer.
  */
 public class HiveParserDDLSemanticAnalyzer {
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParserDDLSemanticAnalyzer.class);
@@ -475,7 +476,7 @@ public class HiveParserDDLSemanticAnalyzer {
 		List<String> partColNames = null;
 		boolean isMaterialized = ast.getToken().getType() == HiveASTParser.TOK_CREATE_MATERIALIZED_VIEW;
 		String location = null;
-		HiveParserRowFormatParams rowFormatParams = new HiveParserRowFormatParams();
+		HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams = new HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams();
 		HiveParserStorageFormat storageFormat = new HiveParserStorageFormat(conf);
 
 		LOG.info("Creating view " + dbDotTable + " position=" + ast.getCharPositionInLine());
@@ -571,7 +572,7 @@ public class HiveParserDDLSemanticAnalyzer {
 		boolean storedAsDirs = false;
 		boolean isUserStorageFormat = false;
 
-		HiveParserRowFormatParams rowFormatParams = new HiveParserRowFormatParams();
+		HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams = new HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams();
 		HiveParserStorageFormat storageFormat = new HiveParserStorageFormat(conf);
 
 		LOG.info("Creating table " + dbDotTab + " position=" + ast.getCharPositionInLine());
@@ -695,7 +696,7 @@ public class HiveParserDDLSemanticAnalyzer {
 
 				HiveParserCreateTableDesc createTableDesc = new HiveParserCreateTableDesc(dbDotTab, isExt, ifNotExists, isTemporary,
 						cols, partCols, comment, location, tblProps, rowFormatParams, storageFormat, primaryKeys, notNulls);
-				return new CTASDesc(createTableDesc, selectStmt);
+				return new CreateTableASDesc(createTableDesc, selectStmt);
 			default:
 				throw new SemanticException("Unrecognized command.");
 		}

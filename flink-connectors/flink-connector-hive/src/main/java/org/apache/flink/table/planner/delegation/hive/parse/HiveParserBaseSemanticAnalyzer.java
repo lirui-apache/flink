@@ -79,6 +79,7 @@ import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec;
+import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -121,7 +122,8 @@ import java.util.stream.IntStream;
 import static org.apache.flink.table.planner.delegation.hive.HiveParserUtils.removeASTChild;
 
 /**
- * Counterpart of hive's BaseSemanticAnalyzer and only contains static methods needed.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer, and also contains code from
+ * SemanticAnalyzer and CalcitePlanner in order to limit file sizes.
  */
 public class HiveParserBaseSemanticAnalyzer {
 
@@ -1819,7 +1821,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's TableSpec.
+	 * Counterpart of hive's BaseSemanticAnalyzer.TableSpec.
 	 */
 	public static class TableSpec {
 		public String tableName;
@@ -1982,7 +1984,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's AnalyzeRewriteContext.
+	 * Counterpart of hive's BaseSemanticAnalyzer.AnalyzeRewriteContext.
 	 */
 	public static class AnalyzeRewriteContext {
 
@@ -2026,7 +2028,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's PKInfo.
+	 * Counterpart of hive's BaseSemanticAnalyzer.PKInfo.
 	 */
 	private static class PKInfo {
 		public String colName;
@@ -2041,7 +2043,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's CTEClause.
+	 * Counterpart of hive's SemanticAnalyzer.CTEClause.
 	 */
 	static class CTEClause {
 		CTEClause(String alias, ASTNode cteNode) {
@@ -2063,7 +2065,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's Phase1Ctx.
+	 * Counterpart of hive's SemanticAnalyzer.Phase1Ctx.
 	 */
 	static class Phase1Ctx {
 		String dest;
@@ -2071,7 +2073,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's GenericUDAFInfo.
+	 * Counterpart of hive's SemanticAnalyzer.GenericUDAFInfo.
 	 */
 	public static class GenericUDAFInfo {
 		public ArrayList<ExprNodeDesc> convertedParameters;
@@ -2080,7 +2082,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Type of a hive table.
+	 * Counterpart of hive's CalcitePlanner.TableType.
 	 */
 	public enum TableType {
 		DRUID,
@@ -2088,7 +2090,7 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Counterpart of hive's AggInfo.
+	 * Counterpart of hive's CalcitePlanner.AggInfo.
 	 */
 	static class AggInfo {
 		private final List<ExprNodeDesc> aggParams;
@@ -2124,6 +2126,83 @@ public class HiveParserBaseSemanticAnalyzer {
 
 		public boolean isAllColumns() {
 			return isAllColumns;
+		}
+	}
+
+	/**
+	 * Counterpart of hive's BaseSemanticAnalyzer.RowFormatParams.
+	 */
+	public static class HiveParserRowFormatParams {
+		String fieldDelim = null;
+		String fieldEscape = null;
+		String collItemDelim = null;
+		String mapKeyDelim = null;
+		String lineDelim = null;
+		String nullFormat = null;
+
+		public String getFieldDelim() {
+			return fieldDelim;
+		}
+
+		public String getFieldEscape() {
+			return fieldEscape;
+		}
+
+		public String getCollItemDelim() {
+			return collItemDelim;
+		}
+
+		public String getMapKeyDelim() {
+			return mapKeyDelim;
+		}
+
+		public String getLineDelim() {
+			return lineDelim;
+		}
+
+		public String getNullFormat() {
+			return nullFormat;
+		}
+
+		protected void analyzeRowFormat(ASTNode child) throws SemanticException {
+			child = (ASTNode) child.getChild(0);
+			int numChildRowFormat = child.getChildCount();
+			for (int numC = 0; numC < numChildRowFormat; numC++) {
+				ASTNode rowChild = (ASTNode) child.getChild(numC);
+				switch (rowChild.getToken().getType()) {
+					case HiveASTParser.TOK_TABLEROWFORMATFIELD:
+						fieldDelim = unescapeSQLString(rowChild.getChild(0)
+								.getText());
+						if (rowChild.getChildCount() >= 2) {
+							fieldEscape = unescapeSQLString(rowChild
+									.getChild(1).getText());
+						}
+						break;
+					case HiveASTParser.TOK_TABLEROWFORMATCOLLITEMS:
+						collItemDelim = unescapeSQLString(rowChild
+								.getChild(0).getText());
+						break;
+					case HiveASTParser.TOK_TABLEROWFORMATMAPKEYS:
+						mapKeyDelim = unescapeSQLString(rowChild.getChild(0)
+								.getText());
+						break;
+					case HiveASTParser.TOK_TABLEROWFORMATLINES:
+						lineDelim = unescapeSQLString(rowChild.getChild(0)
+								.getText());
+						if (!lineDelim.equals("\n")
+								&& !lineDelim.equals("10")) {
+							throw new SemanticException(SemanticAnalyzer.generateErrorMessage(rowChild,
+									ErrorMsg.LINES_TERMINATED_BY_NON_NEWLINE.getMsg()));
+						}
+						break;
+					case HiveASTParser.TOK_TABLEROWFORMATNULL:
+						nullFormat = unescapeSQLString(rowChild.getChild(0)
+								.getText());
+						break;
+					default:
+						throw new AssertionError("Unkown Token: " + rowChild);
+				}
+			}
 		}
 	}
 }

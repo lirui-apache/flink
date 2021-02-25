@@ -24,9 +24,9 @@ import org.apache.flink.table.catalog.hive.util.HiveTypeUtil;
 import org.apache.flink.table.functions.hive.conversion.HiveInspectors;
 import org.apache.flink.table.planner.calcite.FlinkPlannerImpl;
 import org.apache.flink.table.planner.delegation.PlannerContext;
-import org.apache.flink.table.planner.delegation.hive.CTASDesc;
 import org.apache.flink.table.planner.delegation.hive.ConvertSqlFunctionCopier;
 import org.apache.flink.table.planner.delegation.hive.ConvertTableFunctionCopier;
+import org.apache.flink.table.planner.delegation.hive.CreateTableASDesc;
 import org.apache.flink.table.planner.delegation.hive.HiveParserASTBuilder;
 import org.apache.flink.table.planner.delegation.hive.HiveParserContext;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateViewDesc;
@@ -187,7 +187,7 @@ public class HiveParserCalcitePlanner {
 	private int subqueryId = 0;
 
 	private HiveParserCreateViewDesc createViewDesc;
-	private CTASDesc ctasDesc;
+	private CreateTableASDesc ctasDesc;
 
 	public HiveParserCalcitePlanner(
 			HiveParserQueryState queryState,
@@ -206,7 +206,7 @@ public class HiveParserCalcitePlanner {
 		this.funcConverter = new ConvertSqlFunctionCopier(cluster.getRexBuilder(), frameworkConfig.getOperatorTable(), catalogReader.nameMatcher());
 	}
 
-	public void setCtasDesc(CTASDesc ctasDesc) {
+	public void setCtasDesc(CreateTableASDesc ctasDesc) {
 		this.ctasDesc = ctasDesc;
 	}
 

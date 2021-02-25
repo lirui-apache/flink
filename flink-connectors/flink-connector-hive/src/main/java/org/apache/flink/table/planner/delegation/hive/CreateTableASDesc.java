@@ -25,14 +25,14 @@ import java.io.Serializable;
 /**
  * A desc for CTAS.
  */
-public class CTASDesc implements Serializable {
+public class CreateTableASDesc implements Serializable {
 
 	private static final long serialVersionUID = 1L;
 
 	private final HiveParserCreateTableDesc createTableDesc;
 	private final ASTNode query;
 
-	public CTASDesc(HiveParserCreateTableDesc createTableDesc, ASTNode query) {
+	public CreateTableASDesc(HiveParserCreateTableDesc createTableDesc, ASTNode query) {
 		this.createTableDesc = createTableDesc;
 		this.query = query;
 	}

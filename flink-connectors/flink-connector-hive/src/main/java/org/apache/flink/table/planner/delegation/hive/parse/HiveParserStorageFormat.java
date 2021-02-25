@@ -32,7 +32,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Counterpart of hive's StorageFormat.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.StorageFormat.
  */
 public class HiveParserStorageFormat {
 	private static final StorageFormatFactory storageFormatFactory = new StorageFormatFactory();

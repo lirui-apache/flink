@@ -82,7 +82,7 @@ import org.apache.flink.table.operations.ddl.DropTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropViewOperation;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.NotNullConstraint;
 import org.apache.flink.table.planner.delegation.hive.HiveParserCreateTableDesc.PrimaryKey;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowFormatParams;
+import org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserStorageFormat;
 import org.apache.flink.table.planner.utils.OperationConverterUtils;
 
@@ -664,7 +664,7 @@ public class DDLOperationConverter {
 		return catalogManager.qualifyIdentifier(unresolvedIdentifier);
 	}
 
-	private void encodeRowFormat(HiveParserRowFormatParams rowFormatParams, Map<String, String> props) {
+	private void encodeRowFormat(HiveParserBaseSemanticAnalyzer.HiveParserRowFormatParams rowFormatParams, Map<String, String> props) {
 		if (rowFormatParams.getFieldDelim() != null) {
 			props.put(FIELD_DELIM, rowFormatParams.getFieldDelim());
 		}

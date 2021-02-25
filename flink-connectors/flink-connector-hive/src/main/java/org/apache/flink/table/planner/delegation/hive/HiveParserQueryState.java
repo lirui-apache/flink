@@ -25,7 +25,7 @@ import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import java.util.Map;
 
 /**
- * Counterpart of hive's QueryState.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.QueryState.
  */
 public class HiveParserQueryState {
 	/**

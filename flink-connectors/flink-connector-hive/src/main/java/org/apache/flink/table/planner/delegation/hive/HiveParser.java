@@ -208,9 +208,9 @@ public class HiveParser extends ParserImpl {
 					if (work instanceof HiveParserCreateViewDesc) {
 						// analyze and expand the view query
 						analyzeCreateView((HiveParserCreateViewDesc) work, context, queryState, hiveShim);
-					} else if (work instanceof CTASDesc) {
+					} else if (work instanceof CreateTableASDesc) {
 						// analyze the query
-						CTASDesc ctasDesc = (CTASDesc) work;
+						CreateTableASDesc ctasDesc = (CreateTableASDesc) work;
 						HiveParserCalcitePlanner calcitePlanner = createCalcitePlanner(context, queryState, hiveShim);
 						calcitePlanner.setCtasDesc(ctasDesc);
 						RelNode queryRelNode = calcitePlanner.genLogicalPlan(ctasDesc.getQuery());
@@ -223,7 +223,7 @@ public class HiveParser extends ParserImpl {
 						CatalogSinkModifyOperation insertOperation = createInsertOperation(
 								queryRelNode, destTable, Collections.emptyMap(), Collections.emptyList(), false);
 						CreateTableOperation createTableOperation = (CreateTableOperation) ddlConverter
-								.convert(((CTASDesc) work).getCreateTableDesc());
+								.convert(((CreateTableASDesc) work).getCreateTableDesc());
 						return Collections.singletonList(new CreateTableASOperation(createTableOperation, insertOperation));
 					}
 					return Collections.singletonList(ddlConverter.convert(work));
