@@ -22,7 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Counterpart of hive's HiveIntervalYearMonth.
+ * Counterpart of hive's org.apache.hadoop.hive.common.type.HiveIntervalYearMonth.
  */
 public class HiveParserIntervalYearMonth implements Comparable<HiveParserIntervalYearMonth> {
 
@@ -31,19 +31,12 @@ public class HiveParserIntervalYearMonth implements Comparable<HiveParserInterva
 
 	protected static final int MONTHS_PER_YEAR = 12;
 
-	public HiveParserIntervalYearMonth() {
-	}
-
 	public HiveParserIntervalYearMonth(int years, int months) {
 		set(years, months);
 	}
 
 	public HiveParserIntervalYearMonth(int totalMonths) {
 		set(totalMonths);
-	}
-
-	public HiveParserIntervalYearMonth(HiveParserIntervalYearMonth hiveInterval) {
-		set(hiveInterval.getTotalMonths());
 	}
 
 	public int getYears() {

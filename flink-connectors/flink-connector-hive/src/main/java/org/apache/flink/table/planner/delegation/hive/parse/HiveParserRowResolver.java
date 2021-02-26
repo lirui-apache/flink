@@ -21,7 +21,6 @@ package org.apache.flink.table.planner.delegation.hive.parse;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.RowSchema;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +35,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Counterpart of hive's RowResolver.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.RowResolver.
  */
 public class HiveParserRowResolver implements Serializable {
 
@@ -63,10 +62,10 @@ public class HiveParserRowResolver implements Serializable {
 
 	public HiveParserRowResolver() {
 		rowSchema = new RowSchema();
-		rslvMap = new LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>>();
-		invRslvMap = new HashMap<String, String[]>();
-		altInvRslvMap = new HashMap<String, String[]>();
-		expressionMap = new HashMap<String, ASTNode>();
+		rslvMap = new LinkedHashMap<>();
+		invRslvMap = new HashMap<>();
+		altInvRslvMap = new HashMap<>();
+		expressionMap = new HashMap<>();
 		isExprResolver = false;
 	}
 
@@ -127,7 +126,7 @@ public class HiveParserRowResolver implements Serializable {
 
 		LinkedHashMap<String, ColumnInfo> fMap = rslvMap.get(tabAlias);
 		if (fMap == null) {
-			fMap = new LinkedHashMap<String, ColumnInfo>();
+			fMap = new LinkedHashMap<>();
 			rslvMap.put(tabAlias, fMap);
 		}
 		ColumnInfo oldColInfo = fMap.put(colAlias, colInfo);
@@ -269,10 +268,6 @@ public class HiveParserRowResolver implements Serializable {
 		return -1;
 	}
 
-	public Set<String> getTableNames() {
-		return rslvMap.keySet();
-	}
-
 	public String[] reverseLookup(String internalName) {
 		return invRslvMap.get(internalName);
 	}
@@ -316,33 +311,8 @@ public class HiveParserRowResolver implements Serializable {
 		return rslvMap;
 	}
 
-	public Map<String, ASTNode> getExpressionMap() {
-		return expressionMap;
-	}
-
-	public void setExprResolver(boolean isExprResolver) {
-		this.isExprResolver = isExprResolver;
-	}
-
-	public boolean doesInvRslvMapContain(String column) {
-		return getInvRslvMap().containsKey(column);
-	}
-
-	public void setRowSchema(RowSchema rowSchema) {
-		this.rowSchema = rowSchema;
-	}
-
-	public void setExpressionMap(Map<String, ASTNode> expressionMap) {
-		this.expressionMap = expressionMap;
-	}
-
 	private static class IntRef {
 		public int val = 0;
-	}
-
-	public static boolean add(HiveParserRowResolver rrToAddTo, HiveParserRowResolver rrToAddFrom, int numColumns)
-			throws SemanticException {
-		return add(rrToAddTo, rrToAddFrom, null, numColumns);
 	}
 
 	// TODO: 1) How to handle collisions? 2) Should we be cloning ColumnInfo or not?
@@ -366,7 +336,7 @@ public class HiveParserRowResolver implements Serializable {
 			colAlias = qualifiedColName[1];
 
 			newCI = new ColumnInfo(cInfoFrmInput);
-			newCI.setInternalName(SemanticAnalyzer.getColumnInternalName(outputColPos));
+			newCI.setInternalName(HiveParserBaseSemanticAnalyzer.getColumnInternalName(outputColPos));
 
 			outputColPos++;
 
@@ -446,21 +416,6 @@ public class HiveParserRowResolver implements Serializable {
 			LOG.warn("Duplicates detected when adding columns to RR: see previous message");
 		}
 		return combinedRR;
-	}
-
-	public HiveParserRowResolver duplicate() {
-		HiveParserRowResolver resolver = new HiveParserRowResolver();
-		resolver.rowSchema = new RowSchema(rowSchema);
-		resolver.rslvMap.putAll(rslvMap);
-		resolver.invRslvMap.putAll(invRslvMap);
-		resolver.altInvRslvMap.putAll(altInvRslvMap);
-		resolver.expressionMap.putAll(expressionMap);
-		resolver.isExprResolver = isExprResolver;
-		return resolver;
-	}
-
-	private HashMap<String, String[]> getInvRslvMap() {
-		return invRslvMap; // If making this public, note that its ordering is undefined.
 	}
 
 	public HiveParserNamedJoinInfo getNamedJoinInfo() {

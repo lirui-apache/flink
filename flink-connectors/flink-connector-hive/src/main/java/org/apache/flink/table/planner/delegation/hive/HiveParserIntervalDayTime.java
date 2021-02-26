@@ -25,7 +25,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Counterpart of hive's HiveIntervalDayTime.
+ * Counterpart of hive's org.apache.hadoop.hive.common.type.HiveIntervalDayTime.
  */
 public class HiveParserIntervalDayTime implements Comparable<HiveParserIntervalDayTime> {
 
@@ -33,23 +33,12 @@ public class HiveParserIntervalDayTime implements Comparable<HiveParserIntervalD
 	protected long totalSeconds;
 	protected int nanos;
 
-	public HiveParserIntervalDayTime() {
-	}
-
 	public HiveParserIntervalDayTime(int days, int hours, int minutes, int seconds, int nanos) {
 		set(days, hours, minutes, seconds, nanos);
 	}
 
 	public HiveParserIntervalDayTime(long seconds, int nanos) {
 		set(seconds, nanos);
-	}
-
-	public HiveParserIntervalDayTime(BigDecimal seconds) {
-		set(seconds);
-	}
-
-	public HiveParserIntervalDayTime(HiveParserIntervalDayTime other) {
-		set(other.totalSeconds, other.nanos);
 	}
 
 	public int getDays() {
@@ -129,10 +118,6 @@ public class HiveParserIntervalDayTime implements Comparable<HiveParserIntervalD
 
 	public void set(HiveParserIntervalDayTime other) {
 		set(other.getTotalSeconds(), other.getNanos());
-	}
-
-	public HiveParserIntervalDayTime negate() {
-		return new HiveParserIntervalDayTime(-getTotalSeconds(), -getNanos());
 	}
 
 	@Override

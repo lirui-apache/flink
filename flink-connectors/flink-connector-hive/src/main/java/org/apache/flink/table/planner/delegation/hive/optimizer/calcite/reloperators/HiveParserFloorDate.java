@@ -32,7 +32,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Counterpart of hive's HiveFloorDate.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveFloorDate.
  */
 public class HiveParserFloorDate extends SqlMonotonicUnaryFunction {
 

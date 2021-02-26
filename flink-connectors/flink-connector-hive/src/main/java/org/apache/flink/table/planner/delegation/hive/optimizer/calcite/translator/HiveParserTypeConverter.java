@@ -61,7 +61,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Counterpart of hive's TypeConverter.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.TypeConverter.
  */
 public class HiveParserTypeConverter {
 
@@ -259,7 +259,7 @@ public class HiveParserTypeConverter {
 
 	public static RelDataType convert(StructTypeInfo structType,
 			final RelDataTypeFactory dtFactory) throws SemanticException {
-		List<RelDataType> fTypes = new ArrayList<RelDataType>(structType.getAllStructFieldTypeInfos().size());
+		List<RelDataType> fTypes = new ArrayList<>(structType.getAllStructFieldTypeInfos().size());
 		for (TypeInfo ti : structType.getAllStructFieldTypeInfos()) {
 			fTypes.add(convert(ti, dtFactory));
 		}
@@ -358,38 +358,5 @@ public class HiveParserTypeConverter {
 				return TypeInfoFactory.voidTypeInfo;
 		}
 
-	}
-
-	/**
-	 * Convert Calcite Types To Hive Types.
-	 */
-	public static HiveToken hiveToken(RelDataType calciteType) {
-		HiveToken ht = null;
-
-		switch (calciteType.getSqlTypeName()) {
-			case CHAR: {
-				ht = new HiveToken(HiveASTParser.TOK_CHAR, "TOK_CHAR", String.valueOf(calciteType.getPrecision()));
-			}
-			break;
-			case VARCHAR: {
-				if (calciteType.getPrecision() == Integer.MAX_VALUE) {
-					ht = new HiveToken(HiveASTParser.TOK_STRING, "TOK_STRING", String.valueOf(calciteType
-							.getPrecision()));
-				} else {
-					ht = new HiveToken(HiveASTParser.TOK_VARCHAR, "TOK_VARCHAR", String.valueOf(calciteType
-							.getPrecision()));
-				}
-			}
-			break;
-			case DECIMAL: {
-				ht = new HiveToken(HiveASTParser.TOK_DECIMAL, "TOK_DECIMAL", String.valueOf(calciteType
-						.getPrecision()), String.valueOf(calciteType.getScale()));
-			}
-			break;
-			default:
-				ht = calciteToHiveTypeNameMap.get(calciteType.getSqlTypeName().getName());
-		}
-
-		return ht;
 	}
 }

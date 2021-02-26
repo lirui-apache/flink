@@ -23,7 +23,7 @@ import org.apache.hadoop.hive.ql.parse.JoinType;
 import java.util.List;
 
 /**
- * Counterpart of hive's NamedJoinInfo.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.NamedJoinInfo.
  */
 public class HiveParserNamedJoinInfo {
 

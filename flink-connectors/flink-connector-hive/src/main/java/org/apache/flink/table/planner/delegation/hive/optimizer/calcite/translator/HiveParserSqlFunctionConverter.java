@@ -25,7 +25,6 @@ import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.function
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.functions.HiveParserSqlSumAggFunction;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserExtractDate;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserFloorDate;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseDriver;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
 
 import org.apache.calcite.rel.type.RelDataType;
@@ -50,7 +49,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
@@ -68,7 +66,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Counterpart of hive's SqlFunctionConverter.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.SqlFunctionConverter.
  */
 public class HiveParserSqlFunctionConverter {
 
@@ -105,184 +103,6 @@ public class HiveParserSqlFunctionConverter {
 		return getCalciteFn(name, calciteArgTypes, retType, FunctionRegistry.isDeterministic(hiveUDF));
 	}
 
-	public static SqlOperator getCalciteOperator(String funcTextName,
-			List<RelDataType> calciteArgTypes, RelDataType retType) throws SemanticException {
-		// We could just do toLowerCase here and let SA qualify it, but
-		// let's be proper...
-		String name = FunctionRegistry.getNormalizedFunctionName(funcTextName);
-		return getCalciteFn(name, calciteArgTypes, retType, false);
-	}
-
-//	public static GenericUDF getHiveUDF(SqlOperator op, RelDataType dt, int argsLength) {
-//		String name = REVERSE_OPERATOR_MAP.get(op);
-//		if (name == null) {
-//			name = op.getName();
-//		}
-//		// Make sure we handle unary + and - correctly.
-//		if (argsLength == 1) {
-//			if (name == "+") {
-//				name = FunctionRegistry.UNARY_PLUS_FUNC_NAME;
-//			} else if (name == "-") {
-//				name = FunctionRegistry.UNARY_MINUS_FUNC_NAME;
-//			}
-//		}
-//		FunctionInfo hFn;
-//		try {
-//			hFn = name != null ? FunctionRegistry.getFunctionInfo(name) : null;
-//		} catch (SemanticException e) {
-//			LOG.warn("Failed to load udf " + name, e);
-//			hFn = null;
-//		}
-//		if (hFn == null) {
-//			try {
-//				hFn = handleExplicitCast(op, dt);
-//			} catch (SemanticException e) {
-//				LOG.warn("Failed to load udf " + name, e);
-//				hFn = null;
-//			}
-//		}
-//		return hFn == null ? null : hFn.getGenericUDF();
-//	}
-
-//	private static FunctionInfo handleExplicitCast(SqlOperator op, RelDataType dt)
-//			throws SemanticException {
-//		FunctionInfo castUDF = null;
-//
-//		if (op.kind == SqlKind.CAST) {
-//			TypeInfo castType = HiveParserTypeConverter.convert(dt);
-//
-//			if (castType.equals(TypeInfoFactory.byteTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("tinyint");
-//			} else if (castType instanceof CharTypeInfo) {
-//				castUDF = handleCastForParameterizedType(castType, FunctionRegistry.getFunctionInfo("char"));
-//			} else if (castType instanceof VarcharTypeInfo) {
-//				castUDF = handleCastForParameterizedType(castType,
-//						FunctionRegistry.getFunctionInfo("varchar"));
-//			} else if (castType.equals(TypeInfoFactory.stringTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("string");
-//			} else if (castType.equals(TypeInfoFactory.booleanTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("boolean");
-//			} else if (castType.equals(TypeInfoFactory.shortTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("smallint");
-//			} else if (castType.equals(TypeInfoFactory.intTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("int");
-//			} else if (castType.equals(TypeInfoFactory.longTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("bigint");
-//			} else if (castType.equals(TypeInfoFactory.floatTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("float");
-//			} else if (castType.equals(TypeInfoFactory.doubleTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("double");
-//			} else if (castType.equals(TypeInfoFactory.timestampTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("timestamp");
-//			} else if (castType.equals(TypeInfoFactory.dateTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("date");
-//			} else if (castType instanceof DecimalTypeInfo) {
-//				castUDF = handleCastForParameterizedType(castType,
-//						FunctionRegistry.getFunctionInfo("decimal"));
-//			} else if (castType.equals(TypeInfoFactory.binaryTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo("binary");
-//			} else if (castType.equals(TypeInfoFactory.intervalDayTimeTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo(serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME);
-//			} else if (castType.equals(TypeInfoFactory.intervalYearMonthTypeInfo)) {
-//				castUDF = FunctionRegistry.getFunctionInfo(serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME);
-//			} else {
-//				throw new IllegalStateException("Unexpected type : " + castType.getQualifiedName());
-//			}
-//		}
-//
-//		return castUDF;
-//	}
-
-//	private static FunctionInfo handleCastForParameterizedType(TypeInfo ti, FunctionInfo fi) {
-//		SettableUDF udf = (SettableUDF) fi.getGenericUDF();
-//		try {
-//			udf.setTypeInfo(ti);
-//		} catch (UDFArgumentException e) {
-//			throw new RuntimeException(e);
-//		}
-//		if (fi.isPersistent()) {
-//			return new FunctionInfo(fi.getDisplayName(), udf.getClass().getName(), fi.getResources());
-//		} else if (fi.isBuiltIn()) {
-//			return new FunctionInfo(true, fi.getDisplayName(), (GenericUDF) udf, fi.getResources());
-//		} else {
-//			return new FunctionInfo(false, fi.getDisplayName(), (GenericUDF) udf, fi.getResources());
-//		}
-//	}
-
-	// TODO: 1) handle Agg Func Name translation 2) is it correct to add func
-	// args as child of func?
-	public static ASTNode buildAST(SqlOperator op, List<ASTNode> children) {
-		HiveToken hToken = CALCITE_TO_HIVE_TOKEN.get(op);
-		ASTNode node;
-		if (hToken != null) {
-			switch (op.kind) {
-				case IN:
-				case BETWEEN:
-				case ROW:
-				case IS_NOT_NULL:
-				case IS_NULL:
-				case CASE:
-				case EXTRACT:
-				case FLOOR:
-				case OTHER_FUNCTION:
-					node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_FUNCTION, "TOK_FUNCTION");
-					node.addChild((ASTNode) HiveASTParseDriver.ADAPTOR.create(hToken.type, hToken.text));
-					break;
-				default:
-					node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(hToken.type, hToken.text);
-			}
-		} else {
-			node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_FUNCTION, "TOK_FUNCTION");
-			if (op.kind != SqlKind.CAST) {
-				if (op.kind == SqlKind.MINUS_PREFIX) {
-					node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.MINUS, "MINUS");
-				} else if (op.kind == SqlKind.PLUS_PREFIX) {
-					node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.PLUS, "PLUS");
-				} else {
-					// Handle COUNT/SUM/AVG function for the case of COUNT(*) and COUNT(DISTINCT)
-					if (op instanceof HiveParserSqlCountAggFunction ||
-							op instanceof HiveParserSqlSumAggFunction ||
-							(op instanceof CalciteUDAF && op.getName().equalsIgnoreCase(SqlStdOperatorTable.AVG.getName()))) {
-						if (children.size() == 0) {
-							node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_FUNCTIONSTAR,
-									"TOK_FUNCTIONSTAR");
-						} else {
-							CanAggregateDistinct distinctFunction = (CanAggregateDistinct) op;
-							if (distinctFunction.isDistinct()) {
-								node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_FUNCTIONDI,
-										"TOK_FUNCTIONDI");
-							}
-						}
-					}
-					node.addChild((ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.Identifier, op.getName()));
-				}
-			}
-		}
-
-		for (ASTNode c : children) {
-			HiveASTParseDriver.ADAPTOR.addChild(node, c);
-		}
-		return node;
-	}
-
-	/**
-	 * Build AST for flattened Associative expressions ('and', 'or'). Flattened
-	 * expressions is of the form or[x,y,z] which is originally represented as
-	 * "or[x, or[y, z]]".
-	 */
-	public static ASTNode buildAST(SqlOperator op, List<ASTNode> children, int i) {
-		if (i + 1 < children.size()) {
-			HiveToken hToken = CALCITE_TO_HIVE_TOKEN.get(op);
-			ASTNode curNode = ((ASTNode) HiveASTParseDriver.ADAPTOR.create(hToken.type, hToken.text));
-			HiveASTParseDriver.ADAPTOR.addChild(curNode, children.get(i));
-			HiveASTParseDriver.ADAPTOR.addChild(curNode, buildAST(op, children, i + 1));
-			return curNode;
-		} else {
-			return children.get(i);
-		}
-
-	}
-
 	// TODO: this is not valid. Function names for built-in UDFs are specified in
 	// FunctionRegistry, and only happen to match annotations. For user UDFs, the
 	// name is what user specifies at creation time (annotation can be absent,
@@ -290,7 +110,7 @@ public class HiveParserSqlFunctionConverter {
 	private static String getName(GenericUDF hiveUDF) {
 		String udfName = null;
 		if (hiveUDF instanceof GenericUDFBridge) {
-			udfName = ((GenericUDFBridge) hiveUDF).getUdfName();
+			udfName = hiveUDF.getUdfName();
 		} else {
 			Class<? extends GenericUDF> udfClass = hiveUDF.getClass();
 			Description udfAnnotation = udfClass.getAnnotation(Description.class);

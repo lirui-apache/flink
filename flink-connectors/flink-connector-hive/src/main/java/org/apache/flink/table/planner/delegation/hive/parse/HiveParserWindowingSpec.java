@@ -34,7 +34,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 /**
- * Counterpart of hive's WindowingSpec.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.WindowingSpec.
  */
 public class HiveParserWindowingSpec {
 
@@ -66,7 +66,7 @@ public class HiveParserWindowingSpec {
 
 			// 1. For Wdw Specs that refer to Window Defns, inherit missing components
 			if (wdwSpec != null) {
-				ArrayList<String> sources = new ArrayList<String>();
+				ArrayList<String> sources = new ArrayList<>();
 				fillInWindowSpec(wdwSpec.getSourceId(), wdwSpec, sources);
 			}
 
@@ -386,10 +386,6 @@ public class HiveParserWindowingSpec {
 			this.end = end;
 		}
 
-		public WindowFrameSpec(WindowType windowType, BoundarySpec start) {
-			this(windowType, start, null);
-		}
-
 		public BoundarySpec getStart() {
 			return start;
 		}
@@ -487,7 +483,7 @@ public class HiveParserWindowingSpec {
 
 		public void addArg(ASTNode arg) {
 			args = args == null ? new ArrayList<ASTNode>() : args;
-			args.add((ASTNode) arg);
+			args.add(arg);
 		}
 
 		public WindowSpec getWindowSpec() {

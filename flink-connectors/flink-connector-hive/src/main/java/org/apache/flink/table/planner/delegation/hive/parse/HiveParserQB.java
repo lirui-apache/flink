@@ -37,7 +37,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Counterpart of hive's QB.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.QB.
  */
 public class HiveParserQB {
 
@@ -108,9 +108,6 @@ public class HiveParserQB {
 		}
 	}
 
-	public HiveParserQB() {
-	}
-
 	public HiveParserQB(String outerId, String alias, boolean isSubQ) {
 		// Must be deterministic order maps - see HIVE-8707
 		aliasToTabs = new LinkedHashMap<>();
@@ -143,20 +140,12 @@ public class HiveParserQB {
 		return (outerId == null ? alias : outerId + ":" + alias);
 	}
 
-	public String getAlias() {
-		return qbp.getAlias();
-	}
-
 	public HiveParserQBParseInfo getParseInfo() {
 		return qbp;
 	}
 
 	public QBMetaData getMetaData() {
 		return qbm;
-	}
-
-	public void setQBParseInfo(HiveParserQBParseInfo qbp) {
-		this.qbp = qbp;
 	}
 
 	public void countSelDi() {
@@ -169,11 +158,7 @@ public class HiveParserQB {
 
 	public boolean exists(String alias) {
 		alias = alias.toLowerCase();
-		if (aliasToTabs.get(alias) != null || aliasToSubq.get(alias) != null) {
-			return true;
-		}
-
-		return false;
+		return aliasToTabs.get(alias) != null || aliasToSubq.get(alias) != null;
 	}
 
 	public void setTabAlias(String alias, String tabName) {
@@ -198,20 +183,8 @@ public class HiveParserQB {
 		return id;
 	}
 
-	public int getNumGbys() {
-		return numGbys;
-	}
-
-	public int getNumSelDi() {
-		return numSelDi;
-	}
-
 	public int getNumSels() {
 		return numSels;
-	}
-
-	public int getNumJoins() {
-		return numJoins;
 	}
 
 	public Set<String> getSubqAliases() {
@@ -234,10 +207,6 @@ public class HiveParserQB {
 		return aliasToTabs.get(alias.toLowerCase());
 	}
 
-	public Map<String, String> getTabPropsForAlias(String alias) {
-		return aliasToProps.get(alias.toLowerCase());
-	}
-
 	public void rewriteViewToSubq(String alias, String viewName, HiveParserQBExpr qbexpr, Table tab) {
 		alias = alias.toLowerCase();
 		String tableName = aliasToTabs.remove(alias);
@@ -252,14 +221,6 @@ public class HiveParserQB {
 		rewriteViewToSubq(alias, cteName, qbexpr, null);
 	}
 
-	public QBJoinTree getQbJoinTree() {
-		return qbjoin;
-	}
-
-	public void setQbJoinTree(QBJoinTree qbjoin) {
-		this.qbjoin = qbjoin;
-	}
-
 	public void setIsQuery(boolean isQuery) {
 		this.isQuery = isQuery;
 	}
@@ -270,11 +231,6 @@ public class HiveParserQB {
 	 */
 	public boolean getIsQuery() {
 		return isQuery;
-	}
-
-	// to decide whether to rewrite RR of subquery
-	public boolean isTopLevelSelectStarQuery() {
-		return !isCTAS() && qbp.isTopLevelSimpleSelectStarQuery();
 	}
 
 	// to find target for fetch task conversion optimizer (not allows subqueries)
@@ -290,20 +246,8 @@ public class HiveParserQB {
 		return true;
 	}
 
-	public boolean hasTableSample(String alias) {
-		return qbp.getTabSample(alias) != null;
-	}
-
 	public CreateTableDesc getTableDesc() {
 		return tblDesc;
-	}
-
-	public void setTableDesc(CreateTableDesc desc) {
-		tblDesc = desc;
-	}
-
-	public CreateTableDesc getDirectoryDesc() {
-		return directoryDesc;
 	}
 
 	public void setDirectoryDesc(CreateTableDesc directoryDesc) {
@@ -319,9 +263,6 @@ public class HiveParserQB {
 
 	/**
 	 * Retrieve skewed column name for a table.
-	 *
-	 * @param alias table alias
-	 * @return
 	 */
 	public List<String> getSkewedColumnNames(String alias) {
 		List<String> skewedColNames = null;
@@ -335,14 +276,6 @@ public class HiveParserQB {
 
 	}
 
-	public boolean isAnalyzeRewrite() {
-		return isAnalyzeRewrite;
-	}
-
-	public void setAnalyzeRewrite(boolean isAnalyzeRewrite) {
-		this.isAnalyzeRewrite = isAnalyzeRewrite;
-	}
-
 	public HiveParserPTFInvocationSpec getPTFInvocationSpec(ASTNode node) {
 		return ptfNodeToSpec == null ? null : ptfNodeToSpec.get(node);
 	}
@@ -351,10 +284,6 @@ public class HiveParserQB {
 		// Must be deterministic order map - see HIVE-8707
 		ptfNodeToSpec = ptfNodeToSpec == null ? new LinkedHashMap<ASTNode, HiveParserPTFInvocationSpec>() : ptfNodeToSpec;
 		ptfNodeToSpec.put(node, spec);
-	}
-
-	public HashMap<ASTNode, HiveParserPTFInvocationSpec> getPTFNodeToSpec() {
-		return ptfNodeToSpec;
 	}
 
 	public HiveParserWindowingSpec getWindowingSpec(String dest) {
@@ -373,43 +302,8 @@ public class HiveParserQB {
 		return destToWindowingSpec;
 	}
 
-	protected void setSubQueryDef(HiveParserQBSubQuery subQueryPredicateDef) {
-		this.subQueryPredicateDef = subQueryPredicateDef;
-	}
-
-	protected HiveParserQBSubQuery getSubQueryPredicateDef() {
-		return subQueryPredicateDef;
-	}
-
-	protected int getNumSubQueryPredicates() {
-		return numSubQueryPredicates;
-	}
-
 	protected int incrNumSubQueryPredicates() {
 		return ++numSubQueryPredicates;
-	}
-
-	void setWhereClauseSubQueryPredicate(HiveParserQBSubQuery sq) {
-		whereClauseSubQueryPredicate = sq;
-	}
-
-	public HiveParserQBSubQuery getWhereClauseSubQueryPredicate() {
-		return whereClauseSubQueryPredicate;
-	}
-
-	void setHavingClauseSubQueryPredicate(HiveParserQBSubQuery sq) {
-		havingClauseSubQueryPredicate = sq;
-	}
-
-	public HiveParserQBSubQuery getHavingClauseSubQueryPredicate() {
-		return havingClauseSubQueryPredicate;
-	}
-
-	void addEncryptedTargetTablePath(Path p) {
-		if (encryptedTargetTablePaths == null) {
-			encryptedTargetTablePaths = new ArrayList<>();
-		}
-		encryptedTargetTablePaths.add(p);
 	}
 
 	/**

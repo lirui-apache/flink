@@ -30,7 +30,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Counterpart of hive's JoinTypeCheckCtx.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.JoinTypeCheckCtx.
  */
 public class HiveParserJoinTypeCheckCtx extends HiveParserTypeCheckCtx {
 
@@ -52,9 +52,5 @@ public class HiveParserJoinTypeCheckCtx extends HiveParserTypeCheckCtx {
 	 */
 	public List<HiveParserRowResolver> getInputRRList() {
 		return inputRRLst;
-	}
-
-	public boolean isOuterJoin() {
-		return outerJoin;
 	}
 }

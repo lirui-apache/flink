@@ -30,7 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Counterpart of hive's PTFInvocationSpec.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.
  */
 public class HiveParserPTFInvocationSpec {
 
@@ -61,52 +61,13 @@ public class HiveParserPTFInvocationSpec {
 		public OrderSpec() {
 		}
 
-		public OrderSpec(PartitionSpec pSpec) {
-			for (PartitionExpression peSpec : pSpec.getExpressions()) {
-				addExpression(new OrderExpression(peSpec));
-			}
-		}
-
 		public ArrayList<OrderExpression> getExpressions() {
 			return expressions;
-		}
-
-		public void setExpressions(ArrayList<OrderExpression> columns) {
-			this.expressions = columns;
-		}
-
-		// Add order expressions from the list of expressions in the format of ASTNode
-		public void addExpressions(ArrayList<ASTNode> nodes) {
-			for (int i = 0; i < nodes.size(); i++) {
-				OrderExpression expr = new OrderExpression();
-				expr.setExpression(nodes.get(i));
-				addExpression(expr);
-			}
 		}
 
 		public void addExpression(OrderExpression c) {
 			expressions = expressions == null ? new ArrayList<OrderExpression>() : expressions;
 			expressions.add(c);
-		}
-
-		protected boolean isPrefixedBy(PartitionSpec pSpec) {
-			if (pSpec == null || pSpec.getExpressions() == null) {
-				return true;
-			}
-
-			int pExprCnt = pSpec.getExpressions().size();
-			int exprCnt = getExpressions() == null ? 0 : getExpressions().size();
-
-			if (exprCnt < pExprCnt) {
-				return false;
-			}
-
-			for (int i = 0; i < pExprCnt; i++) {
-				if (!pSpec.getExpressions().get(i).equals(getExpressions().get(i))) {
-					return false;
-				}
-			}
-			return true;
 		}
 
 		protected void prefixBy(PartitionSpec pSpec) {
@@ -142,13 +103,10 @@ public class HiveParserPTFInvocationSpec {
 			}
 			OrderSpec other = (OrderSpec) obj;
 			if (expressions == null) {
-				if (other.expressions != null) {
-					return false;
-				}
-			} else if (!expressions.equals(other.expressions)) {
-				return false;
+				return other.expressions == null;
+			} else {
+				return expressions.equals(other.expressions);
 			}
-			return true;
 		}
 
 		@Override
@@ -215,10 +173,7 @@ public class HiveParserPTFInvocationSpec {
 			if (order != other.order) {
 				return false;
 			}
-			if (nullOrder != other.nullOrder) {
-				return false;
-			}
-			return true;
+			return nullOrder == other.nullOrder;
 		}
 
 		@Override
@@ -279,13 +234,10 @@ public class HiveParserPTFInvocationSpec {
 				return false;
 			}
 			if (partSpec == null) {
-				if (other.partSpec != null) {
-					return false;
-				}
-			} else if (!partSpec.equals(other.partSpec)) {
-				return false;
+				return other.partSpec == null;
+			} else {
+				return partSpec.equals(other.partSpec);
 			}
-			return true;
 		}
 
 		@Override

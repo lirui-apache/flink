@@ -19,7 +19,7 @@
 package org.apache.flink.table.planner.delegation.hive.parse;
 
 /**
- * Counterpart of hive's ExplainConfiguration.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.ExplainConfiguration.
  */
 public class HiveParserExplainConfiguration {
 

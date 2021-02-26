@@ -25,11 +25,8 @@ import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Counterpart of hive's AuthorizationParseUtils.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.authorization.AuthorizationParseUtils.
  */
 public class HiveParserAuthorizationParseUtils {
 
@@ -57,13 +54,5 @@ public class HiveParserAuthorizationParseUtils {
 			default:
 				return null;
 		}
-	}
-
-	public static List<PrincipalDesc> analyzePrincipalListDef(ASTNode node) {
-		List<PrincipalDesc> principalList = new ArrayList<PrincipalDesc>();
-		for (int i = 0; i < node.getChildCount(); i++) {
-			principalList.add(getPrincipalDesc((ASTNode) node.getChild(i)));
-		}
-		return principalList;
 	}
 }

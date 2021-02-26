@@ -31,24 +31,17 @@ import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Stack;
 
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
 
 /**
- * Counterpart of hive's JoinCondTypeCheckProcFactory.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.JoinCondTypeCheckProcFactory.
  */
 public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckProcFactory {
-
-	public static Map<ASTNode, ExprNodeDesc> genExprNode(ASTNode expr, HiveParserTypeCheckCtx tcCtx)
-			throws SemanticException {
-		return HiveParserTypeCheckProcFactory.genExprNode(expr, tcCtx, new HiveParserJoinCondTypeCheckProcFactory());
-	}
 
 	/**
 	 * Processor for table columns.

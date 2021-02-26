@@ -23,7 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Counterpart of hive's PreCboCtx.
+ * Counterpart of hive's CalcitePlanner.PreCboCtx.
  */
 public class HiveParserPreCboCtx extends HiveParserPlannerContext {
 

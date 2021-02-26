@@ -25,7 +25,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import java.util.List;
 
 /**
- * And ExprNodeDesc to represent functions in Flink.
+ * An ExprNodeDesc to represent functions in Flink.
  */
 public class SqlOperatorExprNodeDesc extends ExprNodeDesc {
 

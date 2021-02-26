@@ -449,6 +449,27 @@ public class HiveDialectITCase {
 	}
 
 	@Test
+	public void testTemporaryFunction() throws Exception {
+		// create temp function
+		tableEnv.executeSql(String.format("create temporary function temp_abs as '%s'", GenericUDFAbs.class.getName()));
+		List<Row> functions = CollectionUtil.iteratorToList(tableEnv.executeSql("show functions").collect());
+		assertTrue(functions.toString().contains("temp_abs"));
+		// call the function
+		tableEnv.executeSql("create table src(x int)");
+		tableEnv.executeSql("insert into src values (1),(-1)").await();
+		assertEquals("[1, 1]", queryResult(tableEnv.sqlQuery("select temp_abs(x) from src")).toString());
+		// switch DB and the temp function can still be used
+		tableEnv.executeSql("create database db1");
+		tableEnv.useDatabase("db1");
+		assertEquals("[1, 1]", queryResult(tableEnv.sqlQuery("select temp_abs(x) from `default`.src")).toString());
+		// drop the function
+		tableEnv.executeSql("drop temporary function temp_abs");
+		functions = CollectionUtil.iteratorToList(tableEnv.executeSql("show functions").collect());
+		assertFalse(functions.toString().contains("temp_abs"));
+		tableEnv.executeSql("drop temporary function if exists foo");
+	}
+
+	@Test
 	public void testCatalog() {
 		List<Row> catalogs = CollectionUtil.iteratorToList(tableEnv.executeSql("show catalogs").collect());
 		assertEquals(2, catalogs.size());

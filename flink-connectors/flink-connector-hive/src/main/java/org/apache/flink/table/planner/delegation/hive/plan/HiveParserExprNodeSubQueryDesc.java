@@ -25,11 +25,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import java.io.Serializable;
 
 /**
- * Counterpart of hive's ExprNodeSubQueryDesc.
- * This encapsulate subquery expression which consists of
- * Relnode for subquery.
- * type (IN, EXISTS )
- * LHS operand
+ * Counterpart of hive's org.apache.hadoop.hive.ql.plan.ExprNodeSubQueryDesc.
  */
 public class HiveParserExprNodeSubQueryDesc extends ExprNodeDesc implements Serializable {
 	private static final long serialVersionUID = 1L;
@@ -42,8 +38,6 @@ public class HiveParserExprNodeSubQueryDesc extends ExprNodeDesc implements Seri
 		EXISTS,
 		SCALAR
 	}
-
-	;
 
 	/**
 	 * RexNode corresponding to subquery.

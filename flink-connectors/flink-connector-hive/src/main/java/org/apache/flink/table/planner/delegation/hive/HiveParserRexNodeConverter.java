@@ -104,8 +104,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Counterpart of Hive's RexNodeConverter. We need this because we need to call some Calcite APIs with shaded
- * signatures, or create sql operators of a different kind, etc.
+ * Counterpart of Hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.RexNodeConverter. And adapted
+ * to our needs.
  */
 public class HiveParserRexNodeConverter {
 

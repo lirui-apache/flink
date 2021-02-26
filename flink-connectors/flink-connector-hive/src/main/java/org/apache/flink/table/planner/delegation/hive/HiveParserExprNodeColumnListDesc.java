@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Counterpart of hive's ExprNodeColumnListDesc.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.plan.ExprNodeColumnListDesc.
  */
 public class HiveParserExprNodeColumnListDesc extends ExprNodeDesc {
 

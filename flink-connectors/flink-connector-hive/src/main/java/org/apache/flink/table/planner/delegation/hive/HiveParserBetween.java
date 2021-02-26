@@ -28,7 +28,7 @@ import org.apache.calcite.sql.type.SqlOperandTypeInference;
 import org.apache.calcite.sql.type.SqlTypeName;
 
 /**
- * Counterpart of hive's HiveBetween.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveBetween.
  */
 public class HiveParserBetween extends SqlSpecialOperator {
 

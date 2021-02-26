@@ -19,6 +19,7 @@
 package org.apache.flink.table.planner.delegation.hive.parse;
 
 import org.apache.flink.table.planner.delegation.hive.HiveParserContext;
+import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
 
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.tools.FrameworkConfig;
@@ -30,7 +31,6 @@ import org.apache.hadoop.hive.ql.lib.NodeProcessor;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.ASTNodeOrigin;
 import org.apache.hadoop.hive.ql.parse.JoinType;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
@@ -39,13 +39,12 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.Stack;
 
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.unescapeIdentifier;
 
 /**
- * Counterpart of hive's QBSubQuery.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.QBSubQuery.
  */
 public class HiveParserQBSubQuery {
 
@@ -84,7 +83,7 @@ public class HiveParserQBSubQuery {
 				case HiveASTParser.TOK_SUBQUERY_OP_NOTIN:
 					return NOT_IN;
 				default:
-					throw new SemanticException(SemanticAnalyzer.generateErrorMessage(opNode,
+					throw new SemanticException(HiveParserUtils.generateErrorMessage(opNode,
 							"Operator not supported in SubQuery use."));
 			}
 		}
@@ -544,17 +543,6 @@ public class HiveParserQBSubQuery {
 		return subQueryAST;
 	}
 
-	public HiveParserQBSubQuery.SubQueryTypeDef getOperator() {
-		return operator;
-	}
-
-	public ASTNode getOriginalSubQueryASTForRewrite() {
-		return (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS
-				|| operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_IN ?
-				(ASTNode) originalSQASTOrigin.getUsageNode().getParent() :
-				originalSQASTOrigin.getUsageNode());
-	}
-
 	boolean subqueryRestrictionsCheck(HiveParserRowResolver parentQueryRR,
 			boolean forHavingClause,
 			String outerQueryAlias)
@@ -677,113 +665,6 @@ public class HiveParserQBSubQuery {
 		return false;
 	}
 
-	void validateAndRewriteAST(HiveParserRowResolver outerQueryRR,
-			boolean forHavingClause,
-			String outerQueryAlias,
-			Set<String> outerQryAliases) throws SemanticException {
-
-		ASTNode fromClause = getChildFromSubqueryAST("From", HiveASTParser.TOK_FROM);
-		ASTNode insertClause = getChildFromSubqueryAST("Insert", HiveASTParser.TOK_INSERT);
-
-		ASTNode selectClause = (ASTNode) insertClause.getChild(1);
-
-		int selectExprStart = 0;
-		if (selectClause.getChild(0).getType() == HiveASTParser.QUERY_HINT) {
-			selectExprStart = 1;
-		}
-
-		/*
-		 * Restriction.16.s :: Correlated Expression in Outer Query must not contain
-		 * unqualified column references.
-		 * disabled : if it's obvious, we allow unqualified refs
-		 */
-
-		/*
-		 * Restriction 17.s :: SubQuery cannot use the same table alias as one used in
-		 * the Outer Query.
-		 */
-		List<String> sqAliases = HiveParserSubQueryUtils.getTableAliasesInSubQuery(fromClause);
-		String sharedAlias = null;
-		for (String s : sqAliases) {
-			if (outerQryAliases.contains(s)) {
-				sharedAlias = s;
-			}
-		}
-		if (sharedAlias != null) {
-			ASTNode whereClause = HiveParserSubQueryUtils.subQueryWhere(insertClause);
-		}
-
-		/*
-		 * Check.5.h :: For In and Not In the SubQuery must implicitly or
-		 * explicitly only contain one select item.
-		 */
-		if (operator.getType() != HiveParserQBSubQuery.SubQueryType.EXISTS &&
-				operator.getType() != HiveParserQBSubQuery.SubQueryType.NOT_EXISTS &&
-				selectClause.getChildCount() - selectExprStart > 1) {
-			subQueryAST.setOrigin(originalSQASTOrigin);
-			throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-					subQueryAST, "SubQuery can contain only 1 item in Select List."));
-		}
-
-		containsAggregationExprs = false;
-		boolean containsWindowing = false;
-		for (int i = selectExprStart; i < selectClause.getChildCount(); i++) {
-
-			ASTNode selectItem = (ASTNode) selectClause.getChild(i);
-			int r = HiveParserSubQueryUtils.checkAggOrWindowing(selectItem);
-
-			containsWindowing = containsWindowing | (r == 3);
-			containsAggregationExprs = containsAggregationExprs | (r == 1);
-		}
-
-		rewrite(outerQueryRR, forHavingClause, outerQueryAlias, insertClause, selectClause);
-
-		/*
-		 * Restriction.13.m :: In the case of an implied Group By on a
-		 * correlated SubQuery, the SubQuery always returns 1 row.
-		 * An exists on a SubQuery with an implied GBy will always return true.
-		 * Whereas Algebraically transforming to a Join may not return true. See
-		 * Specification doc for details.
-		 * Similarly a not exists on a SubQuery with a implied GBY will always return false.
-		 */
-		if (operator.getType() == HiveParserQBSubQuery.SubQueryType.EXISTS &&
-				containsAggregationExprs &&
-				groupbyAddedToSQ) {
-			throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-					subQueryAST,
-					"An Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " +
-							"cannot be rewritten. (predicate will always return true)."));
-		}
-		if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS &&
-				containsAggregationExprs &&
-				groupbyAddedToSQ) {
-			throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-					subQueryAST,
-					"A Not Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " +
-							"cannot be rewritten. (predicate will always return false)."));
-		}
-
-		/*
-		 * Restriction.14.h :: Correlated Sub Queries cannot contain Windowing clauses.
-		 */
-		if (containsWindowing && hasCorrelation) {
-			throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
-					subQueryAST, "Correlated Sub Queries cannot contain Windowing clauses."));
-		}
-
-		/*
-		 * Check.4.h :: For Exists and Not Exists, the Sub Query must
-		 * have 1 or more correlated predicates.
-		 */
-		if ((operator.getType() == HiveParserQBSubQuery.SubQueryType.EXISTS ||
-				operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS) &&
-				!hasCorrelation) {
-			throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-					subQueryAST, "For Exists/Not Exists operator SubQuery must be Correlated."));
-		}
-
-	}
-
 	private ASTNode getChildFromSubqueryAST(String errorMsg, int type) throws SemanticException {
 		ASTNode childAST = (ASTNode) subQueryAST.getFirstChildWithType(type);
 		if (childAST == null && errorMsg != null) {
@@ -794,330 +675,11 @@ public class HiveParserQBSubQuery {
 		return childAST;
 	}
 
-	private void setJoinType() {
-		if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_IN ||
-				operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS) {
-			joinType = JoinType.LEFTOUTER;
-		} else {
-			joinType = JoinType.LEFTSEMI;
-		}
-	}
-
-	void buildJoinCondition(HiveParserRowResolver outerQueryRR, HiveParserRowResolver sqRR,
-			boolean forHavingClause,
-			String outerQueryAlias) throws SemanticException {
-		ASTNode parentQueryJoinCond = null;
-
-		if (parentQueryExpression != null) {
-
-			ColumnInfo outerQueryCol = null;
-			try {
-				outerQueryCol = outerQueryRR.getExpression(parentQueryExpression);
-			} catch (SemanticException se) {
-				// ignore
-			}
-
-			ASTNode parentExpr = parentQueryExpression;
-			if (!forHavingClause) {
-				Set<String> aliases = outerQueryRR.getRslvMap().keySet();
-				if (notInCheck != null) {
-					aliases.remove(notInCheck.getAlias());
-				}
-				String tableAlias = aliases.size() == 1 ? aliases.iterator().next() : null;
-				parentExpr =
-						HiveParserSubQueryUtils.setQualifiedColumnReferences(parentExpr, tableAlias);
-				if (parentExpr == null) {
-					subQueryAST.setOrigin(originalSQASTOrigin);
-					throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
-							parentQueryExpression,
-							"Correlating expression contains ambiguous column references."));
-				}
-			}
-
-			parentQueryJoinCond = HiveParserSubQueryUtils.buildOuterQryToSQJoinCond(
-					parentExpr,
-					alias,
-					sqRR);
-
-			if (outerQueryCol != null) {
-				rewriteCorrConjunctForHaving(parentQueryJoinCond, true,
-						outerQueryAlias, outerQueryRR, outerQueryCol);
-			}
-			subQueryDiagnostic.addJoinCondition(parentQueryJoinCond, outerQueryCol != null, true);
-		}
-		joinConditionAST = HiveParserSubQueryUtils.andAST(parentQueryJoinCond, joinConditionAST);
-		setJoinType();
-
-		if (joinType == JoinType.LEFTOUTER) {
-			if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_EXISTS && hasCorrelation) {
-				postJoinConditionAST = HiveParserSubQueryUtils.buildPostJoinNullCheck(subQueryJoinAliasExprs);
-			} else if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_IN) {
-				postJoinConditionAST = HiveParserSubQueryUtils.buildOuterJoinPostCond(alias, sqRR);
-			}
-		}
-
-	}
-
-	ASTNode updateOuterQueryFilter(ASTNode outerQryFilter) {
-		if (postJoinConditionAST == null) {
-			return outerQryFilter;
-		}
-
-		subQueryDiagnostic.addPostJoinCondition(postJoinConditionAST);
-
-		if (outerQryFilter == null) {
-			return postJoinConditionAST;
-		}
-		ASTNode node = HiveParserSubQueryUtils.andAST(outerQryFilter, postJoinConditionAST);
-		return node;
-	}
-
-	String getNextCorrExprAlias() {
-		return "sq_corr_" + numCorrExprsinSQ++;
-	}
-
-	/*
-	 * - If the SubQuery has no where clause, there is nothing to rewrite.
-	 * - Decompose SubQuery where clause into list of Top level conjuncts.
-	 * - For each conjunct
-	 *   - Break down the conjunct into (LeftExpr, LeftExprType, RightExpr,
-	 *     RightExprType)
-	 *   - If the top level operator is an Equality Operator we will break
-	 *     it down into left and right; in all other case there is only a
-	 *     lhs.
-	 *   - The ExprType is based on whether the Expr. refers to the Parent
-	 *     Query table sources, refers to the SubQuery sources or both.
-	 *   - We assume an unqualified Column refers to a SubQuery table source.
-	 *     This is because we require Parent Column references to be qualified
-	 *     within the SubQuery.
-	 *   - If the lhs or rhs expr refers to both Parent and SubQuery sources,
-	 *     we flag this as Unsupported.
-	 *   - If the conjunct as a whole, only refers to the Parent Query sources,
-	 *     we flag this as an Error.
-	 *   - A conjunct is Correlated if the lhs refers to SubQuery sources and rhs
-	 *     refers to Parent Query sources or the reverse.
-	 *   - Say the lhs refers to SubQuery and rhs refers to Parent Query sources; the
-	 *     other case is handled analogously.
-	 *     - remove this conjunct from the SubQuery where clause.
-	 *     - for the SubQuery expression(lhs) construct a new alias
-	 *     - in the correlated predicate, replace the SubQuery
-	 *       expression(lhs) with the alias AST.
-	 *     - add this altered predicate to the Join predicate tracked by the
-	 *       HiveParserQBSubQuery object.
-	 *     - add the alias AST to a list of subQueryJoinAliasExprs. This
-	 *       list is used in the case of Outer Joins to add null check
-	 *       predicates to the Outer Query's where clause.
-	 *     - Add the SubQuery expression with the alias as a SelectItem to
-	 *       the SubQuery's SelectList.
-	 *     - In case this SubQuery contains aggregation expressions add this SubQuery
-	 *       expression to its GroupBy; add it to the front of the GroupBy.
-	 *   - If predicate is not correlated, let it remain in the SubQuery
-	 *     where clause.
-	 * Additional things for Having clause:
-	 * - A correlation predicate may refer to an aggregation expression.
-	 * - This introduces 2 twists to the rewrite:
-	 *   a. When analyzing equality predicates we need to analyze each side
-	 *      to see if it is an aggregation expression from the Outer Query.
-	 *      So for e.g. this is a valid correlation predicate:
-	 *         R2.x = min(R1.y)
-	 *      Where R1 is an outer table reference, and R2 is a SubQuery table reference.
-	 *   b. When hoisting the correlation predicate to a join predicate, we need to
-	 *      rewrite it to be in the form the Join code allows: so the predict needs
-	 *      to contain a qualified column references.
-	 *      We handle this by generating a new name for the aggregation expression,
-	 *      like R1._gby_sq_col_1 and adding this mapping to the Outer Query's
-	 *      Row Resolver. Then we construct a joining predicate using this new
-	 *      name; so in our e.g. the condition would be: R2.x = R1._gby_sq_col_1
-	 */
-	private void rewrite(HiveParserRowResolver parentQueryRR,
-			boolean forHavingClause,
-			String outerQueryAlias, ASTNode insertClause, ASTNode selectClause) throws SemanticException {
-		ASTNode whereClause = HiveParserSubQueryUtils.subQueryWhere(insertClause);
-
-		if (whereClause == null) {
-			return;
-		}
-
-		ASTNode searchCond = (ASTNode) whereClause.getChild(0);
-		List<ASTNode> conjuncts = new ArrayList<ASTNode>();
-		HiveParserSubQueryUtils.extractConjuncts(searchCond, conjuncts);
-
-		HiveParserQBSubQuery.ConjunctAnalyzer conjunctAnalyzer = new ConjunctAnalyzer(parentQueryRR,
-				forHavingClause, outerQueryAlias, frameworkConfig, cluster);
-		ASTNode sqNewSearchCond = null;
-
-		for (ASTNode conjunctAST : conjuncts) {
-			HiveParserQBSubQuery.Conjunct conjunct = conjunctAnalyzer.analyzeConjunct(conjunctAST);
-
-			/*
-			 * Check.12.h :: SubQuery predicates cannot only refer to Outer Query columns.
-			 */
-			if (conjunct.refersOuterOnly()) {
-				throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
-						conjunctAST,
-						"SubQuery expression refers to Outer query expressions only."));
-			}
-
-			if (conjunct.isCorrelated()) {
-				hasCorrelation = true;
-				subQueryJoinAliasExprs = new ArrayList<ASTNode>();
-				String exprAlias = getNextCorrExprAlias();
-				ASTNode sqExprAlias = HiveParserSubQueryUtils.createAliasAST(exprAlias);
-				ASTNode sqExprForCorr = HiveParserSubQueryUtils.createColRefAST(alias, exprAlias);
-				boolean corrCondLeftIsRewritten = false;
-				boolean corrCondRightIsRewritten = false;
-
-				if (conjunct.getLeftExprType().refersSubQuery()) {
-					corrCondLeftIsRewritten = true;
-					if (forHavingClause && conjunct.getRightOuterColInfo() != null) {
-						corrCondRightIsRewritten = true;
-						rewriteCorrConjunctForHaving(conjunctAST, false, outerQueryAlias,
-								parentQueryRR, conjunct.getRightOuterColInfo());
-					}
-					ASTNode joinPredciate = HiveParserSubQueryUtils.alterCorrelatedPredicate(
-							conjunctAST, sqExprForCorr, true);
-					joinConditionAST = HiveParserSubQueryUtils.andAST(joinConditionAST, joinPredciate);
-					subQueryJoinAliasExprs.add(sqExprForCorr);
-					ASTNode selExpr = HiveParserSubQueryUtils.createSelectItem(conjunct.getLeftExpr(), sqExprAlias);
-					selectClause.addChild(selExpr);
-					subQueryDiagnostic.addSelectClauseRewrite(conjunct.getLeftExpr(), exprAlias);
-					numOfCorrelationExprsAddedToSQSelect++;
-					if (containsAggregationExprs) {
-						ASTNode gBy = getSubQueryGroupByAST();
-						HiveParserSubQueryUtils.addGroupExpressionToFront(gBy, conjunct.getLeftExpr());
-						subQueryDiagnostic.addGByClauseRewrite(conjunct.getLeftExpr());
-					}
-					if (notInCheck != null) {
-						notInCheck.addCorrExpr((ASTNode) conjunctAST.getChild(0));
-					}
-					subQueryDiagnostic.addJoinCondition(conjunctAST, corrCondLeftIsRewritten, corrCondRightIsRewritten);
-				} else {
-					corrCondRightIsRewritten = true;
-					if (forHavingClause && conjunct.getLeftOuterColInfo() != null) {
-						corrCondLeftIsRewritten = true;
-						rewriteCorrConjunctForHaving(conjunctAST, true, outerQueryAlias,
-								parentQueryRR, conjunct.getLeftOuterColInfo());
-					}
-					ASTNode joinPredciate = HiveParserSubQueryUtils.alterCorrelatedPredicate(
-							conjunctAST, sqExprForCorr, false);
-					joinConditionAST = HiveParserSubQueryUtils.andAST(joinConditionAST, joinPredciate);
-					subQueryJoinAliasExprs.add(sqExprForCorr);
-					ASTNode selExpr = HiveParserSubQueryUtils.createSelectItem(conjunct.getRightExpr(), sqExprAlias);
-					selectClause.addChild(selExpr);
-					subQueryDiagnostic.addSelectClauseRewrite(conjunct.getRightExpr(), exprAlias);
-					numOfCorrelationExprsAddedToSQSelect++;
-					if (containsAggregationExprs) {
-						ASTNode gBy = getSubQueryGroupByAST();
-						HiveParserSubQueryUtils.addGroupExpressionToFront(gBy, conjunct.getRightExpr());
-						subQueryDiagnostic.addGByClauseRewrite(conjunct.getRightExpr());
-					}
-					if (notInCheck != null) {
-						notInCheck.addCorrExpr((ASTNode) conjunctAST.getChild(1));
-					}
-					subQueryDiagnostic.addJoinCondition(conjunctAST, corrCondLeftIsRewritten, corrCondRightIsRewritten);
-				}
-			} else {
-				sqNewSearchCond = HiveParserSubQueryUtils.andAST(sqNewSearchCond, conjunctAST);
-				subQueryDiagnostic.addWhereClauseRewrite(conjunctAST);
-			}
-		}
-
-		if (sqNewSearchCond != searchCond) {
-			if (sqNewSearchCond == null) {
-				/*
-				 * for now just adding a true condition(1=1) to where clause.
-				 * Can remove the where clause from the AST; requires moving all subsequent children
-				 * left.
-				 */
-				sqNewSearchCond = HiveParserSubQueryUtils.constructTrueCond();
-				subQueryDiagnostic.addWhereClauseRewrite("1 = 1");
-			}
-			whereClause.setChild(0, sqNewSearchCond);
-		}
-
-	}
-
-	/*
-	 * called if the SubQuery is Agg and Correlated.
-	 * if SQ doesn't have a GroupBy, it is added to the SQ AST.
-	 */
-	private ASTNode getSubQueryGroupByAST() {
-		ASTNode groupBy = null;
-		if (subQueryAST.getChild(1).getChildCount() > 3 &&
-				subQueryAST.getChild(1).getChild(3).getType() == HiveASTParser.TOK_GROUPBY) {
-			groupBy = (ASTNode) subQueryAST.getChild(1).getChild(3);
-		}
-
-		if (groupBy != null) {
-			return groupBy;
-		}
-
-		groupBy = HiveParserSubQueryUtils.buildGroupBy();
-		groupbyAddedToSQ = true;
-
-		List<ASTNode> newChildren = new ArrayList<ASTNode>();
-		newChildren.add(groupBy);
-		if (subQueryAST.getChildCount() > 3) {
-			for (int i = subQueryAST.getChildCount() - 1; i >= 3; i--) {
-				ASTNode child = (ASTNode) subQueryAST.getChild(i);
-				newChildren.add(child);
-			}
-		}
-
-		for (ASTNode child : newChildren) {
-			subQueryAST.addChild(child);
-		}
-
-		subQueryDiagnostic.setAddGroupByClause();
-
-		return groupBy;
-	}
-
 	public String getOuterQueryId() {
 		return outerQueryId;
 	}
 
-	public JoinType getJoinType() {
-		return joinType;
-	}
-
 	public String getAlias() {
 		return alias;
-	}
-
-	public ASTNode getJoinConditionAST() {
-		return joinConditionAST;
-	}
-
-	public int getNumOfCorrelationExprsAddedToSQSelect() {
-		return numOfCorrelationExprsAddedToSQSelect;
-	}
-
-	public HiveParserSubQueryDiagnostic.QBSubQueryRewrite getDiagnostic() {
-		return subQueryDiagnostic;
-	}
-
-	public HiveParserQBSubQuery getSubQuery() {
-		return this;
-	}
-
-	HiveParserQBSubQuery.NotInCheck getNotInCheck() {
-		return notInCheck;
-	}
-
-	private void rewriteCorrConjunctForHaving(ASTNode conjunctASTNode,
-			boolean refersLeft,
-			String outerQueryAlias,
-			HiveParserRowResolver outerQueryRR,
-			ColumnInfo outerQueryCol) {
-
-		String newColAlias = "_gby_sq_col_" + numOuterCorrExprsForHaving++;
-		ASTNode outerExprForCorr = HiveParserSubQueryUtils.createColRefAST(outerQueryAlias, newColAlias);
-		if (refersLeft) {
-			conjunctASTNode.setChild(0, outerExprForCorr);
-		} else {
-			conjunctASTNode.setChild(1, outerExprForCorr);
-		}
-		outerQueryRR.put(outerQueryAlias, newColAlias, outerQueryCol);
 	}
 }

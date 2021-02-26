@@ -49,7 +49,7 @@ import java.util.Queue;
 import java.util.Set;
 
 /**
- * Counterpart of hive's ParseUtils.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.ParseUtils.
  */
 public class HiveASTParseUtils {
 

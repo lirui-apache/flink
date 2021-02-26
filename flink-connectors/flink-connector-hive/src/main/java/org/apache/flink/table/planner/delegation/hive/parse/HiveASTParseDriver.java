@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 
 /**
- * Counterpart of hive's ParseDriver.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.ParseDriver.
  */
 public class HiveASTParseDriver {
 

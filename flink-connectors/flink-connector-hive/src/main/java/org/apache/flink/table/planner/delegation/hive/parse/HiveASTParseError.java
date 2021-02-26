@@ -22,7 +22,7 @@ import org.antlr.runtime.BaseRecognizer;
 import org.antlr.runtime.RecognitionException;
 
 /**
- * Counterpart of hive's ParseError.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.ParseError.
  */
 public class HiveASTParseError {
 

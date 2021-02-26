@@ -21,7 +21,7 @@ package org.apache.flink.table.planner.delegation.hive.parse;
 import java.util.ArrayList;
 
 /**
- * Counterpart of hive's ParseException.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.ParseException.
  */
 public class HiveASTParseException extends Exception {
 	private static final long serialVersionUID = 1L;

@@ -29,7 +29,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Counterpart of hive's HiveExtractDate.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveExtractDate.
  */
 public class HiveParserExtractDate extends SqlFunction {
 

@@ -29,7 +29,6 @@ import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.JoinType;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFCount;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFResolver;
@@ -278,7 +277,7 @@ public class HiveParserSubQueryUtils {
 				return 3;
 			}
 			if (expressionTree.getChild(0).getType() == HiveASTParser.Identifier) {
-				String functionName = SemanticAnalyzer.unescapeIdentifier(expressionTree.getChild(0)
+				String functionName = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(expressionTree.getChild(0)
 						.getText());
 				GenericUDAFResolver udafResolver = FunctionRegistry.getGenericUDAFResolver(functionName);
 				if (udafResolver != null) {
@@ -310,13 +309,13 @@ public class HiveParserSubQueryUtils {
 		if ((joinNode.getToken().getType() == HiveASTParser.TOK_TABREF)
 				|| (joinNode.getToken().getType() == HiveASTParser.TOK_SUBQUERY)
 				|| (joinNode.getToken().getType() == HiveASTParser.TOK_PTBLFUNCTION)) {
-			String tableName = SemanticAnalyzer.getUnescapedUnqualifiedTableName((ASTNode) joinNode.getChild(0))
+			String tableName = HiveParserBaseSemanticAnalyzer.getUnescapedUnqualifiedTableName((ASTNode) joinNode.getChild(0))
 					.toLowerCase();
 			String alias = joinNode.getChildCount() == 1 ? tableName
-					: SemanticAnalyzer.unescapeIdentifier(joinNode.getChild(joinNode.getChildCount() - 1)
+					: HiveParserBaseSemanticAnalyzer.unescapeIdentifier(joinNode.getChild(joinNode.getChildCount() - 1)
 					.getText().toLowerCase());
 			alias = (joinNode.getToken().getType() == HiveASTParser.TOK_PTBLFUNCTION) ?
-					SemanticAnalyzer.unescapeIdentifier(joinNode.getChild(1).getText().toLowerCase()) :
+					HiveParserBaseSemanticAnalyzer.unescapeIdentifier(joinNode.getChild(1).getText().toLowerCase()) :
 					alias;
 			aliases.add(alias);
 		} else {
@@ -353,7 +352,7 @@ public class HiveParserSubQueryUtils {
 			if (tableAlias == null) {
 				return null;
 			}
-			String colName = SemanticAnalyzer.unescapeIdentifier(ast.getChild(0).getText());
+			String colName = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(ast.getChild(0).getText());
 			return createColRefAST(tableAlias, colName);
 		}
 

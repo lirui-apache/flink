@@ -21,7 +21,7 @@ package org.apache.flink.table.planner.delegation.hive.parse;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 
 /**
- * Counterpart of hive's PlannerContext.
+ * Counterpart of hive's SemanticAnalyzer.PlannerContext.
  */
 class HiveParserPlannerContext {
 	protected ASTNode child;

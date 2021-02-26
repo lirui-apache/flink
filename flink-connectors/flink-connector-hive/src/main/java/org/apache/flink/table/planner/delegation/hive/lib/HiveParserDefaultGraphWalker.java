@@ -34,7 +34,7 @@ import java.util.Set;
 import java.util.Stack;
 
 /**
- * Counterpart of hive's DefaultGraphWalker.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.lib.DefaultGraphWalker.
  */
 public class HiveParserDefaultGraphWalker implements GraphWalker {
 	// opStack keeps the nodes that have been visited, but have not been dispatched yet
@@ -43,14 +43,14 @@ public class HiveParserDefaultGraphWalker implements GraphWalker {
 	// processed nodes and store the results that the dispatcher has produced (if any)
 	protected final Queue<Node> opQueue;
 	// toWalk stores the starting nodes for the graph that needs to be traversed
-	protected final List<Node> toWalk = new ArrayList<Node>();
-	protected final IdentityHashMap<Node, Object> retMap = new IdentityHashMap<Node, Object>();
+	protected final List<Node> toWalk = new ArrayList<>();
+	protected final IdentityHashMap<Node, Object> retMap = new IdentityHashMap<>();
 	protected final Dispatcher dispatcher;
 
 	public HiveParserDefaultGraphWalker(Dispatcher disp) {
 		dispatcher = disp;
-		opStack = new Stack<Node>();
-		opQueue = new LinkedList<Node>();
+		opStack = new Stack<>();
+		opQueue = new LinkedList<>();
 	}
 
 	protected Set<Node> getDispatchedList() {

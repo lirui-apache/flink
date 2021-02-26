@@ -82,19 +82,11 @@ public class HiveParserQueryState {
 		return conf;
 	}
 
-	public String getQueryId() {
-		return (queryConf.getVar(HiveConf.ConfVars.HIVEQUERYID));
-	}
-
 	public String getCommandType() {
 		if (commandType == null) {
 			return null;
 		}
 		return commandType.getOperationName();
-	}
-
-	public HiveOperation getHiveOperation() {
-		return commandType;
 	}
 
 	public void setCommandType(HiveOperation commandType) {

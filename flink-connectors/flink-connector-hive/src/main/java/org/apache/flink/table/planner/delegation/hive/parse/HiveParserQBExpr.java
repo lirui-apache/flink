@@ -22,7 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Counterpart of hive's QBExpr.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.QBExpr.
  */
 public class HiveParserQBExpr {
 
@@ -53,17 +53,6 @@ public class HiveParserQBExpr {
 
 	public HiveParserQBExpr(String alias) {
 		this.alias = alias;
-	}
-
-	public HiveParserQBExpr(HiveParserQB qb) {
-		opcode = Opcode.NULLOP;
-		this.qb = qb;
-	}
-
-	public HiveParserQBExpr(Opcode opcode, HiveParserQBExpr qbexpr1, HiveParserQBExpr qbexpr2) {
-		this.opcode = opcode;
-		this.qbexpr1 = qbexpr1;
-		this.qbexpr2 = qbexpr2;
 	}
 
 	public void setQB(HiveParserQB qb) {

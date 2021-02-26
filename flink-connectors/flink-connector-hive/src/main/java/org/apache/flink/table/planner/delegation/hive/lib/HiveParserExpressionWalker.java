@@ -26,7 +26,7 @@ import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 
 /**
- * Counterpart of hive's ExpressionWalker.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.lib.ExpressionWalker.
  */
 public class HiveParserExpressionWalker extends HiveParserDefaultGraphWalker {
 

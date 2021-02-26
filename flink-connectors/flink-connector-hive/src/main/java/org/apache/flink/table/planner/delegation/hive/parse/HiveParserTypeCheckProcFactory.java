@@ -62,7 +62,6 @@ import org.apache.hadoop.hive.ql.lib.Rule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.optimizer.ConstantPropagateProcFactory;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
@@ -958,7 +957,7 @@ public class HiveParserTypeCheckProcFactory {
 				if (myt.getCategory() == ObjectInspector.Category.LIST) {
 					// Only allow integer index for now
 					if (!HiveParserTypeInfoUtils.implicitConvertible(children.get(1).getTypeInfo(), TypeInfoFactory.intTypeInfo)) {
-						throw new SemanticException(SemanticAnalyzer.generateErrorMessage(
+						throw new SemanticException(HiveParserUtils.generateErrorMessage(
 								expr, ErrorMsg.INVALID_ARRAYINDEX_TYPE.getMsg()));
 					}
 
@@ -1276,7 +1275,7 @@ public class HiveParserTypeCheckProcFactory {
 			 */
 			if (windowingTokens.contains(expr.getType())) {
 				if (!ctx.getallowWindowing()) {
-					throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,
+					throw new SemanticException(HiveParserUtils.generateErrorMessage(expr,
 							ErrorMsg.INVALID_FUNCTION.getMsg("Windowing is not supported in the context")));
 				}
 
@@ -1293,7 +1292,7 @@ public class HiveParserTypeCheckProcFactory {
 
 			if (expr.getType() == HiveASTParser.TOK_ALLCOLREF) {
 				if (!ctx.getallowAllColRef()) {
-					throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,
+					throw new SemanticException(HiveParserUtils.generateErrorMessage(expr,
 							ErrorMsg.INVALID_COLUMN
 									.getMsg("All column reference is not supported in the context")));
 				}
@@ -1350,7 +1349,7 @@ public class HiveParserTypeCheckProcFactory {
 
 			if (!ctx.getAllowDistinctFunctions() && expr.getType() == HiveASTParser.TOK_FUNCTIONDI) {
 				throw new SemanticException(
-						SemanticAnalyzer.generateErrorMessage(expr, ErrorMsg.DISTINCT_NOT_SUPPORTED.getMsg()));
+						HiveParserUtils.generateErrorMessage(expr, ErrorMsg.DISTINCT_NOT_SUPPORTED.getMsg()));
 			}
 
 			// Create all children
@@ -1366,7 +1365,7 @@ public class HiveParserTypeCheckProcFactory {
 
 			if (expr.getType() == HiveASTParser.TOK_FUNCTIONSTAR) {
 				if (!ctx.getallowFunctionStar()) {
-					throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,
+					throw new SemanticException(HiveParserUtils.generateErrorMessage(expr,
 							ErrorMsg.INVALID_COLUMN
 									.getMsg(".* reference is not supported in the context")));
 				}
@@ -1437,7 +1436,7 @@ public class HiveParserTypeCheckProcFactory {
 			ASTNode sqNode = (ASTNode) expr.getParent().getChild(1);
 
 			if (!ctx.getallowSubQueryExpr()) {
-				throw new SemanticException(SemanticAnalyzer.generateErrorMessage(sqNode,
+				throw new SemanticException(HiveParserUtils.generateErrorMessage(sqNode,
 						ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg("Currently SubQuery expressions are only allowed as " +
 								"Where and Having Clause predicates")));
 			}

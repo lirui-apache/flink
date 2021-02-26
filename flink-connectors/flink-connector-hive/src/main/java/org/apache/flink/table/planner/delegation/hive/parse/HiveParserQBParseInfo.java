@@ -18,7 +18,6 @@
 
 package org.apache.flink.table.planner.delegation.hive.parse;
 
-import org.antlr.runtime.tree.Tree;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.TableSample;
 import org.slf4j.Logger;
@@ -28,14 +27,13 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Counterpart of hive's QBParseInfo.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.QBParseInfo.
  */
 public class HiveParserQBParseInfo {
 
@@ -118,30 +116,30 @@ public class HiveParserQBParseInfo {
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParserQBParseInfo.class);
 
 	public HiveParserQBParseInfo(String alias, boolean isSubQ) {
-		aliasToSrc = new HashMap<String, ASTNode>();
-		nameToDest = new HashMap<String, ASTNode>();
-		nameToDestSchema = new HashMap<String, List<String>>();
-		nameToSample = new HashMap<String, TableSample>();
-		exprToColumnAlias = new HashMap<ASTNode, String>();
-		destToLateralView = new HashMap<String, ASTNode>();
-		destToSelExpr = new LinkedHashMap<String, ASTNode>();
-		destToWhereExpr = new HashMap<String, ASTNode>();
-		destToGroupby = new HashMap<String, ASTNode>();
-		destToHaving = new HashMap<String, ASTNode>();
-		destToClusterby = new HashMap<String, ASTNode>();
-		destToDistributeby = new HashMap<String, ASTNode>();
-		destToSortby = new HashMap<String, ASTNode>();
-		destToOrderby = new HashMap<String, ASTNode>();
-		destToLimit = new HashMap<String, AbstractMap.SimpleEntry<Integer, Integer>>();
-		insertIntoTables = new HashMap<String, ASTNode>();
-		insertOverwriteTables = new HashMap<String, ASTNode>();
-		destRollups = new HashSet<String>();
-		destCubes = new HashSet<String>();
-		destGroupingSets = new HashSet<String>();
+		aliasToSrc = new HashMap<>();
+		nameToDest = new HashMap<>();
+		nameToDestSchema = new HashMap<>();
+		nameToSample = new HashMap<>();
+		exprToColumnAlias = new HashMap<>();
+		destToLateralView = new HashMap<>();
+		destToSelExpr = new LinkedHashMap<>();
+		destToWhereExpr = new HashMap<>();
+		destToGroupby = new HashMap<>();
+		destToHaving = new HashMap<>();
+		destToClusterby = new HashMap<>();
+		destToDistributeby = new HashMap<>();
+		destToSortby = new HashMap<>();
+		destToOrderby = new HashMap<>();
+		destToLimit = new HashMap<>();
+		insertIntoTables = new HashMap<>();
+		insertOverwriteTables = new HashMap<>();
+		destRollups = new HashSet<>();
+		destCubes = new HashSet<>();
+		destGroupingSets = new HashSet<>();
 
-		destToAggregationExprs = new LinkedHashMap<String, LinkedHashMap<String, ASTNode>>();
-		destToWindowingExprs = new LinkedHashMap<String, LinkedHashMap<String, ASTNode>>();
-		destToDistinctFuncExprs = new HashMap<String, List<ASTNode>>();
+		destToAggregationExprs = new LinkedHashMap<>();
+		destToWindowingExprs = new LinkedHashMap<>();
+		destToDistinctFuncExprs = new HashMap<>();
 
 		this.alias = alias;
 		this.isSubQ = isSubQ;
@@ -151,14 +149,6 @@ public class HiveParserQBParseInfo {
 
 		tableSpecs = new HashMap<>();
 
-	}
-
-	/*
-	 * If a QB is such that the aggregation expressions need to be handled by
-	 * the Windowing PTF; we invoke this function to clear the AggExprs on the dest.
-	 */
-	public void clearAggregationExprsForClause(String clause) {
-		destToAggregationExprs.get(clause).clear();
 	}
 
 	public void setAggregationExprsForClause(String clause,
@@ -185,38 +175,17 @@ public class HiveParserQBParseInfo {
 		return insertIntoTables.containsKey(fullName.toLowerCase());
 	}
 
-	/**
-	 * Check if a table is in the list to be inserted into.
-	 * See also {@link #getInsertOverwriteTables()}
-	 *
-	 * @param fullTableName table name in dbname.tablename format
-	 */
-	public boolean isInsertIntoTable(String fullTableName) {
-		return insertIntoTables.containsKey(fullTableName.toLowerCase());
-	}
-
 	public HashMap<String, ASTNode> getAggregationExprsForClause(String clause) {
 		return destToAggregationExprs.get(clause);
 	}
 
 	public void addWindowingExprToClause(String clause, ASTNode windowingExprNode) {
-		LinkedHashMap<String, ASTNode> windowingExprs = destToWindowingExprs.get(clause);
-		if (windowingExprs == null) {
-			windowingExprs = new LinkedHashMap<String, ASTNode>();
-			destToWindowingExprs.put(clause, windowingExprs);
-		}
+		LinkedHashMap<String, ASTNode> windowingExprs = destToWindowingExprs.computeIfAbsent(clause, k -> new LinkedHashMap<String, ASTNode>());
 		windowingExprs.put(windowingExprNode.toStringTree(), windowingExprNode);
 	}
 
 	public HashMap<String, ASTNode> getWindowingExprsForClause(String clause) {
 		return destToWindowingExprs.get(clause);
-	}
-
-	public void clearDistinctFuncExprsForClause(String clause) {
-		List<ASTNode> l = destToDistinctFuncExprs.get(clause);
-		if (l != null) {
-			l.clear();
-		}
 	}
 
 	public void setDistinctFuncExprsForClause(String clause, List<ASTNode> ast) {
@@ -261,9 +230,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Set the Cluster By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @param ast    the abstract syntax tree
 	 */
 	public void setClusterByExprForClause(String clause, ASTNode ast) {
 		destToClusterby.put(clause, ast);
@@ -271,9 +237,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Set the Distribute By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @param ast    the abstract syntax tree
 	 */
 	public void setDistributeByExprForClause(String clause, ASTNode ast) {
 		destToDistributeby.put(clause, ast);
@@ -281,9 +244,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Set the Sort By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @param ast    the abstract syntax tree
 	 */
 	public void setSortByExprForClause(String clause, ASTNode ast) {
 		destToSortby.put(clause, ast);
@@ -307,10 +267,6 @@ public class HiveParserQBParseInfo {
 
 	public ASTNode getDestForClause(String clause) {
 		return nameToDest.get(clause);
-	}
-
-	public ASTNode getWhrForClause(String clause) {
-		return destToWhereExpr.get(clause);
 	}
 
 	public HashMap<String, ASTNode> getDestToWhereExpr() {
@@ -341,10 +297,6 @@ public class HiveParserQBParseInfo {
 		return destToHaving.get(clause);
 	}
 
-	public Map<String, ASTNode> getDestToHaving() {
-		return destToHaving;
-	}
-
 	public ASTNode getSelForClause(String clause) {
 		return destToSelExpr.get(clause);
 	}
@@ -355,9 +307,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Get the Cluster By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @return the abstract syntax tree
 	 */
 	public ASTNode getClusterByForClause(String clause) {
 		return destToClusterby.get(clause);
@@ -369,9 +318,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Get the Distribute By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @return the abstract syntax tree
 	 */
 	public ASTNode getDistributeByForClause(String clause) {
 		return destToDistributeby.get(clause);
@@ -383,9 +329,6 @@ public class HiveParserQBParseInfo {
 
 	/**
 	 * Get the Sort By AST for the clause.
-	 *
-	 * @param clause the name of the clause
-	 * @return the abstract syntax tree
 	 */
 	public ASTNode getSortByForClause(String clause) {
 		return destToSortby.get(clause);
@@ -419,10 +362,6 @@ public class HiveParserQBParseInfo {
 		return isSubQ;
 	}
 
-	public void setIsSubQ(boolean isSubQ) {
-		this.isSubQ = isSubQ;
-	}
-
 	public ASTNode getJoinExpr() {
 		return joinExpr;
 	}
@@ -439,16 +378,8 @@ public class HiveParserQBParseInfo {
 		nameToSample.put(alias.toLowerCase(), tableSample);
 	}
 
-	public String getExprToColumnAlias(ASTNode expr) {
-		return exprToColumnAlias.get(expr);
-	}
-
 	public Map<ASTNode, String> getAllExprToColumnAlias() {
 		return exprToColumnAlias;
-	}
-
-	public boolean hasExprToColumnAlias(ASTNode expr) {
-		return exprToColumnAlias.containsKey(expr);
 	}
 
 	public void setExprToColumnAlias(ASTNode expr, String alias) {
@@ -461,40 +392,6 @@ public class HiveParserQBParseInfo {
 
 	public Integer getDestLimit(String dest) {
 		return destToLimit.get(dest) == null ? null : destToLimit.get(dest).getValue();
-	}
-
-	public Integer getDestLimitOffset(String dest) {
-		return destToLimit.get(dest) == null ? 0 : destToLimit.get(dest).getKey();
-	}
-
-	/**
-	 * @return the outerQueryLimit
-	 */
-	public int getOuterQueryLimit() {
-		return outerQueryLimit;
-	}
-
-	/**
-	 * @param outerQueryLimit the outerQueryLimit to set
-	 */
-	public void setOuterQueryLimit(int outerQueryLimit) {
-		this.outerQueryLimit = outerQueryLimit;
-	}
-
-	public boolean isTopLevelSimpleSelectStarQuery() {
-		if (alias != null || destToSelExpr.size() != 1 || !isSimpleSelectQuery()) {
-			return false;
-		}
-		for (ASTNode selExprs : destToSelExpr.values()) {
-			if (selExprs.getChildCount() != 1) {
-				return false;
-			}
-			Tree sel = selExprs.getChild(0).getChild(0);
-			if (sel == null || sel.getType() != HiveASTParser.TOK_ALLCOLREF) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	// for fast check of possible existence of RS (will be checked again in SimpleFetchOptimizer)
@@ -546,16 +443,8 @@ public class HiveParserQBParseInfo {
 		return aliasToLateralViews;
 	}
 
-	public List<ASTNode> getLateralViewsForAlias(String alias) {
-		return aliasToLateralViews.get(alias.toLowerCase());
-	}
-
 	public void addLateralViewForAlias(String alias, ASTNode lateralView) {
-		ArrayList<ASTNode> lateralViews = aliasToLateralViews.get(alias);
-		if (lateralViews == null) {
-			lateralViews = new ArrayList<ASTNode>();
-			aliasToLateralViews.put(alias, lateralViews);
-		}
+		ArrayList<ASTNode> lateralViews = aliasToLateralViews.computeIfAbsent(alias, k -> new ArrayList<>());
 		lateralViews.add(lateralView);
 	}
 
@@ -571,57 +460,12 @@ public class HiveParserQBParseInfo {
 		tableSpecs.put(tName, tSpec);
 	}
 
-	public HiveParserBaseSemanticAnalyzer.TableSpec getTableSpec(String tName) {
-		return tableSpecs.get(tName);
-	}
-
-	// This method is used only for the analyze command to get the partition specs
-	public HiveParserBaseSemanticAnalyzer.TableSpec getTableSpec() {
-
-		Iterator<String> tName = tableSpecs.keySet().iterator();
-		return tableSpecs.get(tName.next());
-	}
-
 	public HashMap<String, AbstractMap.SimpleEntry<Integer, Integer>> getDestToLimit() {
 		return destToLimit;
 	}
 
-	public LinkedHashMap<String, LinkedHashMap<String, ASTNode>> getDestToAggregationExprs() {
-		return destToAggregationExprs;
-	}
-
-	public HashMap<String, List<ASTNode>> getDestToDistinctFuncExprs() {
-		return destToDistinctFuncExprs;
-	}
-
-	public HashMap<String, TableSample> getNameToSample() {
-		return nameToSample;
-	}
-
 	public HashMap<String, ASTNode> getDestToLateralView() {
 		return destToLateralView;
-	}
-
-	enum ClauseType {
-		CLUSTER_BY_CLAUSE,
-		DISTRIBUTE_BY_CLAUSE,
-		ORDER_BY_CLAUSE,
-		SORT_BY_CLAUSE
-	}
-
-	public HiveParserBaseSemanticAnalyzer.AnalyzeRewriteContext getAnalyzeRewrite() {
-		return analyzeRewrite;
-	}
-
-	public void setAnalyzeRewrite(HiveParserBaseSemanticAnalyzer.AnalyzeRewriteContext analyzeRewrite) {
-		this.analyzeRewrite = analyzeRewrite;
-	}
-
-	/**
-	 * @return the isNoScanAnalyzeCommand
-	 */
-	public boolean isNoScanAnalyzeCommand() {
-		return isNoScanAnalyzeCommand;
 	}
 
 	/**

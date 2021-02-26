@@ -129,7 +129,7 @@ import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBas
 import static org.apache.flink.table.planner.delegation.hive.parse.HiveParserBaseSemanticAnalyzer.validatePartSpec;
 
 /**
- * Counterpart of hive's SemanticAnalyzer and adapted to our needs.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.SemanticAnalyzer and adapted to our needs.
  */
 public class HiveParserSemanticAnalyzer {
 

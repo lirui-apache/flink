@@ -24,7 +24,7 @@ import org.antlr.runtime.TokenRewriteStream;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 
 /**
- * Counterpart of hive's SubQueryDiagnostic.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.SubQueryDiagnostic.
  */
 public class HiveParserSubQueryDiagnostic {
 

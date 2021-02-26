@@ -33,7 +33,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableIntList;
 
 /**
- * Counterpart of hive's HiveSqlCountAggFunction.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveSqlCountAggFunction.
  */
 public class HiveParserSqlCountAggFunction extends SqlAggFunction implements HiveParserSqlFunctionConverter.CanAggregateDistinct {
 

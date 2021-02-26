@@ -43,7 +43,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Counterpart of hive's HiveSqlSumAggFunction.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.functions.HiveSqlSumAggFunction.
  */
 public class HiveParserSqlSumAggFunction extends SqlAggFunction implements HiveParserSqlFunctionConverter.CanAggregateDistinct {
 

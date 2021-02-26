@@ -24,7 +24,7 @@ import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 
 /**
- * Counterpart of hive's ASTBuilder.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.ASTBuilder.
  */
 public class HiveParserASTBuilder {
 

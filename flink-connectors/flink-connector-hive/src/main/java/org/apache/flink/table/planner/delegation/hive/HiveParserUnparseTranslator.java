@@ -33,7 +33,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * Counterpart of hive's UnparseTranslator.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.parse.UnparseTranslator.
  */
 public class HiveParserUnparseTranslator {
 

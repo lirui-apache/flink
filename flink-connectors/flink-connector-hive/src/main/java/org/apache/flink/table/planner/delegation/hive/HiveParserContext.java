@@ -57,7 +57,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Counterpart of hive's Context.
+ * Counterpart of hive's org.apache.hadoop.hive.ql.Context.
  */
 public class HiveParserContext {
 

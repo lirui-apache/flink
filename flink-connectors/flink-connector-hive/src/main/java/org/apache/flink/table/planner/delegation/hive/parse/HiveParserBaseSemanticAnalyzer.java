@@ -79,7 +79,6 @@ import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -2191,7 +2190,7 @@ public class HiveParserBaseSemanticAnalyzer {
 								.getText());
 						if (!lineDelim.equals("\n")
 								&& !lineDelim.equals("10")) {
-							throw new SemanticException(SemanticAnalyzer.generateErrorMessage(rowChild,
+							throw new SemanticException(HiveParserUtils.generateErrorMessage(rowChild,
 									ErrorMsg.LINES_TERMINATED_BY_NON_NEWLINE.getMsg()));
 						}
 						break;
