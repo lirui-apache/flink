@@ -85,11 +85,6 @@ public class HiveASTParseDriver {
 
 		private final ArrayList<HiveASTParseError> errors;
 
-		public HiveLexerX() {
-			super();
-			errors = new ArrayList<>();
-		}
-
 		public HiveLexerX(CharStream input) {
 			super(input);
 			errors = new ArrayList<>();
@@ -205,7 +200,7 @@ public class HiveASTParseDriver {
 			throw new HiveASTParseException(parser.errors);
 		}
 
-		ASTNode tree = (ASTNode) r.getTree();
+		ASTNode tree = r.getTree();
 		tree.setUnknownTokenBoundaries();
 		return tree;
 	}
@@ -235,6 +230,6 @@ public class HiveASTParseDriver {
 			throw new HiveASTParseException(parser.errors);
 		}
 
-		return (ASTNode) r.getTree();
+		return r.getTree();
 	}
 }

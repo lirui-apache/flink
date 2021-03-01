@@ -26,9 +26,7 @@ import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
-import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.JoinType;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFCount;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDAFResolver;
@@ -37,7 +35,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Counterpart of hive's SubQueryUtils.
@@ -52,17 +49,6 @@ public class HiveParserSubQueryUtils {
 		extractConjuncts((ASTNode) node.getChild(1), conjuncts);
 	}
 
-	/*
-	 * Remove the SubQuery from the Where Clause Tree.
-	 * return the remaining WhereClause.
-	 */
-	static ASTNode rewriteParentQueryWhere(ASTNode whereCond, ASTNode subQuery)
-			throws SemanticException {
-		ParentQueryWhereClauseRewrite rewrite =
-				new ParentQueryWhereClauseRewrite(whereCond, subQuery);
-		return rewrite.remove();
-	}
-
 	static ASTNode constructTrueCond() {
 		ASTNode eq = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.EQUAL, "=");
 		ASTNode lhs = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.Number, "1");
@@ -70,19 +56,6 @@ public class HiveParserSubQueryUtils {
 		HiveASTParseDriver.ADAPTOR.addChild(eq, lhs);
 		HiveASTParseDriver.ADAPTOR.addChild(eq, rhs);
 		return eq;
-	}
-
-	static ASTNode andAST(ASTNode left, ASTNode right) {
-		if (left == null) {
-			return right;
-		} else if (right == null) {
-			return left;
-		} else {
-			Object o = HiveASTParseDriver.ADAPTOR.create(HiveASTParser.KW_AND, "AND");
-			HiveASTParseDriver.ADAPTOR.addChild(o, left);
-			HiveASTParseDriver.ADAPTOR.addChild(o, right);
-			return (ASTNode) o;
-		}
 	}
 
 	static ASTNode orAST(ASTNode left, ASTNode right) {
@@ -105,107 +78,14 @@ public class HiveParserSubQueryUtils {
 		return node;
 	}
 
-	/*
-	 * Check that SubQuery is a top level conjuncts.
-	 * Remove it from the Where Clause AST.
-	 */
-	static class ParentQueryWhereClauseRewrite {
-		ASTNode root;
-		ASTNode subQuery;
-
-		ParentQueryWhereClauseRewrite(ASTNode root, ASTNode subQuery) {
-			this.root = root;
-			this.subQuery = subQuery;
-		}
-
-		ASTNode getParentInWhereClause(ASTNode node) {
-			if (node == null || node == root) {
-				return null;
-			}
-			return (ASTNode) node.getParent();
-		}
-
-		boolean removeSubQuery(ASTNode node) {
-			if (node.getType() == HiveASTParser.KW_AND) {
-				boolean r = removeSubQuery((ASTNode) node.getChild(0));
-				if (!r) {
-					r = removeSubQuery((ASTNode) node.getChild(1));
-				}
-				return r;
-			} else if (node.getType() == HiveASTParser.KW_NOT) {
-				ASTNode child = (ASTNode) node.getChild(0);
-				if (child == subQuery) {
-					ASTNode sqOpType = (ASTNode) subQuery.getChild(0).getChild(0);
-					if (sqOpType.getType() == HiveASTParser.KW_EXISTS) {
-						sqOpType.getToken().setType(HiveASTParser.TOK_SUBQUERY_OP_NOTEXISTS);
-					} else {
-						sqOpType.getToken().setType(HiveASTParser.TOK_SUBQUERY_OP_NOTIN);
-					}
-					ASTNode parent = getParentInWhereClause(node);
-					if (parent == null) {
-						root = subQuery;
-					} else {
-						int nodeIdx = node.getChildIndex();
-						parent.setChild(nodeIdx, subQuery);
-					}
-					return removeSubQuery(subQuery);
-
-				}
-				return false;
-			} else if (node == subQuery) {
-				ASTNode parent = getParentInWhereClause(node);
-				ASTNode gParent = getParentInWhereClause(parent);
-				ASTNode sibling = null;
-
-				if (parent != null) {
-					if (subQuery.getChildIndex() == 0) {
-						sibling = (ASTNode) parent.getChild(1);
-					} else {
-						sibling = (ASTNode) parent.getChild(0);
-					}
-				}
-
-				/*
-				 * SubQuery was only condition in where clause
-				 */
-				if (sibling == null) {
-					root = constructTrueCond();
-				} // SubQuery was just one conjunct
-				else if (gParent == null) {
-					root = sibling;
-				} else {
-					// otherwise replace parent by sibling.
-					int pIdx = parent.getChildIndex();
-					gParent.setChild(pIdx, sibling);
-				}
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		ASTNode remove() throws SemanticException {
-			boolean r = removeSubQuery(root);
-			if (r) {
-				return root;
-			}
-			/*
-			 *  Restriction.7.h :: SubQuery predicates can appear only as top level conjuncts.
-			 */
-			throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
-					subQuery, "Only SubQuery expressions that are top level conjuncts are allowed"));
-		}
-	}
-
-	static List<ASTNode> findSubQueries(ASTNode node)
-			throws SemanticException {
-		List<ASTNode> subQueries = new ArrayList<ASTNode>();
+	static List<ASTNode> findSubQueries(ASTNode node) {
+		List<ASTNode> subQueries = new ArrayList<>();
 		findSubQueries(node, subQueries);
 		return subQueries;
 	}
 
 	private static void findSubQueries(ASTNode node, List<ASTNode> subQueries) {
-		Deque<ASTNode> stack = new ArrayDeque<ASTNode>();
+		Deque<ASTNode> stack = new ArrayDeque<>();
 		stack.push(node);
 
 		while (!stack.isEmpty()) {
@@ -298,123 +178,10 @@ public class HiveParserSubQueryUtils {
 		return r;
 	}
 
-	static List<String> getTableAliasesInSubQuery(ASTNode fromClause) {
-		List<String> aliases = new ArrayList<String>();
-		getTableAliasesInSubQuery((ASTNode) fromClause.getChild(0), aliases);
-		return aliases;
-	}
-
-	private static void getTableAliasesInSubQuery(ASTNode joinNode, List<String> aliases) {
-
-		if ((joinNode.getToken().getType() == HiveASTParser.TOK_TABREF)
-				|| (joinNode.getToken().getType() == HiveASTParser.TOK_SUBQUERY)
-				|| (joinNode.getToken().getType() == HiveASTParser.TOK_PTBLFUNCTION)) {
-			String tableName = HiveParserBaseSemanticAnalyzer.getUnescapedUnqualifiedTableName((ASTNode) joinNode.getChild(0))
-					.toLowerCase();
-			String alias = joinNode.getChildCount() == 1 ? tableName
-					: HiveParserBaseSemanticAnalyzer.unescapeIdentifier(joinNode.getChild(joinNode.getChildCount() - 1)
-					.getText().toLowerCase());
-			alias = (joinNode.getToken().getType() == HiveASTParser.TOK_PTBLFUNCTION) ?
-					HiveParserBaseSemanticAnalyzer.unescapeIdentifier(joinNode.getChild(1).getText().toLowerCase()) :
-					alias;
-			aliases.add(alias);
-		} else {
-			ASTNode left = (ASTNode) joinNode.getChild(0);
-			ASTNode right = (ASTNode) joinNode.getChild(1);
-			getTableAliasesInSubQuery(left, aliases);
-			getTableAliasesInSubQuery(right, aliases);
-		}
-	}
-
-	static ASTNode hasUnQualifiedColumnReferences(ASTNode ast) {
-		int type = ast.getType();
-		if (type == HiveASTParser.DOT) {
-			return null;
-		} else if (type == HiveASTParser.TOK_TABLE_OR_COL) {
-			return ast;
-		}
-
-		for (int i = 0; i < ast.getChildCount(); i++) {
-			ASTNode c = hasUnQualifiedColumnReferences((ASTNode) ast.getChild(i));
-			if (c != null) {
-				return c;
-			}
-		}
-		return null;
-	}
-
-	static ASTNode setQualifiedColumnReferences(ASTNode ast, String tableAlias) {
-		int type = ast.getType();
-		if (type == HiveASTParser.DOT) {
-			return ast;
-		}
-		if (type == HiveASTParser.TOK_TABLE_OR_COL) {
-			if (tableAlias == null) {
-				return null;
-			}
-			String colName = HiveParserBaseSemanticAnalyzer.unescapeIdentifier(ast.getChild(0).getText());
-			return createColRefAST(tableAlias, colName);
-		}
-
-		for (int i = 0; i < ast.getChildCount(); i++) {
-			ASTNode child = (ASTNode) ast.getChild(i);
-			ASTNode c = setQualifiedColumnReferences(child, tableAlias);
-			if (c == null) {
-				return null;
-			}
-			if (c != child) {
-				ast.setChild(i, c);
-			}
-		}
-		return ast;
-	}
-
 	static ASTNode subQueryWhere(ASTNode insertClause) {
 		if (insertClause.getChildCount() > 2 &&
 				insertClause.getChild(2).getType() == HiveASTParser.TOK_WHERE) {
 			return (ASTNode) insertClause.getChild(2);
-		}
-		return null;
-	}
-
-	/*
-	 * construct the ASTNode for the SQ column that will join with the OuterQuery Expression.
-	 * So for 'select ... from R1 where A in (select B from R2...)'
-	 * this will build (= outerQueryExpr 'ast returned by call to buildSQJoinExpr')
-	 */
-	static ASTNode buildOuterQryToSQJoinCond(ASTNode outerQueryExpr,
-			String sqAlias,
-			HiveParserRowResolver sqRR) {
-		ASTNode node = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.EQUAL, "=");
-		node.addChild(outerQueryExpr);
-		node.addChild(buildSQJoinExpr(sqAlias, sqRR));
-		return node;
-	}
-
-	/*
-	 * construct the ASTNode for the SQ column that will join with the OuterQuery Expression.
-	 * So for 'select ... from R1 where A in (select B from R2...)'
-	 * this will build (. (TOK_TABLE_OR_COL Identifier[SQ_1]) Identifier[B])
-	 * where 'SQ_1' is the alias generated for the SubQuery.
-	 */
-	static ASTNode buildSQJoinExpr(String sqAlias, HiveParserRowResolver sqRR) {
-
-		List<ColumnInfo> signature = sqRR.getRowSchema().getSignature();
-		ColumnInfo joinColumn = signature.get(0);
-		String[] joinColName = sqRR.reverseLookup(joinColumn.getInternalName());
-		return createColRefAST(sqAlias, joinColName[1]);
-	}
-
-	static ASTNode buildOuterJoinPostCond(String sqAlias, HiveParserRowResolver sqRR) {
-		return isNull(buildSQJoinExpr(sqAlias, sqRR));
-	}
-
-	@SuppressWarnings("rawtypes")
-	static String getAlias(Operator o, Map<String, Operator> aliasToOpInfo) {
-		for (Map.Entry<String, Operator> e : aliasToOpInfo.entrySet()) {
-			if (e.getValue() == o) {
-				return e.getKey();
-			}
 		}
 		return null;
 	}
@@ -438,59 +205,6 @@ public class HiveParserSubQueryUtils {
 		ASTNode tabName = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.Identifier, tabAlias);
 		tabAst.addChild(tabName);
 		return tabAst;
-	}
-
-	static ASTNode buildSelectExpr(ASTNode expression) {
-		ASTNode selAst = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_SELEXPR, "TOK_SELEXPR");
-		selAst.addChild(expression);
-		return selAst;
-	}
-
-	static ASTNode buildGroupBy() {
-		ASTNode gBy = (ASTNode) HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_GROUPBY, "TOK_GROUPBY");
-		return gBy;
-	}
-
-	static ASTNode createSelectItem(ASTNode expr, ASTNode alias) {
-		ASTNode selectItem = (ASTNode)
-				HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_SELEXPR, "TOK_SELEXPR");
-		selectItem.addChild(expr);
-		selectItem.addChild(alias);
-		return selectItem;
-	}
-
-	static ASTNode alterCorrelatedPredicate(ASTNode correlatedExpr, ASTNode sqAlias, boolean left) {
-		if (left) {
-			correlatedExpr.setChild(0, sqAlias);
-		} else {
-			correlatedExpr.setChild(1, sqAlias);
-		}
-		return correlatedExpr;
-	}
-
-	static void addGroupExpressionToFront(ASTNode gBy, ASTNode expr) {
-		ASTNode grpExpr = (ASTNode)
-				HiveASTParseDriver.ADAPTOR.create(HiveASTParser.TOK_GROUPING_SETS_EXPRESSION,
-						"TOK_GROUPING_SETS_EXPRESSION");
-		grpExpr.addChild(expr);
-		List<ASTNode> newChildren = new ArrayList<ASTNode>();
-		newChildren.add(expr);
-		int i = gBy.getChildCount() - 1;
-		while (i >= 0) {
-			newChildren.add((ASTNode) gBy.deleteChild(i));
-			i--;
-		}
-		for (ASTNode child : newChildren) {
-			gBy.addChild(child);
-		}
-	}
-
-	static ASTNode buildPostJoinNullCheck(List<ASTNode> subQueryJoinAliasExprs) {
-		ASTNode check = null;
-		for (ASTNode expr : subQueryJoinAliasExprs) {
-			check = orAST(check, isNull(expr));
-		}
-		return check;
 	}
 
 	/*
@@ -711,17 +425,9 @@ public class HiveParserSubQueryUtils {
 	 * ISubQueryJoinInfo.
 	 */
 	public interface ISubQueryJoinInfo {
-		public String getAlias();
+		String getAlias();
 
-		public JoinType getJoinType();
-
-		public ASTNode getJoinConditionAST();
-
-		public HiveParserQBSubQuery getSubQuery();
-
-		public ASTNode getSubQueryAST();
-
-		public String getOuterQueryId();
+		HiveParserQBSubQuery getSubQuery();
 	}
 
 	;

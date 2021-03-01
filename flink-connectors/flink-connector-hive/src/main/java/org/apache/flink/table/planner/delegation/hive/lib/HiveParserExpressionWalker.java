@@ -30,11 +30,6 @@ import org.apache.hadoop.hive.ql.parse.SemanticException;
  */
 public class HiveParserExpressionWalker extends HiveParserDefaultGraphWalker {
 
-	/**
-	 * Constructor.
-	 *
-	 * @param disp dispatcher to call for each op encountered
-	 */
 	public HiveParserExpressionWalker(Dispatcher disp) {
 		super(disp);
 	}
@@ -51,19 +46,13 @@ public class HiveParserExpressionWalker extends HiveParserDefaultGraphWalker {
 			//subquery either in WHERE <LHS> IN <SUBQUERY> form OR WHERE EXISTS <SUBQUERY> form
 			//in first case LHS should not be bypassed
 			assert (parentOp.getChildCount() == 2 || parentOp.getChildCount() == 3);
-			if (parentOp.getChildCount() == 3 && (ASTNode) childNode == parentOp.getChild(2)) {
-				return false;
-			}
-			return true;
+			return parentOp.getChildCount() != 3 || childNode != parentOp.getChild(2);
 		}
 		return false;
 	}
 
 	/**
 	 * walk the current operator and its descendants.
-	 *
-	 * @param nd current operator in the graph
-	 * @throws SemanticException
 	 */
 	protected void walk(Node nd) throws SemanticException {
 		// Push the node in the stack

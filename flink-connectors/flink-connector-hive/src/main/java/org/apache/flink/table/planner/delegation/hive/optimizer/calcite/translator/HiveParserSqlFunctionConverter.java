@@ -115,7 +115,7 @@ public class HiveParserSqlFunctionConverter {
 			Class<? extends GenericUDF> udfClass = hiveUDF.getClass();
 			Description udfAnnotation = udfClass.getAnnotation(Description.class);
 
-			if (udfAnnotation instanceof Description) {
+			if (udfAnnotation != null) {
 				udfName = udfAnnotation.name();
 				if (udfName != null) {
 					String[] aliases = udfName.split(",");
@@ -301,8 +301,8 @@ public class HiveParserSqlFunctionConverter {
 		udfInfo.returnTypeInference = ReturnTypes.explicit(calciteRetType);
 		udfInfo.operandTypeInference = InferTypes.explicit(calciteArgTypes);
 		List<SqlTypeFamily> typeFamily = new ArrayList<>();
-		for (RelDataType at : calciteArgTypes) {
-			typeFamily.add(Util.first(at.getSqlTypeName().getFamily(), SqlTypeFamily.ANY));
+		for (RelDataType argType : calciteArgTypes) {
+			typeFamily.add(Util.first(argType.getSqlTypeName().getFamily(), SqlTypeFamily.ANY));
 		}
 		udfInfo.operandTypeChecker = OperandTypes.family(Collections.unmodifiableList(typeFamily));
 		return udfInfo;

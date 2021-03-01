@@ -20,7 +20,6 @@ package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.connectors.hive.FlinkHiveException;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserExtractDate;
-import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserFloorDate;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.flink.util.Preconditions;
 
@@ -50,7 +49,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * A RexCopier that converts Hive function calls so that Flink recognizes them.
@@ -92,14 +90,8 @@ public class ConvertSqlFunctionCopier extends AbstractRexCopier {
 	public RexNode visitCall(RexCall call) {
 		SqlOperator operator = call.getOperator();
 		List<RexNode> operands = call.getOperands();
-		if (HiveParserExtractDate.ALL_FUNCTIONS.contains(operator) || HiveParserFloorDate.ALL_FUNCTIONS.contains(operator)) {
-			// Hive adds extra operands for these functions, need to remove them
-			operands = operands.stream()
-					.filter(o -> !(o instanceof RexLiteral && ((RexLiteral) o).getTypeName() == SqlTypeName.SYMBOL))
-					.collect(Collectors.toList());
-			if (HIVE_EXTRACT_DATE_TO_NEW_NAME.containsKey(operator)) {
-				operator = HIVE_EXTRACT_DATE_TO_NEW_NAME.get(operator);
-			}
+		if (HIVE_EXTRACT_DATE_TO_NEW_NAME.containsKey(operator)) {
+			operator = HIVE_EXTRACT_DATE_TO_NEW_NAME.get(operator);
 		}
 		SqlOperator convertedOp = convertOperator(operator);
 		final boolean[] update = null;

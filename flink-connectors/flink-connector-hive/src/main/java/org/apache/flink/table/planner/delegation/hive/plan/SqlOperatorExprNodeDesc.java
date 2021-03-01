@@ -52,10 +52,6 @@ public class SqlOperatorExprNodeDesc extends ExprNodeDesc {
 		return false;
 	}
 
-	public String getFuncName() {
-		return funcName;
-	}
-
 	public SqlOperator getSqlOperator() {
 		return sqlOperator;
 	}

@@ -66,7 +66,7 @@ public class HiveParserPTFInvocationSpec {
 		}
 
 		public void addExpression(OrderExpression c) {
-			expressions = expressions == null ? new ArrayList<OrderExpression>() : expressions;
+			expressions = expressions == null ? new ArrayList<>() : expressions;
 			expressions.add(c);
 		}
 
@@ -75,7 +75,7 @@ public class HiveParserPTFInvocationSpec {
 				return;
 			}
 			if (expressions == null) {
-				expressions = new ArrayList<OrderExpression>();
+				expressions = new ArrayList<>();
 			}
 			for (int i = pSpec.getExpressions().size() - 1; i >= 0; i--) {
 				expressions.add(0, new OrderExpression(pSpec.getExpressions().get(i)));
@@ -318,15 +318,8 @@ public class HiveParserPTFInvocationSpec {
 		}
 
 		public void addArg(ASTNode arg) {
-			args = args == null ? new ArrayList<ASTNode>() : args;
+			args = args == null ? new ArrayList<>() : args;
 			args.add(arg);
-		}
-
-		public PartitionedTableFunctionSpec getStartOfChain() {
-			if (input instanceof PartitionedTableFunctionSpec) {
-				return ((PartitionedTableFunctionSpec) input).getStartOfChain();
-			}
-			return this;
 		}
 
 		@Override

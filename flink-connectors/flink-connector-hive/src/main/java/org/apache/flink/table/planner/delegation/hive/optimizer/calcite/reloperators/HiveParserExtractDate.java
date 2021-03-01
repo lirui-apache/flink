@@ -24,10 +24,6 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveExtractDate.
  */
@@ -41,9 +37,6 @@ public class HiveParserExtractDate extends SqlFunction {
 	public static final SqlFunction HOUR = new HiveParserExtractDate("HOUR");
 	public static final SqlFunction MINUTE = new HiveParserExtractDate("MINUTE");
 	public static final SqlFunction SECOND = new HiveParserExtractDate("SECOND");
-
-	public static final Set<SqlFunction> ALL_FUNCTIONS =
-			new HashSet<>(Arrays.asList(YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND));
 
 	private HiveParserExtractDate(String name) {
 		super(name, SqlKind.EXTRACT, ReturnTypes.INTEGER_NULLABLE, null,

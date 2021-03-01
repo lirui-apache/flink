@@ -96,7 +96,7 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 				throw new SemanticException(ErrorMsg.AMBIGUOUS_TABLE_OR_COLUMN.getMsg(expr));
 			}
 
-			return (tblAliasCnt == 1) ? true : false;
+			return tblAliasCnt == 1;
 		}
 
 		private static ColumnInfo getColInfo(HiveParserJoinTypeCheckCtx ctx, String tabName, String colAlias,
@@ -120,8 +120,6 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 
 	/**
 	 * Factory method to get ColumnExprProcessor.
-	 *
-	 * @return ColumnExprProcessor.
 	 */
 	@Override
 	public HiveParserTypeCheckProcFactory.ColumnExprProcessor getColumnExprProcessor() {
@@ -181,8 +179,6 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 
 	/**
 	 * Factory method to get DefaultExprProcessor.
-	 *
-	 * @return DefaultExprProcessor.
 	 */
 	@Override
 	public HiveParserTypeCheckProcFactory.DefaultExprProcessor getDefaultExprProcessor() {

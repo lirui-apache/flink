@@ -27,10 +27,6 @@ import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.validate.SqlMonotonicity;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveFloorDate.
  */
@@ -44,9 +40,6 @@ public class HiveParserFloorDate extends SqlMonotonicUnaryFunction {
 	public static final SqlFunction HOUR = new HiveParserFloorDate("FLOOR_HOUR");
 	public static final SqlFunction MINUTE = new HiveParserFloorDate("FLOOR_MINUTE");
 	public static final SqlFunction SECOND = new HiveParserFloorDate("FLOOR_SECOND");
-
-	public static final Set<SqlFunction> ALL_FUNCTIONS =
-			new HashSet<>(Arrays.asList(YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND));
 
 	private HiveParserFloorDate(String name) {
 		super(name, SqlKind.FLOOR, ReturnTypes.ARG0_OR_EXACT_NO_SCALE, null,

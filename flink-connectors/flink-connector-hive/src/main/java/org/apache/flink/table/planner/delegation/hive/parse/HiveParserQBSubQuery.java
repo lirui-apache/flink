@@ -173,10 +173,6 @@ public class HiveParserQBSubQuery {
 			return refersParent;
 		}
 
-		public boolean refersSubQuery() {
-			return refersSubQuery;
-		}
-
 		public abstract HiveParserQBSubQuery.ExprType combine(HiveParserQBSubQuery.ExprType other);
 	}
 
@@ -221,22 +217,6 @@ public class HiveParserQBSubQuery {
 			this.rightOuterColInfo = rightOuterColInfo;
 		}
 
-		ASTNode getLeftExpr() {
-			return leftExpr;
-		}
-
-		ASTNode getRightExpr() {
-			return rightExpr;
-		}
-
-		HiveParserQBSubQuery.ExprType getLeftExprType() {
-			return leftExprType;
-		}
-
-		HiveParserQBSubQuery.ExprType getRightExprType() {
-			return rightExprType;
-		}
-
 		boolean eitherSideRefersBoth() {
 			if (leftExprType == HiveParserQBSubQuery.ExprType.REFERS_BOTH) {
 				return true;
@@ -251,21 +231,6 @@ public class HiveParserQBSubQuery {
 				return leftExprType.combine(rightExprType) == HiveParserQBSubQuery.ExprType.REFERS_BOTH;
 			}
 			return false;
-		}
-
-		boolean refersOuterOnly() {
-			if (rightExpr == null) {
-				return leftExprType == HiveParserQBSubQuery.ExprType.REFERS_PARENT;
-			}
-			return leftExprType.combine(rightExprType) == HiveParserQBSubQuery.ExprType.REFERS_PARENT;
-		}
-
-		ColumnInfo getLeftOuterColInfo() {
-			return leftOuterColInfo;
-		}
-
-		ColumnInfo getRightOuterColInfo() {
-			return rightOuterColInfo;
 		}
 	}
 
@@ -431,47 +396,16 @@ public class HiveParserQBSubQuery {
 		HiveParserRowResolver sqRR;
 
 		NotInCheck() {
-			subQryCorrExprs = new ArrayList<ASTNode>();
-		}
-
-		void addCorrExpr(ASTNode corrExpr) {
-			subQryCorrExprs.add(corrExpr);
-		}
-
-		public ASTNode getSubQueryAST() {
-			ASTNode ast = HiveParserSubQueryUtils.buildNotInNullCheckQuery(
-					HiveParserQBSubQuery.this.getSubQueryAST(),
-					HiveParserQBSubQuery.this.getAlias(),
-					CNT_ALIAS,
-					subQryCorrExprs,
-					sqRR);
-			return ast;
+			subQryCorrExprs = new ArrayList<>();
 		}
 
 		public String getAlias() {
 			return HiveParserQBSubQuery.this.getAlias() + "_notin_nullcheck";
 		}
 
-		public JoinType getJoinType() {
-			return JoinType.LEFTSEMI;
-		}
-
-		public ASTNode getJoinConditionAST() {
-			return HiveParserSubQueryUtils.buildNotInNullJoinCond(getAlias(), CNT_ALIAS);
-		}
-
 		public HiveParserQBSubQuery getSubQuery() {
 			return HiveParserQBSubQuery.this;
 		}
-
-		public String getOuterQueryId() {
-			return HiveParserQBSubQuery.this.getOuterQueryId();
-		}
-
-		void setSQRR(HiveParserRowResolver sqRR) {
-			this.sqRR = sqRR;
-		}
-
 	}
 
 	private final String outerQueryId;

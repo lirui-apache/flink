@@ -298,41 +298,7 @@ public class HiveASTParseUtils {
 	 * ASTSearcher.
 	 */
 	public static class ASTSearcher {
-		private final LinkedList<ASTNode> searchQueue = new LinkedList<ASTNode>();
-
-		/**
-		 * Performs breadth-first search of the AST for a nested set of tokens. Tokens
-		 * don't have to be each others' direct children, they can be separated by
-		 * layers of other tokens. For each token in the list, the first one found is
-		 * matched and there's no backtracking; thus, if AST has multiple instances of
-		 * some token, of which only one matches, it is not guaranteed to be found. We
-		 * use this for simple things. Not thread-safe - reuses searchQueue.
-		 */
-		public ASTNode simpleBreadthFirstSearch(ASTNode ast, int... tokens) {
-			searchQueue.clear();
-			searchQueue.add(ast);
-			for (int i = 0; i < tokens.length; ++i) {
-				boolean found = false;
-				int token = tokens[i];
-				while (!searchQueue.isEmpty() && !found) {
-					ASTNode next = searchQueue.poll();
-					found = next.getType() == token;
-					if (found) {
-						if (i == tokens.length - 1) {
-							return next;
-						}
-						searchQueue.clear();
-					}
-					for (int j = 0; j < next.getChildCount(); ++j) {
-						searchQueue.add((ASTNode) next.getChild(j));
-					}
-				}
-				if (!found) {
-					return null;
-				}
-			}
-			return null;
-		}
+		private final LinkedList<ASTNode> searchQueue = new LinkedList<>();
 
 		public ASTNode depthFirstSearch(ASTNode ast, int token) {
 			searchQueue.clear();

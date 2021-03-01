@@ -20,8 +20,6 @@ package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
-import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserExtractDate;
-import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.reloperators.HiveParserFloorDate;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter;
 import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserTypeConverter;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParseUtils;
@@ -31,7 +29,6 @@ import org.apache.flink.table.planner.delegation.hive.plan.SqlOperatorExprNodeDe
 import org.apache.flink.util.Preconditions;
 
 import org.apache.calcite.avatica.util.TimeUnit;
-import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.CorrelationId;
@@ -447,12 +444,6 @@ public class HiveParserRexNodeConverter {
 		if (calciteOp.getKind() == SqlKind.CASE) {
 			// If it is a case operator, we need to rewrite it
 			childRexNodeLst = rewriteCaseChildren(func, childRexNodeLst);
-		} else if (HiveParserExtractDate.ALL_FUNCTIONS.contains(calciteOp)) {
-			// If it is a extract operator, we need to rewrite it
-			childRexNodeLst = rewriteExtractDateChildren(calciteOp, childRexNodeLst);
-		} else if (HiveParserFloorDate.ALL_FUNCTIONS.contains(calciteOp)) {
-			// If it is a floor <date> operator, we need to rewrite it
-			childRexNodeLst = rewriteFloorDateChildren(calciteOp, childRexNodeLst);
 		}
 		RexNode expr = cluster.getRexBuilder().makeCall(calciteOp, childRexNodeLst);
 
@@ -543,54 +534,6 @@ public class HiveParserRexNodeConverter {
 			}
 			return RexUtil.composeDisjunction(cluster.getRexBuilder(), comparisons, true);
 		}
-	}
-
-	private List<RexNode> rewriteFloorDateChildren(SqlOperator op, List<RexNode> childRexNodeLst) {
-		List<RexNode> newChildRexNodeLst = new ArrayList<>();
-		assert childRexNodeLst.size() == 1;
-		newChildRexNodeLst.add(childRexNodeLst.get(0));
-		if (op == HiveParserFloorDate.YEAR) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.YEAR));
-		} else if (op == HiveParserFloorDate.QUARTER) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.QUARTER));
-		} else if (op == HiveParserFloorDate.MONTH) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.MONTH));
-		} else if (op == HiveParserFloorDate.WEEK) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.WEEK));
-		} else if (op == HiveParserFloorDate.DAY) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.DAY));
-		} else if (op == HiveParserFloorDate.HOUR) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.HOUR));
-		} else if (op == HiveParserFloorDate.MINUTE) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.MINUTE));
-		} else if (op == HiveParserFloorDate.SECOND) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.SECOND));
-		}
-		return newChildRexNodeLst;
-	}
-
-	private List<RexNode> rewriteExtractDateChildren(SqlOperator op, List<RexNode> childRexNodeLst) {
-		List<RexNode> newChildRexNodeLst = new ArrayList<>();
-		if (op == HiveParserExtractDate.YEAR) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.YEAR));
-		} else if (op == HiveParserExtractDate.QUARTER) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.QUARTER));
-		} else if (op == HiveParserExtractDate.MONTH) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.MONTH));
-		} else if (op == HiveParserExtractDate.WEEK) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.WEEK));
-		} else if (op == HiveParserExtractDate.DAY) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.DAY));
-		} else if (op == HiveParserExtractDate.HOUR) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.HOUR));
-		} else if (op == HiveParserExtractDate.MINUTE) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.MINUTE));
-		} else if (op == HiveParserExtractDate.SECOND) {
-			newChildRexNodeLst.add(cluster.getRexBuilder().makeFlag(TimeUnitRange.SECOND));
-		}
-		assert childRexNodeLst.size() == 1;
-		newChildRexNodeLst.add(childRexNodeLst.get(0));
-		return newChildRexNodeLst;
 	}
 
 	private List<RexNode> rewriteCaseChildren(ExprNodeGenericFuncDesc func, List<RexNode> childRexNodeLst)

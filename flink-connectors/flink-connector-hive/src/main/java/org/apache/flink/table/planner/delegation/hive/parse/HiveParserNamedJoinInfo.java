@@ -57,8 +57,4 @@ public class HiveParserNamedJoinInfo {
 	public JoinType getHiveJoinType() {
 		return hiveJoinType;
 	}
-
-	public void setHiveJoinType(JoinType hiveJoinType) {
-		this.hiveJoinType = hiveJoinType;
-	}
 }

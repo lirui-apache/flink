@@ -36,18 +36,6 @@ public class HiveASTParseError {
 		this.tokenNames = tokenNames;
 	}
 
-	BaseRecognizer getBaseRecognizer() {
-		return br;
-	}
-
-	RecognitionException getRecognitionException() {
-		return re;
-	}
-
-	String[] getTokenNames() {
-		return tokenNames;
-	}
-
 	String getMessage() {
 		return br.getErrorHeader(re) + " " + br.getErrorMessage(re, tokenNames);
 	}

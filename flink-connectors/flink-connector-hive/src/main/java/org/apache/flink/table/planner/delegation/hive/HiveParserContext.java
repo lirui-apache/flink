@@ -410,10 +410,6 @@ public class HiveParserContext {
 		}
 	}
 
-	private Path getExternalScratchDir(URI extURI) {
-		return getStagingDir(new Path(extURI.getScheme(), extURI.getAuthority(), extURI.getPath()), !isExplainSkipExecution());
-	}
-
 	/**
 	 * Remove any created scratch directories.
 	 */

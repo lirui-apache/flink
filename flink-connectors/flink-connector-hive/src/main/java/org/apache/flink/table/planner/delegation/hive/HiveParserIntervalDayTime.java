@@ -64,7 +64,6 @@ public class HiveParserIntervalDayTime implements Comparable<HiveParserIntervalD
 	/**
 	 * Returns days/hours/minutes all converted into seconds.
 	 * Nanos still need to be retrieved using getNanos()
-	 * @return
 	 */
 	public long getTotalSeconds() {
 		return totalSeconds;

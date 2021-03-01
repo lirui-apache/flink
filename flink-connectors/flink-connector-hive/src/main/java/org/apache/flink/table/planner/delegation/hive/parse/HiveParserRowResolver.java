@@ -186,9 +186,7 @@ public class HiveParserRowResolver implements Serializable {
 				LinkedHashMap<String, ColumnInfo> cmap = rslvEntry.getValue();
 				for (Map.Entry<String, ColumnInfo> cmapEnt : cmap.entrySet()) {
 					if (colAlias.equalsIgnoreCase(cmapEnt.getKey())) {
-						/*
-						 * We can have an unaliased and one aliased mapping to a Column.
-						 */
+						// We can have an unaliased and one aliased mapping to a Column.
 						if (found && foundTbl != null && rslvKey != null) {
 							throw new SemanticException("Column " + colAlias
 									+ " Found in more than One Tables/Subqueries");
@@ -244,7 +242,7 @@ public class HiveParserRowResolver implements Serializable {
 				}
 			}
 		}
-		return new ArrayList<String>(columnNames);
+		return new ArrayList<>(columnNames);
 	}
 
 	public LinkedHashMap<String, ColumnInfo> getFieldMap(String tabAlias) {

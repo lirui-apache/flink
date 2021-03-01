@@ -41,7 +41,7 @@ public class HiveParserUnparseTranslator {
 	private final NavigableMap<Integer, Translation> translations;
 	private final List<CopyTranslation> copyTranslations;
 	private boolean enabled;
-	private Configuration conf;
+	private final Configuration conf;
 
 	public HiveParserUnparseTranslator(Configuration conf) {
 		this.conf = conf;

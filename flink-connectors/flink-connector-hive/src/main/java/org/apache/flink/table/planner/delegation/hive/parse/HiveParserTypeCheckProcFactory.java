@@ -160,7 +160,7 @@ public class HiveParserTypeCheckProcFactory {
 		HiveParserRowResolver input = ctx.getInputRR();
 		ExprNodeDesc desc = null;
 
-		if ((ctx == null) || (input == null) || (!ctx.getAllowGBExprElimination())) {
+		if (input == null || !ctx.getAllowGBExprElimination()) {
 			return null;
 		}
 
@@ -242,7 +242,7 @@ public class HiveParserTypeCheckProcFactory {
 
 	// temporary type-safe casting
 	private static Map<ASTNode, ExprNodeDesc> convert(Map<Node, Object> outputs) {
-		Map<ASTNode, ExprNodeDesc> converted = new LinkedHashMap<ASTNode, ExprNodeDesc>();
+		Map<ASTNode, ExprNodeDesc> converted = new LinkedHashMap<>();
 		for (Map.Entry<Node, Object> entry : outputs.entrySet()) {
 			if (entry.getKey() instanceof ASTNode &&
 					(entry.getValue() == null || entry.getValue() instanceof ExprNodeDesc)) {
@@ -280,8 +280,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get NullExprProcessor.
-	 *
-	 * @return NullExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.NullExprProcessor getNullExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.NullExprProcessor();
@@ -372,8 +370,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get NumExprProcessor.
-	 *
-	 * @return NumExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.NumExprProcessor getNumExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.NumExprProcessor();
@@ -432,8 +428,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get StrExprProcessor.
-	 *
-	 * @return StrExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.StrExprProcessor getStrExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.StrExprProcessor();
@@ -478,8 +472,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get BoolExprProcessor.
-	 *
-	 * @return BoolExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.BoolExprProcessor getBoolExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.BoolExprProcessor();
@@ -596,8 +588,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get IntervalExprProcessor.
-	 *
-	 * @return IntervalExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.IntervalExprProcessor getIntervalExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.IntervalExprProcessor();
@@ -605,8 +595,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get DateExprProcessor.
-	 *
-	 * @return DateExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.DateTimeExprProcessor getDateTimeExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.DateTimeExprProcessor();
@@ -717,8 +705,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get ColumnExprProcessor.
-	 *
-	 * @return ColumnExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.ColumnExprProcessor getColumnExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.ColumnExprProcessor();
@@ -875,11 +861,6 @@ public class HiveParserTypeCheckProcFactory {
 
 			childrenList.addAll(Arrays.asList(children));
 			return ExprNodeGenericFuncDesc.newInstance(genericUDF, udfName, childrenList);
-		}
-
-		public static ExprNodeDesc getFuncExprNodeDesc(String udfName,
-				ExprNodeDesc... children) throws UDFArgumentException {
-			return getFuncExprNodeDescWithUdfData(udfName, null, children);
 		}
 
 		protected void validateUDF(ASTNode expr, boolean isFunction, HiveParserTypeCheckCtx ctx, FunctionInfo fi,
@@ -1411,8 +1392,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get DefaultExprProcessor.
-	 *
-	 * @return DefaultExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.DefaultExprProcessor getDefaultExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.DefaultExprProcessor();
@@ -1506,8 +1485,6 @@ public class HiveParserTypeCheckProcFactory {
 
 	/**
 	 * Factory method to get SubQueryExprProcessor.
-	 *
-	 * @return DateExprProcessor.
 	 */
 	public HiveParserTypeCheckProcFactory.SubQueryExprProcessor getSubQueryExprProcessor() {
 		return new HiveParserTypeCheckProcFactory.SubQueryExprProcessor();

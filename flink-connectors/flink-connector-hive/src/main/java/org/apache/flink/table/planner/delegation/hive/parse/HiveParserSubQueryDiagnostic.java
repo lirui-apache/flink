@@ -21,7 +21,6 @@ package org.apache.flink.table.planner.delegation.hive.parse;
 import org.apache.flink.table.planner.delegation.hive.HiveParserContext;
 
 import org.antlr.runtime.TokenRewriteStream;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
 
 /**
  * Counterpart of hive's org.apache.hadoop.hive.ql.parse.SubQueryDiagnostic.
@@ -71,137 +70,8 @@ public class HiveParserSubQueryDiagnostic {
 			this.stream = stream;
 		}
 
-		public String getRewrittenQuery() {
-
-			ASTNode sqAST = subQuery.getSubQueryAST();
-
-			if (whereClause != null) {
-				ASTNode whereAST = (ASTNode) sqAST.getChild(1).getChild(2);
-				stream.replace(subQuery.getAlias(),
-						whereAST.getTokenStartIndex(),
-						whereAST.getTokenStopIndex(),
-						whereClause);
-			}
-
-			if (selectClauseAdditions != null) {
-				ASTNode selectClause = (ASTNode) sqAST.getChild(1).getChild(1);
-				stream.insertAfter(subQuery.getAlias(),
-						selectClause.getTokenStopIndex(), selectClauseAdditions);
-			}
-
-			if (gByClauseAdditions != null) {
-				if (!addGroupByClause) {
-					ASTNode groupBy = (ASTNode) sqAST.getChild(1).getChild(3);
-					stream.insertAfter(subQuery.getAlias(),
-							groupBy.getTokenStopIndex(), gByClauseAdditions);
-				} else {
-					gByClauseAdditions = " group by " + gByClauseAdditions;
-					stream.insertAfter(subQuery.getAlias(),
-							sqAST.getTokenStopIndex() - 1, gByClauseAdditions);
-				}
-			}
-
-			try {
-				return
-						stream.toString(subQuery.getAlias(),
-								sqAST.getTokenStartIndex(),
-								sqAST.getTokenStopIndex())
-								+ " " + subQuery.getAlias();
-			} finally {
-				stream.deleteProgram(subQuery.getAlias());
-			}
-		}
-
 		public String getJoiningCondition() {
 			return joiningCondition;
-		}
-
-		void addWhereClauseRewrite(ASTNode predicate) {
-			String cond = stream.toString(predicate.getTokenStartIndex(), predicate.getTokenStopIndex());
-			addWhereClauseRewrite(cond);
-		}
-
-		void addWhereClauseRewrite(String cond) {
-			whereClause = whereClause == null ? "where " : whereClause + " and ";
-			whereClause += cond;
-		}
-
-		void addSelectClauseRewrite(ASTNode selectExpr, String alias) {
-			if (selectClauseAdditions == null) {
-				selectClauseAdditions = "";
-			}
-
-			selectClauseAdditions += ", " +
-					stream.toString(selectExpr.getTokenStartIndex(), selectExpr.getTokenStopIndex()) +
-					" as " + alias;
-		}
-
-		void setAddGroupByClause() {
-			this.addGroupByClause = true;
-		}
-
-		void addGByClauseRewrite(ASTNode selectExpr) {
-			if (gByClauseAdditions == null) {
-				gByClauseAdditions = "";
-			}
-
-			if (!addGroupByClause || !gByClauseAdditions.equals("")) {
-				gByClauseAdditions += ", ";
-			}
-
-			gByClauseAdditions += stream.toString(
-					selectExpr.getTokenStartIndex(),
-					selectExpr.getTokenStopIndex());
-		}
-
-		/*
-		 * joinCond represents a correlated predicate.
-		 * leftIsRewritten, rightIsRewritten indicates if either side has been replaced by a column alias.
-		 *
-		 * If a side is not rewritten, we get its text from the tokenstream.
-		 * For rewritten conditions we form the text based on the table and column reference.
-		 */
-		void addJoinCondition(ASTNode joinCond, boolean leftIsRewritten, boolean rightIsRewritten) {
-			StringBuilder b = new StringBuilder();
-
-			if (joiningCondition == null) {
-				joiningCondition = " on ";
-			} else {
-				b.append(" and ");
-			}
-			addCondition(b, (ASTNode) joinCond.getChild(0), leftIsRewritten);
-			b.append(" = ");
-			addCondition(b, (ASTNode) joinCond.getChild(1), rightIsRewritten);
-
-			joiningCondition += b.toString();
-		}
-
-		private void addCondition(StringBuilder b, ASTNode cond, boolean rewritten) {
-			if (!rewritten) {
-				b.append(stream.toString(cond.getTokenStartIndex(), cond.getTokenStopIndex()));
-			} else {
-				addReference(b, cond);
-			}
-		}
-
-		private void addReference(StringBuilder b, ASTNode ref) {
-			if (ref.getType() == HiveASTParser.DOT) {
-				b.append(ref.getChild(0).getChild(0).getText()).
-						append(".").
-						append(ref.getChild(1).getText());
-			} else {
-				b.append(ref.getText());
-			}
-		}
-
-		void addPostJoinCondition(ASTNode cond) {
-			StringBuilder b = new StringBuilder();
-			addReference(b, (ASTNode) cond.getChild(1));
-			outerQueryPostJoinCond = b.toString() + " is null";
-		}
-
-		public String getOuterQueryPostJoinCond() {
-			return outerQueryPostJoinCond;
 		}
 	}
 
@@ -217,46 +87,7 @@ public class HiveParserSubQueryDiagnostic {
 		}
 
 		@Override
-		public final String getRewrittenQuery() {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
 		public final String getJoiningCondition() {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		final void addWhereClauseRewrite(ASTNode predicate) {
-		}
-
-		@Override
-		final void addWhereClauseRewrite(String cond) {
-		}
-
-		@Override
-		final void addSelectClauseRewrite(ASTNode selectExpr, String alias) {
-		}
-
-		@Override
-		final void setAddGroupByClause() {
-		}
-
-		@Override
-		final void addGByClauseRewrite(ASTNode selectExpr) {
-		}
-
-		@Override
-		final void addJoinCondition(ASTNode joinCond, boolean leftIsRewritten,
-				boolean rightIsRewritten) {
-		}
-
-		@Override
-		final void addPostJoinCondition(ASTNode cond) {
-		}
-
-		@Override
-		public final String getOuterQueryPostJoinCond() {
 			throw new UnsupportedOperationException();
 		}
 

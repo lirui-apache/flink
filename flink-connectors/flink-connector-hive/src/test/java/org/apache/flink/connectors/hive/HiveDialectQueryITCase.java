@@ -151,7 +151,7 @@ public class HiveDialectQueryITCase {
 		tableEnv.executeSql("create table dest (x int, y int)");
 		tableEnv.executeSql("create table destp (x int) partitioned by (p string, q string)");
 		tableEnv.executeSql("alter table destp add partition (p='-1',q='-1')");
-		tableEnv.executeSql("CREATE TABLE src (key STRING, `value` STRING)");
+		tableEnv.executeSql("CREATE TABLE src (key STRING, value STRING)");
 		tableEnv.executeSql("CREATE TABLE srcpart (key STRING, `value` STRING) PARTITIONED BY (ds STRING, hr STRING)");
 		tableEnv.executeSql("CREATE TABLE nested (\n" +
 				"  a int,\n" +

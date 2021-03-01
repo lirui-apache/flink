@@ -20,8 +20,6 @@ package org.apache.flink.table.planner.delegation.hive.optimizer.calcite.transla
 
 import org.apache.flink.table.catalog.hive.client.HiveShim;
 import org.apache.flink.table.planner.delegation.hive.HiveParserUtils;
-import org.apache.flink.table.planner.delegation.hive.optimizer.calcite.translator.HiveParserSqlFunctionConverter.HiveToken;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
 import org.apache.flink.table.planner.delegation.hive.parse.HiveParserRowResolver;
 
 import org.apache.calcite.avatica.util.TimeUnit;
@@ -53,78 +51,14 @@ import org.apache.hadoop.hive.serde2.typeinfo.UnionTypeInfo;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * Counterpart of hive's org.apache.hadoop.hive.ql.optimizer.calcite.translator.TypeConverter.
  */
 public class HiveParserTypeConverter {
-
-	private static final Map<String, HiveToken> calciteToHiveTypeNameMap;
-
-	// TODO: Handling of char[], varchar[], string...
-	static {
-		Map<String, HiveToken> map = new HashMap<>();
-		map.put(SqlTypeName.BOOLEAN.getName(), new HiveToken(HiveASTParser.TOK_BOOLEAN, "TOK_BOOLEAN"));
-		map.put(SqlTypeName.TINYINT.getName(), new HiveToken(HiveASTParser.TOK_TINYINT, "TOK_TINYINT"));
-		map.put(SqlTypeName.SMALLINT.getName(), new HiveToken(HiveASTParser.TOK_SMALLINT, "TOK_SMALLINT"));
-		map.put(SqlTypeName.INTEGER.getName(), new HiveToken(HiveASTParser.TOK_INT, "TOK_INT"));
-		map.put(SqlTypeName.BIGINT.getName(), new HiveToken(HiveASTParser.TOK_BIGINT, "TOK_BIGINT"));
-		map.put(SqlTypeName.FLOAT.getName(), new HiveToken(HiveASTParser.TOK_FLOAT, "TOK_FLOAT"));
-		map.put(SqlTypeName.DOUBLE.getName(), new HiveToken(HiveASTParser.TOK_DOUBLE, "TOK_DOUBLE"));
-		map.put(SqlTypeName.DATE.getName(), new HiveToken(HiveASTParser.TOK_DATE, "TOK_DATE"));
-		map.put(SqlTypeName.TIMESTAMP.getName(), new HiveToken(HiveASTParser.TOK_TIMESTAMP, "TOK_TIMESTAMP"));
-		map.put(SqlTypeName.INTERVAL_YEAR.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_MONTH.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_YEAR_MONTH.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_YEAR_MONTH_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_DAY.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_DAY_HOUR.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_DAY_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_DAY_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_HOUR.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_HOUR_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_HOUR_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_MINUTE.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_MINUTE_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.INTERVAL_SECOND.getName(),
-				new HiveToken(HiveASTParser.Identifier, HiveShim.INTERVAL_DAY_TIME_TYPE_NAME));
-		map.put(SqlTypeName.BINARY.getName(), new HiveToken(HiveASTParser.TOK_BINARY, "TOK_BINARY"));
-		calciteToHiveTypeNameMap = Collections.unmodifiableMap(map);
-	}
-
-	/**
-	 * Convert Hive Types To Calcite Types.
-	 */
-	public static RelDataType getType(RelOptCluster cluster,
-			List<ColumnInfo> cInfoLst) throws SemanticException {
-		RexBuilder rexBuilder = cluster.getRexBuilder();
-		RelDataTypeFactory dtFactory = rexBuilder.getTypeFactory();
-		List<RelDataType> fieldTypes = new LinkedList<>();
-		List<String> fieldNames = new LinkedList<>();
-
-		for (ColumnInfo ci : cInfoLst) {
-			fieldTypes.add(convert(ci.getType(), dtFactory));
-			fieldNames.add(ci.getInternalName());
-		}
-		return dtFactory.createStructType(fieldTypes, fieldNames);
-	}
 
 	public static RelDataType getType(RelOptCluster cluster, HiveParserRowResolver rr, List<String> neededCols) throws SemanticException {
 		RexBuilder rexBuilder = cluster.getRexBuilder();
