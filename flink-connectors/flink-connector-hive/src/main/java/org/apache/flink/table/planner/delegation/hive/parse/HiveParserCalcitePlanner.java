@@ -1016,9 +1016,14 @@ public class HiveParserCalcitePlanner {
 							aggName, aggParameters, value, isDistinct, isAllColumns, frameworkConfig.getOperatorTable());
 					assert (genericUDAFEvaluator != null);
 					HiveParserBaseSemanticAnalyzer.GenericUDAFInfo udaf = HiveParserUtils.getGenericUDAFInfo(genericUDAFEvaluator, aggMode, aggParameters);
-					AggInfo aggInfo = new AggInfo(aggParameters, udaf.returnType, aggName, isDistinct, isAllColumns);
+					String field;
+					if (value.getParent().getType() == HiveASTParser.TOK_SELEXPR && value.getParent().getChildCount() == 2) {
+						field = unescapeIdentifier(value.getParent().getChild(1).getText().toLowerCase());
+					} else {
+						field = getColumnInternalName(numGroupCols + aggInfos.size() - 1);
+					}
+					AggInfo aggInfo = new AggInfo(aggParameters, udaf.returnType, aggName, isDistinct, isAllColumns, field);
 					aggInfos.add(aggInfo);
-					String field = getColumnInternalName(numGroupCols + aggInfos.size() - 1);
 					outputColNames.add(field);
 					outputRR.putExpression(value, new ColumnInfo(field, aggInfo.getReturnType(), "", false));
 				}
@@ -1650,7 +1655,10 @@ public class HiveParserCalcitePlanner {
 		}
 		// For UDTF's, skip the function name to get the expressions
 		int startPos = udtfOperator != null ? posn + 1 : posn;
+		// track the col aliases provided by user
+		List<String> colAliases = new ArrayList<>();
 		for (int i = startPos; i < exprList.getChildCount(); ++i) {
+			colAliases.add(null);
 
 			// 6.1 child can be EXPR AS ALIAS, or EXPR.
 			ASTNode child = (ASTNode) exprList.getChild(i);
@@ -1677,6 +1685,7 @@ public class HiveParserCalcitePlanner {
 				tabAlias = colRef[0];
 				colAlias = colRef[1];
 				if (hasAsClause) {
+					colAliases.set(colAliases.size() - 1, colAlias);
 					semanticAnalyzer.unparseTranslator.addIdentifierTranslation(
 							(ASTNode) child.getChild(1));
 				}
@@ -1685,12 +1694,12 @@ public class HiveParserCalcitePlanner {
 			Map<ASTNode, RelNode> subQueryToRelNode = new HashMap<>();
 			boolean isSubQuery = genSubQueryRelNode(qb, expr, srcRel, false, subQueryToRelNode);
 			if (isSubQuery) {
-				ExprNodeDesc subQueryExpr = semanticAnalyzer.genExprNodeDesc(expr, relToRowResolver.get(srcRel),
+				ExprNodeDesc subQueryDesc = semanticAnalyzer.genExprNodeDesc(expr, relToRowResolver.get(srcRel),
 						outerRR, subQueryToRelNode, false);
-				exprNodeDescs.add(subQueryExpr);
+				exprNodeDescs.add(subQueryDesc);
 
 				ColumnInfo colInfo = new ColumnInfo(getColumnInternalName(pos),
-						subQueryExpr.getWritableObjectInspector(), tabAlias, false);
+						subQueryDesc.getWritableObjectInspector(), tabAlias, false);
 				if (!outRR.putWithCheck(tabAlias, colAlias, null, colInfo)) {
 					throw new SemanticException("Cannot add column to RR: " + tabAlias + "."
 							+ colAlias + " => " + colInfo + " due to duplication, see previous warnings");
@@ -1734,21 +1743,21 @@ public class HiveParserCalcitePlanner {
 						expr = rewriteGroupingFunctionAST(getGroupByForClause(qbp, selClauseName), expr,
 								!cubeRollupGrpSetPresent);
 					}
-					ExprNodeDesc exp = semanticAnalyzer.genExprNodeDesc(expr, inputRR, typeCheckCtx);
-					String recommended = semanticAnalyzer.recommendName(exp, colAlias);
+					ExprNodeDesc exprDesc = semanticAnalyzer.genExprNodeDesc(expr, inputRR, typeCheckCtx);
+					String recommended = semanticAnalyzer.recommendName(exprDesc, colAlias);
 					if (recommended != null && outRR.get(null, recommended) == null) {
 						colAlias = recommended;
 					}
-					exprNodeDescs.add(exp);
+					exprNodeDescs.add(exprDesc);
 
 					ColumnInfo colInfo = new ColumnInfo(getColumnInternalName(pos),
-							exp.getWritableObjectInspector(), tabAlias, false);
-					colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) && ((ExprNodeColumnDesc) exp).isSkewedCol());
+							exprDesc.getWritableObjectInspector(), tabAlias, false);
+					colInfo.setSkewedCol((exprDesc instanceof ExprNodeColumnDesc) && ((ExprNodeColumnDesc) exprDesc).isSkewedCol());
 					// Hive errors out in case of duplication. We allow it and see what happens.
 					outRR.put(tabAlias, colAlias, colInfo);
 
-					if (exp instanceof ExprNodeColumnDesc) {
-						ExprNodeColumnDesc colExp = (ExprNodeColumnDesc) exp;
+					if (exprDesc instanceof ExprNodeColumnDesc) {
+						ExprNodeColumnDesc colExp = (ExprNodeColumnDesc) exprDesc;
 						String[] altMapping = inputRR.getAlternateMappings(colExp.getColumn());
 						if (altMapping != null) {
 							// TODO: this can overwrite the mapping. Should this be allowed?
@@ -1780,7 +1789,15 @@ public class HiveParserCalcitePlanner {
 			res = genUDTFPlan(udtfOperator, genericUDTFName, udtfTableAlias, udtfColAliases, qb, calciteColLst,
 					outRR.getColumnInfos(), srcRel, true, false);
 		} else {
-			res = genSelectRelNode(calciteColLst, outRR, srcRel);
+			// If it's a subquery and the project is identity, we skip creating this project.
+			// This is to handle an issue with calcite SubQueryRemoveRule. The rule checks col uniqueness by calling
+			// RelMetadataQuery::areColumnsUnique with an empty col set, which always returns null for a project
+			// and thus introduces unnecessary agg node.
+			if (HiveParserUtils.isIdentityProject(srcRel, calciteColLst, colAliases) && outerRR != null) {
+				res = srcRel;
+			} else {
+				res = genSelectRelNode(calciteColLst, outRR, srcRel);
+			}
 		}
 
 		// 9. Handle select distinct as GBY if there exist windowing functions

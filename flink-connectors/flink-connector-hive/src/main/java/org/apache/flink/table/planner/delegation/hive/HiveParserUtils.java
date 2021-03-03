@@ -1224,6 +1224,22 @@ public class HiveParserUtils {
 		}
 	}
 
+	public static boolean isIdentityProject(RelNode input, List<RexNode> exprs, List<String> aliases) {
+		if (exprs.size() == aliases.size() && RexUtil.isIdentity(exprs, input.getRowType())) {
+			for (int i = 0; i < aliases.size(); i++) {
+				String alias = aliases.get(i);
+				if (alias != null) {
+					RexInputRef inputRef = (RexInputRef) exprs.get(i);
+					if (!input.getRowType().getFieldNames().get(inputRef.getIndex()).equals(alias)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
 	/**
 	 * A visitor to collect correlation IDs and required columns.
 	 */

@@ -1614,7 +1614,7 @@ public class HiveParserBaseSemanticAnalyzer {
 		}
 
 		// 4. Construct AggInfo
-		aInfo = new AggInfo(aggParameters, udafRetType, aggName, isDistinct, isAllColumns);
+		aInfo = new AggInfo(aggParameters, udafRetType, aggName, isDistinct, isAllColumns, null);
 
 		return aInfo;
 	}
@@ -1649,7 +1649,7 @@ public class HiveParserBaseSemanticAnalyzer {
 			type = aggFnRetType;
 		}
 		return AggregateCall.create((SqlAggFunction) funcConverter.convertOperator(aggFunc), aggInfo.isDistinct(),
-				false, false, argIndices, -1, RelCollations.EMPTY, groupCount, input, type, null);
+				false, false, argIndices, -1, RelCollations.EMPTY, groupCount, input, type, aggInfo.getAlias());
 	}
 
 	static RelNode genValues(String tabAlias, Table tmpTable, HiveParserRowResolver rowResolver,
@@ -2097,14 +2097,16 @@ public class HiveParserBaseSemanticAnalyzer {
 		private final String udfName;
 		private final boolean distinct;
 		private final boolean isAllColumns;
+		private final String alias;
 
 		AggInfo(List<ExprNodeDesc> aggParams, TypeInfo returnType, String udfName,
-				boolean isDistinct, boolean isAllColumns) {
+				boolean isDistinct, boolean isAllColumns, String alias) {
 			this.aggParams = aggParams;
 			this.returnType = returnType;
 			this.udfName = udfName;
 			distinct = isDistinct;
 			this.isAllColumns = isAllColumns;
+			this.alias = alias;
 		}
 
 		public List<ExprNodeDesc> getAggParams() {
@@ -2125,6 +2127,10 @@ public class HiveParserBaseSemanticAnalyzer {
 
 		public boolean isAllColumns() {
 			return isAllColumns;
+		}
+
+		public String getAlias() {
+			return alias;
 		}
 	}
 
