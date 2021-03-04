@@ -41,7 +41,9 @@ import org.apache.flink.table.operations.ddl.AlterViewOperation;
 import org.apache.flink.table.operations.ddl.CreateCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateCatalogOperation;
 import org.apache.flink.table.operations.ddl.CreateDatabaseOperation;
+import org.apache.flink.table.operations.ddl.CreateTableASOperation;
 import org.apache.flink.table.operations.ddl.CreateTableOperation;
+import org.apache.flink.table.operations.ddl.CreateTempSystemCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateViewOperation;
 import org.apache.flink.table.operations.ddl.DropCatalogFunctionOperation;
@@ -114,6 +116,8 @@ public final class SqlCommandParser {
 			cmd = overwrite ? SqlCommand.INSERT_OVERWRITE : SqlCommand.INSERT_INTO;
 		} else if (operation instanceof CreateTableOperation) {
 			cmd = SqlCommand.CREATE_TABLE;
+		} else if (operation instanceof CreateTableASOperation) {
+			cmd = SqlCommand.CREATE_TABLE_AS;
 		} else if (operation instanceof DropTableOperation) {
 			cmd = SqlCommand.DROP_TABLE;
 		} else if (operation instanceof AlterTableOperation) {
@@ -161,7 +165,8 @@ public final class SqlCommandParser {
 		} else if (operation instanceof ShowPartitionsOperation) {
 			cmd = SqlCommand.SHOW_PARTITIONS;
 		} else if (operation instanceof CreateCatalogFunctionOperation ||
-				operation instanceof CreateTempSystemFunctionOperation) {
+				operation instanceof CreateTempSystemFunctionOperation ||
+				operation instanceof CreateTempSystemCatalogFunctionOperation) {
 			cmd = SqlCommand.CREATE_FUNCTION;
 		} else if (operation instanceof DropCatalogFunctionOperation ||
 				operation instanceof DropTempSystemFunctionOperation) {
@@ -284,6 +289,8 @@ public final class SqlCommandParser {
 		ALTER_DATABASE,
 
 		CREATE_TABLE,
+
+		CREATE_TABLE_AS,
 
 		DROP_TABLE,
 

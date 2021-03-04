@@ -330,6 +330,9 @@ public class CliClient implements AutoCloseable {
 			case CREATE_TABLE:
 				callDdl(cmdCall.operands[0], CliStrings.MESSAGE_TABLE_CREATED);
 				break;
+			case CREATE_TABLE_AS:
+				callCreateTableAS(cmdCall.operands[0]);
+				break;
 			case DROP_TABLE:
 				callDdl(cmdCall.operands[0], CliStrings.MESSAGE_TABLE_REMOVED);
 				break;
@@ -722,6 +725,15 @@ public class CliClient implements AutoCloseable {
 			printInfo(successMessage);
 		} catch (SqlExecutionException e) {
 			printExecutionException(errorMessage, e);
+		}
+	}
+
+	private void callCreateTableAS(String ddl) {
+		try {
+			executor.executeSql(sessionId, ddl).await();
+			printInfo(CliStrings.MESSAGE_TABLE_CREATED);
+		} catch (Exception e) {
+			printExecutionException(null, e);
 		}
 	}
 
