@@ -1016,14 +1016,13 @@ public class HiveParserCalcitePlanner {
 							aggName, aggParameters, value, isDistinct, isAllColumns, frameworkConfig.getOperatorTable());
 					assert (genericUDAFEvaluator != null);
 					HiveParserBaseSemanticAnalyzer.GenericUDAFInfo udaf = HiveParserUtils.getGenericUDAFInfo(genericUDAFEvaluator, aggMode, aggParameters);
-					String field;
+					String aggAlias = null;
 					if (value.getParent().getType() == HiveASTParser.TOK_SELEXPR && value.getParent().getChildCount() == 2) {
-						field = unescapeIdentifier(value.getParent().getChild(1).getText().toLowerCase());
-					} else {
-						field = getColumnInternalName(numGroupCols + aggInfos.size() - 1);
+						aggAlias = unescapeIdentifier(value.getParent().getChild(1).getText().toLowerCase());
 					}
-					AggInfo aggInfo = new AggInfo(aggParameters, udaf.returnType, aggName, isDistinct, isAllColumns, field);
+					AggInfo aggInfo = new AggInfo(aggParameters, udaf.returnType, aggName, isDistinct, isAllColumns, aggAlias);
 					aggInfos.add(aggInfo);
+					String field = aggAlias == null ? getColumnInternalName(numGroupCols + aggInfos.size() - 1) : aggAlias;
 					outputColNames.add(field);
 					outputRR.putExpression(value, new ColumnInfo(field, aggInfo.getReturnType(), "", false));
 				}

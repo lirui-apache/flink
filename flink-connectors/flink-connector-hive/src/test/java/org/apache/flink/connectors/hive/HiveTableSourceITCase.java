@@ -303,8 +303,6 @@ public class HiveTableSourceITCase extends BatchAbstractTestBase {
 					.addRow(new Object[]{2}).commit("p1='2018-08-09',p2='2018-08-08 08:08:09.1'");
 			HiveTestUtils.createTextTableInserter(hiveCatalog, "db1", "part")
 					.addRow(new Object[]{3}).commit("p1='2018-08-10',p2='2018-08-08 08:08:10.1'");
-			// TODO: enable hive dialect with partition pruning
-			tableEnv.getConfig().setSqlDialect(SqlDialect.DEFAULT);
 
 			Table query = tableEnv.sqlQuery(
 					"select x from db1.part where p1>cast('2018-08-09' as date) and p2<>cast('2018-08-08 08:08:09.1' as timestamp)");
@@ -317,7 +315,7 @@ public class HiveTableSourceITCase extends BatchAbstractTestBase {
 			assertEquals("[3]", results.toString());
 
 			// filter by timestamp partition
-			query = tableEnv.sqlQuery("select x from db1.part where timestamp '2018-08-08 08:08:09' = p2");
+			query = tableEnv.sqlQuery("select x from db1.part where timestamp '2018-08-08 08:08:09.1' = p2");
 			results = CollectionUtil.iteratorToList(query.execute().collect());
 			assertEquals("[2]", results.toString());
 		} finally {

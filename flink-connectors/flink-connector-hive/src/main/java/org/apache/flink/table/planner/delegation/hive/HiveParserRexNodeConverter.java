@@ -344,7 +344,8 @@ public class HiveParserRexNodeConverter {
 					c = Calendar.getInstance();
 					c.setTimeInMillis(((Timestamp) value).getTime());
 				}
-				calciteLiteral = rexBuilder.makeTimestampLiteral(c, RelDataType.PRECISION_NOT_SPECIFIED);
+				// hive always treats timestamp with precision 9
+				calciteLiteral = rexBuilder.makeTimestampLiteral(c, 9);
 				break;
 			case VOID:
 				calciteLiteral = cluster.getRexBuilder().makeLiteral(null, dtFactory.createSqlType(SqlTypeName.NULL), true);
