@@ -43,7 +43,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.common.ObjectPair;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
@@ -1612,8 +1611,6 @@ public class HiveParserSemanticAnalyzer {
 							&& (((ASTNode) ast.getChild(0)).getToken().getType() == HiveASTParser.TOK_TMP_FILE)) {
 						if (qb.isCTAS() || qb.isMaterializedView()) {
 							qb.setIsQuery(false);
-							ctx.setResDir(null);
-							ctx.setResFile(null);
 
 							Path location;
 							// If the CTAS query does specify a location, use the table location, else use the db location
@@ -1635,13 +1632,6 @@ public class HiveParserSemanticAnalyzer {
 									throw new SemanticException(e);
 								}
 							}
-							try {
-								fname = ctx.getExtTmpPathRelTo(
-										FileUtils.makeQualified(location, conf)).toString();
-							} catch (Exception e) {
-								throw new SemanticException(HiveParserUtils.generateErrorMessage(ast,
-										"Error creating temporary folder on: " + location.toString()), e);
-							}
 							if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
 								TableSpec ts = new TableSpec(db, conf, this.ast, frameworkConfig, cluster);
 								// Add the table spec for the destination table.
@@ -1650,9 +1640,6 @@ public class HiveParserSemanticAnalyzer {
 						} else {
 							// This is the only place where isQuery is set to true; it defaults to false.
 							qb.setIsQuery(true);
-							Path stagingPath = getStagingDirectoryPathname();
-							fname = stagingPath.toString();
-							ctx.setResDir(stagingPath);
 						}
 					}
 
@@ -1709,10 +1696,6 @@ public class HiveParserSemanticAnalyzer {
 							"Unknown Token Type " + ast.getToken().getType()));
 			}
 		}
-	}
-
-	private Path getStagingDirectoryPathname() {
-		return ctx.getMRTmpPath();
 	}
 
 	private void replaceViewReferenceWithDefinition(HiveParserQB qb, Table tab,

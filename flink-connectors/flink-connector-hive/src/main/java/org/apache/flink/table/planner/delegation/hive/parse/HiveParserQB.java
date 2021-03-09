@@ -21,7 +21,6 @@ package org.apache.flink.table.planner.delegation.hive.parse;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.QBJoinTree;
 import org.apache.hadoop.hive.ql.parse.QBMetaData;
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.slf4j.Logger;
@@ -43,24 +42,19 @@ public class HiveParserQB {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HiveParserQB.class);
 
-	private final int numJoins = 0;
-	private final int numGbys = 0;
 	private int numSels = 0;
 	private int numSelDi = 0;
-	private HashMap<String, String> aliasToTabs;
-	private HashMap<String, HiveParserQBExpr> aliasToSubq;
-	private HashMap<String, Table> viewAliasToViewSchema;
-	private HashMap<String, Map<String, String>> aliasToProps;
-	private List<String> aliases;
-	private HiveParserQBParseInfo qbp;
-	private QBMetaData qbm;
-	private QBJoinTree qbjoin;
-	private String id;
+	private final HashMap<String, String> aliasToTabs;
+	private final HashMap<String, HiveParserQBExpr> aliasToSubq;
+	private final HashMap<String, Table> viewAliasToViewSchema;
+	private final HashMap<String, Map<String, String>> aliasToProps;
+	private final List<String> aliases;
+	private final HiveParserQBParseInfo qbp;
+	private final QBMetaData qbm;
+	private final String id;
 	private boolean isQuery;
-	private boolean isAnalyzeRewrite;
-	private CreateTableDesc tblDesc = null; // table descriptor of the final
+	private final CreateTableDesc tblDesc = null; // table descriptor of the final
 	private CreateTableDesc directoryDesc = null;
-	private List<Path> encryptedTargetTablePaths;
 	private boolean insideView;
 	private Set<String> aliasInsideView;
 
@@ -75,28 +69,11 @@ public class HiveParserQB {
 	private HashMap<String, HiveParserWindowingSpec> destToWindowingSpec;
 
 	/*
-	 * If this QB represents a  SubQuery predicate then this will point to the SubQuery object.
-	 */
-	private HiveParserQBSubQuery subQueryPredicateDef;
-
-	/*
 	 * used to give a unique name to each SubQuery QB Currently there can be at
 	 * most 2 SubQueries in a Query: 1 in the Where clause, and 1 in the Having
 	 * clause.
 	 */
 	private int numSubQueryPredicates;
-
-	/*
-	 * for now a top level QB can have 1 where clause SQ predicate.
-	 */
-	private HiveParserQBSubQuery whereClauseSubQueryPredicate;
-
-	/*
-	 * for now a top level QB can have 1 where clause SQ predicate.
-	 */
-	private HiveParserQBSubQuery havingClauseSubQueryPredicate;
-
-	// results
 
 	public void print(String msg) {
 		LOG.info(msg + "alias=" + qbp.getAlias());
@@ -311,10 +288,7 @@ public class HiveParserQB {
 	 * Used to support Insert ... values(...).
 	 */
 	List<Path> getEncryptedTargetTablePaths() {
-		if (encryptedTargetTablePaths == null) {
-			return Collections.emptyList();
-		}
-		return encryptedTargetTablePaths;
+		return Collections.emptyList();
 	}
 
 	public HashMap<String, Table> getViewToTabSchema() {

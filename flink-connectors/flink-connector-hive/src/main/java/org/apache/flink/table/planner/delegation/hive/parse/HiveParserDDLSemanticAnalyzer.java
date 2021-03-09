@@ -42,6 +42,7 @@ import org.apache.flink.table.planner.delegation.hive.HiveParserQueryState;
 import org.apache.flink.table.planner.delegation.hive.HiveParserShowTablesDesc;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.TableType;
@@ -80,6 +81,7 @@ import org.apache.hadoop.hive.ql.plan.ShowPartitionsDesc;
 import org.apache.hadoop.hive.ql.plan.ShowTableStatusDesc;
 import org.apache.hadoop.hive.ql.plan.ShowTblPropertiesDesc;
 import org.apache.hadoop.hive.ql.plan.SwitchDatabaseDesc;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.typeinfo.CharTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.DecimalTypeInfo;
@@ -287,47 +289,36 @@ public class HiveParserDDLSemanticAnalyzer {
 				res = analyzeDropTable(ast, null);
 				break;
 			case HiveASTParser.TOK_DESCTABLE:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeDescribeTable(ast);
 				break;
 			case HiveASTParser.TOK_SHOWDATABASES:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowDatabases(ast);
 				break;
 			case HiveASTParser.TOK_SHOWTABLES:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowTables(ast);
 				break;
 			case HiveASTParser.TOK_SHOWCOLUMNS:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowColumns(ast);
 				break;
 			case HiveASTParser.TOK_SHOW_TABLESTATUS:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowTableStatus(ast);
 				break;
 			case HiveASTParser.TOK_SHOW_TBLPROPERTIES:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowTableProperties(ast);
 				break;
 			case HiveASTParser.TOK_SHOWFUNCTIONS:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowFunctions(ast);
 				break;
 			case HiveASTParser.TOK_SHOWCONF:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowConf(ast);
 				break;
 			case HiveASTParser.TOK_SHOWVIEWS:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowViews(ast);
 				break;
 			case HiveASTParser.TOK_DESCFUNCTION:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeDescFunction(ast);
 				break;
 			case HiveASTParser.TOK_DESCDATABASE:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeDescDatabase(ast);
 				break;
 			case HiveASTParser.TOK_DROPVIEW:
@@ -355,11 +346,9 @@ public class HiveParserDDLSemanticAnalyzer {
 				break;
 			}
 			case HiveASTParser.TOK_SHOWPARTITIONS:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowPartitions(ast);
 				break;
 			case HiveASTParser.TOK_SHOW_CREATETABLE:
-				ctx.setResFile(ctx.getLocalTmpPath());
 				res = analyzeShowCreateTable(ast);
 				break;
 			case HiveASTParser.TOK_CREATEDATABASE:
@@ -1115,7 +1104,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			validateTable(tableName, partSpec);
 		}
 
-		DescTableDesc descTblDesc = new DescTableDesc(ctx.getResFile(), tableName, partSpec, colPath);
+		DescTableDesc descTblDesc = new DescTableDesc(getResFile(), tableName, partSpec, colPath);
 
 		if (ast.getChildCount() == 2) {
 			int descOptions = ast.getChild(1).getType();
@@ -1144,7 +1133,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			throw new SemanticException("Unexpected Tokens at DESCRIBE DATABASE");
 		}
 
-		DescDatabaseDesc descDbDesc = new DescDatabaseDesc(ctx.getResFile(), dbName, isExtended);
+		DescDatabaseDesc descDbDesc = new DescDatabaseDesc(getResFile(), dbName, isExtended);
 		return new DDLWork(getInputs(), getOutputs(), descDbDesc);
 	}
 
@@ -1186,14 +1175,14 @@ public class HiveParserDDLSemanticAnalyzer {
 
 		validateTable(tableName, null);
 
-		showPartsDesc = new ShowPartitionsDesc(tableName, ctx.getResFile(), partSpec);
+		showPartsDesc = new ShowPartitionsDesc(tableName, getResFile(), partSpec);
 		return new DDLWork(getInputs(), getOutputs(), showPartsDesc);
 	}
 
 	private Serializable analyzeShowCreateTable(ASTNode ast) throws SemanticException {
 		ShowCreateTableDesc showCreateTblDesc;
 		String tableName = HiveParserBaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(0));
-		showCreateTblDesc = new ShowCreateTableDesc(tableName, ctx.getResFile().toString());
+		showCreateTblDesc = new ShowCreateTableDesc(tableName, getResFile().toString());
 
 		return new DDLWork(getInputs(), getOutputs(), showCreateTblDesc);
 	}
@@ -1202,9 +1191,9 @@ public class HiveParserDDLSemanticAnalyzer {
 		ShowDatabasesDesc showDatabasesDesc;
 		if (ast.getChildCount() == 1) {
 			String databasePattern = HiveParserBaseSemanticAnalyzer.unescapeSQLString(ast.getChild(0).getText());
-			showDatabasesDesc = new ShowDatabasesDesc(ctx.getResFile(), databasePattern);
+			showDatabasesDesc = new ShowDatabasesDesc(getResFile(), databasePattern);
 		} else {
-			showDatabasesDesc = new ShowDatabasesDesc(ctx.getResFile());
+			showDatabasesDesc = new ShowDatabasesDesc(getResFile());
 		}
 		return new DDLWork(getInputs(), getOutputs(), showDatabasesDesc);
 	}
@@ -1247,7 +1236,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			tableName = HiveParserBaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(1)) + "." + tableName;
 		}
 
-		ShowColumnsDesc showColumnsDesc = new ShowColumnsDesc(ctx.getResFile(), tableName);
+		ShowColumnsDesc showColumnsDesc = new ShowColumnsDesc(getResFile(), tableName);
 		return new DDLWork(getInputs(), getOutputs(), showColumnsDesc);
 	}
 
@@ -1278,7 +1267,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			validateTable(tableNames, partSpec);
 		}
 
-		showTblStatusDesc = new ShowTableStatusDesc(ctx.getResFile().toString(), dbName, tableNames, partSpec);
+		showTblStatusDesc = new ShowTableStatusDesc(getResFile().toString(), dbName, tableNames, partSpec);
 		return new DDLWork(getInputs(), getOutputs(), showTblStatusDesc);
 	}
 
@@ -1293,7 +1282,7 @@ public class HiveParserDDLSemanticAnalyzer {
 		String tableNames = HiveParserBaseSemanticAnalyzer.getDotName(qualified);
 		validateTable(tableNames, null);
 
-		showTblPropertiesDesc = new ShowTblPropertiesDesc(ctx.getResFile().toString(), tableNames, propertyName);
+		showTblPropertiesDesc = new ShowTblPropertiesDesc(getResFile().toString(), tableNames, propertyName);
 		return new DDLWork(getInputs(), getOutputs(), showTblPropertiesDesc);
 	}
 
@@ -1308,19 +1297,19 @@ public class HiveParserDDLSemanticAnalyzer {
 		ShowFunctionsDesc showFuncsDesc;
 		if (ast.getChildCount() == 1) {
 			String funcNames = HiveParserBaseSemanticAnalyzer.stripQuotes(ast.getChild(0).getText());
-			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile(), funcNames);
+			showFuncsDesc = new ShowFunctionsDesc(getResFile(), funcNames);
 		} else if (ast.getChildCount() == 2) {
 			assert (ast.getChild(0).getType() == HiveASTParser.KW_LIKE);
 			throw new SemanticException("SHOW FUNCTIONS LIKE is not supported yet");
 		} else {
-			showFuncsDesc = new ShowFunctionsDesc(ctx.getResFile());
+			showFuncsDesc = new ShowFunctionsDesc(getResFile());
 		}
 		return new DDLWork(getInputs(), getOutputs(), showFuncsDesc);
 	}
 
 	private Serializable analyzeShowConf(ASTNode ast) throws SemanticException {
 		String confName = HiveParserBaseSemanticAnalyzer.stripQuotes(ast.getChild(0).getText());
-		ShowConfDesc showConfDesc = new ShowConfDesc(ctx.getResFile(), confName);
+		ShowConfDesc showConfDesc = new ShowConfDesc(getResFile(), confName);
 		return new DDLWork(getInputs(), getOutputs(), showConfDesc);
 	}
 
@@ -1375,7 +1364,7 @@ public class HiveParserDDLSemanticAnalyzer {
 			throw new SemanticException("Unexpected Tokens at DESCRIBE FUNCTION");
 		}
 
-		DescFunctionDesc descFuncDesc = new DescFunctionDesc(ctx.getResFile(), funcName, isExtended);
+		DescFunctionDesc descFuncDesc = new DescFunctionDesc(getResFile(), funcName, isExtended);
 		return new DDLWork(getInputs(), getOutputs(), descFuncDesc);
 	}
 
@@ -1627,5 +1616,9 @@ public class HiveParserDDLSemanticAnalyzer {
 			}
 		}
 		return retValue;
+	}
+
+	private Path getResFile() {
+		return SessionState.getLocalSessionPath(conf);
 	}
 }

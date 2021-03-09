@@ -270,7 +270,7 @@ public class HiveASTParseUtils {
 		});
 	}
 
-	public static boolean containsTokenOfType(ASTNode root, PTFUtils.Predicate<ASTNode> predicate) {
+	private static boolean containsTokenOfType(ASTNode root, PTFUtils.Predicate<ASTNode> predicate) {
 		Queue<ASTNode> queue = new ArrayDeque<>();
 
 		// BFS
@@ -297,7 +297,7 @@ public class HiveASTParseUtils {
 	/**
 	 * ASTSearcher.
 	 */
-	public static class ASTSearcher {
+	private static class ASTSearcher {
 		private final LinkedList<ASTNode> searchQueue = new LinkedList<>();
 
 		public ASTNode depthFirstSearch(ASTNode ast, int token) {
