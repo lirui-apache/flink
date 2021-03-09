@@ -44,25 +44,7 @@ public class HiveParserSubQueryDiagnostic {
 		HiveParserQBSubQuery subQuery;
 		TokenRewriteStream stream;
 
-		/*
-		 * the rewritten where Clause
-		 */
-		String whereClause;
-
-		/*
-		 * any additions to the SubQueries Select Clause.
-		 */
-		String selectClauseAdditions;
-
-		/*
-		 * additions to the Group By Clause.
-		 */
-		String gByClauseAdditions;
-		boolean addGroupByClause;
-
 		String joiningCondition;
-
-		String outerQueryPostJoinCond;
 
 		QBSubQueryRewrite(HiveParserQBSubQuery subQuery,
 				TokenRewriteStream stream) {

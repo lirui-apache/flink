@@ -40,10 +40,10 @@ import java.util.Set;
 public class HiveParserRowResolver implements Serializable {
 
 	private static final long serialVersionUID = 1L;
-	private RowSchema rowSchema;
-	private LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>> rslvMap;
+	private final RowSchema rowSchema;
+	private final LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>> rslvMap;
 
-	private HashMap<String, String[]> invRslvMap;
+	private final HashMap<String, String[]> invRslvMap;
 	/*
 	 * now a Column can have an alternate mapping.
 	 * This captures the alternate mapping.
@@ -51,7 +51,7 @@ public class HiveParserRowResolver implements Serializable {
 	 * invRslvMap.
 	 */
 	private final Map<String, String[]> altInvRslvMap;
-	private Map<String, ASTNode> expressionMap;
+	private final Map<String, ASTNode> expressionMap;
 
 	// TODO: Refactor this and do in a more object oriented manner
 	private boolean isExprResolver;
@@ -124,11 +124,7 @@ public class HiveParserRowResolver implements Serializable {
 		 */
 		boolean colPresent = invRslvMap.containsKey(colInfo.getInternalName());
 
-		LinkedHashMap<String, ColumnInfo> fMap = rslvMap.get(tabAlias);
-		if (fMap == null) {
-			fMap = new LinkedHashMap<>();
-			rslvMap.put(tabAlias, fMap);
-		}
+		LinkedHashMap<String, ColumnInfo> fMap = rslvMap.computeIfAbsent(tabAlias, k -> new LinkedHashMap<>());
 		ColumnInfo oldColInfo = fMap.put(colAlias, colInfo);
 		if (oldColInfo != null) {
 			LOG.warn("Duplicate column info for " + tabAlias + "." + colAlias

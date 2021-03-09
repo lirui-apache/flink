@@ -734,7 +734,7 @@ public class HiveParserCalcitePlanner {
 						outerQueryExpr, "IN/NOT IN subqueries are not allowed in LHS"));
 			}
 
-			HiveParserQBSubQuery subQuery = HiveParserSubQueryUtils.buildSubQuery(qb.getId(), sqIdx, subQueryAST,
+			HiveParserQBSubQuery subQuery = HiveParserSubQueryUtils.buildSubQuery(sqIdx, subQueryAST,
 					originalSubQueryAST, semanticAnalyzer.ctx, frameworkConfig, cluster);
 
 			HiveParserRowResolver inputRR = relToRowResolver.get(srcRel);

@@ -97,7 +97,7 @@ public class HiveParserUnparseTranslator {
 		// Sanity check for overlap with regions already being expanded
 		assert (tokenStopIndex >= tokenStartIndex);
 
-		List<Integer> subsetEntries = new ArrayList<Integer>();
+		List<Integer> subsetEntries = new ArrayList<>();
 		// Is the existing entry and newer entry are subset of one another ?
 		for (Map.Entry<Integer, Translation> existingEntry :
 				translations.headMap(tokenStopIndex, true).entrySet()) {

@@ -37,7 +37,7 @@ import java.util.Set;
  */
 public class HiveParserQBParseInfo {
 
-	private boolean isSubQ;
+	private final boolean isSubQ;
 	private String alias;
 	private ASTNode joinExpr;
 	private ASTNode hints;
@@ -70,8 +70,6 @@ public class HiveParserQBParseInfo {
 
 	private final HashMap<String, HiveParserBaseSemanticAnalyzer.TableSpec> tableSpecs; // used for statistics
 
-	private HiveParserBaseSemanticAnalyzer.AnalyzeRewriteContext analyzeRewrite;
-
 
 	/**
 	 * ClusterBy is a short name for both DistributeBy and SortBy.
@@ -102,7 +100,7 @@ public class HiveParserQBParseInfo {
 	// KEY of SimpleEntry: offset
 	// VALUE of SimpleEntry: rowcount
 	private final HashMap<String, AbstractMap.SimpleEntry<Integer, Integer>> destToLimit;
-	private int outerQueryLimit;
+	private final int outerQueryLimit;
 
 	// used by GroupBy
 	private final LinkedHashMap<String, LinkedHashMap<String, ASTNode>> destToAggregationExprs;

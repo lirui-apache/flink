@@ -42,9 +42,9 @@ public class HiveParserExprNodeSubQueryDesc extends ExprNodeDesc implements Seri
 	/**
 	 * RexNode corresponding to subquery.
 	 */
-	private RelNode rexSubQuery;
-	private ExprNodeDesc subQueryLhs;
-	private SubqueryType type;
+	private final RelNode rexSubQuery;
+	private final ExprNodeDesc subQueryLhs;
+	private final SubqueryType type;
 
 	public HiveParserExprNodeSubQueryDesc(TypeInfo typeInfo, RelNode subQuery, SubqueryType type) {
 		super(typeInfo);

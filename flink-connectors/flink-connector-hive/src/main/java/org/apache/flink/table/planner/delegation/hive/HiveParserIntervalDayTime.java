@@ -168,7 +168,7 @@ public class HiveParserIntervalDayTime implements Comparable<HiveParserIntervalD
 	}
 
 	public static HiveParserIntervalDayTime valueOf(String strVal) {
-		HiveParserIntervalDayTime result = null;
+		HiveParserIntervalDayTime result;
 		if (strVal == null) {
 			throw new IllegalArgumentException("Interval day-time string was null");
 		}

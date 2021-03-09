@@ -425,77 +425,6 @@ public class HiveParserBaseSemanticAnalyzer {
 	}
 
 	/**
-	 * Escapes the string for AST; doesn't enclose it in quotes, however.
-	 */
-	public static String escapeSQLString(String b) {
-		// There's usually nothing to escape so we will be optimistic.
-		String result = b;
-		for (int i = 0; i < result.length(); ++i) {
-			char currentChar = result.charAt(i);
-			if (currentChar == '\\' && ((i + 1) < result.length())) {
-				// TODO: do we need to handle the "this is what MySQL does" here?
-				char nextChar = result.charAt(i + 1);
-				if (nextChar == '%' || nextChar == '_') {
-					++i;
-					continue;
-				}
-			}
-			switch (currentChar) {
-				case '\0':
-					result = spliceString(result, i, "\\0");
-					++i;
-					break;
-				case '\'':
-					result = spliceString(result, i, "\\'");
-					++i;
-					break;
-				case '\"':
-					result = spliceString(result, i, "\\\"");
-					++i;
-					break;
-				case '\b':
-					result = spliceString(result, i, "\\b");
-					++i;
-					break;
-				case '\n':
-					result = spliceString(result, i, "\\n");
-					++i;
-					break;
-				case '\r':
-					result = spliceString(result, i, "\\r");
-					++i;
-					break;
-				case '\t':
-					result = spliceString(result, i, "\\t");
-					++i;
-					break;
-				case '\\':
-					result = spliceString(result, i, "\\\\");
-					++i;
-					break;
-				case '\u001A':
-					result = spliceString(result, i, "\\Z");
-					++i;
-					break;
-				default: {
-					if (currentChar < ' ') {
-						String hex = Integer.toHexString(currentChar);
-						String unicode = "\\u";
-						for (int j = 4; j > hex.length(); --j) {
-							unicode += '0';
-						}
-						unicode += hex;
-						result = spliceString(result, i, unicode);
-						i += (unicode.length() - 1);
-					}
-					break; // if not a control character, do nothing
-				}
-			}
-		}
-		return result;
-	}
-
-	/**
 	 * Remove the encapsulating "`" pair from the identifier. We allow users to
 	 * use "`" to escape identifier for table names, column names and aliases, in
 	 * case that coincide with Hive language keywords.
@@ -508,14 +437,6 @@ public class HiveParserBaseSemanticAnalyzer {
 			val = val.substring(1, val.length() - 1);
 		}
 		return val;
-	}
-
-	private static String spliceString(String str, int i, String replacement) {
-		return spliceString(str, i, 1, replacement);
-	}
-
-	private static String spliceString(String str, int i, int length, String replacement) {
-		return str.substring(0, i) + replacement + str.substring(i + length);
 	}
 
 	/**
@@ -719,7 +640,7 @@ public class HiveParserBaseSemanticAnalyzer {
 		return result;
 	}
 
-	public static String stripIdentifierQuotes(String val) {
+	private static String stripIdentifierQuotes(String val) {
 		if ((val.charAt(0) == '`' && val.charAt(val.length() - 1) == '`')) {
 			val = val.substring(1, val.length() - 1);
 		}
@@ -855,7 +776,7 @@ public class HiveParserBaseSemanticAnalyzer {
 		return result;
 	}
 
-	static boolean checkForEmptyGroupingSets(List<Integer> bitmaps, int groupingIdAllSet) {
+	private static boolean checkForEmptyGroupingSets(List<Integer> bitmaps, int groupingIdAllSet) {
 		boolean ret = true;
 		for (int mask : bitmaps) {
 			ret &= mask == groupingIdAllSet;

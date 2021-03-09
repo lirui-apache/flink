@@ -30,7 +30,6 @@ import org.apache.hadoop.hive.ql.lib.Node;
 import org.apache.hadoop.hive.ql.lib.NodeProcessor;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.ASTNodeOrigin;
-import org.apache.hadoop.hive.ql.parse.JoinType;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
@@ -381,19 +380,10 @@ public class HiveParserQBSubQuery {
 	 */
 	class NotInCheck implements HiveParserSubQueryUtils.ISubQueryJoinInfo {
 
-		private static final String CNT_ALIAS = "c1";
-
 		/*
 		 * expressions in SubQ that are joined to the Outer Query.
 		 */
 		List<ASTNode> subQryCorrExprs;
-
-		/*
-		 * row resolver of the SubQuery.
-		 * Set by the SemanticAnalyzer after the Plan for the SubQuery is genned.
-		 * This is needed in case the SubQuery select list contains a TOK_ALLCOLREF
-		 */
-		HiveParserRowResolver sqRR;
 
 		NotInCheck() {
 			subQryCorrExprs = new ArrayList<>();
@@ -408,29 +398,10 @@ public class HiveParserQBSubQuery {
 		}
 	}
 
-	private final String outerQueryId;
-	private final int sqIdx;
 	private final String alias;
 	private final ASTNode subQueryAST;
-	private final ASTNode parentQueryExpression;
 	private final HiveParserQBSubQuery.SubQueryTypeDef operator;
-	private boolean containsAggregationExprs;
-	private boolean hasCorrelation;
-	private ASTNode joinConditionAST;
-	private JoinType joinType;
-	private ASTNode postJoinConditionAST;
-	private int numCorrExprsinSQ;
-	private List<ASTNode> subQueryJoinAliasExprs;
 	private final transient ASTNodeOrigin originalSQASTOrigin;
-
-	/*
-	 * tracks number of exprs from correlated predicates added to SQ select list.
-	 */
-	private int numOfCorrelationExprsAddedToSQSelect;
-
-	private boolean groupbyAddedToSQ;
-
-	private int numOuterCorrExprsForHaving;
 
 	private HiveParserQBSubQuery.NotInCheck notInCheck;
 
@@ -439,10 +410,8 @@ public class HiveParserQBSubQuery {
 	private final FrameworkConfig frameworkConfig;
 	private final RelOptCluster cluster;
 
-	public HiveParserQBSubQuery(String outerQueryId,
-			int sqIdx,
+	public HiveParserQBSubQuery(int sqIdx,
 			ASTNode subQueryAST,
-			ASTNode parentQueryExpression,
 			HiveParserQBSubQuery.SubQueryTypeDef operator,
 			ASTNode originalSQAST,
 			HiveParserContext ctx,
@@ -450,18 +419,11 @@ public class HiveParserQBSubQuery {
 			RelOptCluster cluster) {
 		super();
 		this.subQueryAST = subQueryAST;
-		this.parentQueryExpression = parentQueryExpression;
 		this.operator = operator;
-		this.outerQueryId = outerQueryId;
-		this.sqIdx = sqIdx;
-		this.alias = "sq_" + this.sqIdx;
-		this.numCorrExprsinSQ = 0;
-		this.numOuterCorrExprsForHaving = 0;
+		this.alias = "sq_" + sqIdx;
 		String s = ctx.getTokenRewriteStream().toString(
 				originalSQAST.getTokenStartIndex(), originalSQAST.getTokenStopIndex());
 		originalSQASTOrigin = new ASTNodeOrigin("SubQuery", alias, s, alias, originalSQAST);
-		numOfCorrelationExprsAddedToSQSelect = 0;
-		groupbyAddedToSQ = false;
 
 		if (operator.getType() == HiveParserQBSubQuery.SubQueryType.NOT_IN) {
 			notInCheck = new HiveParserQBSubQuery.NotInCheck();
@@ -471,10 +433,6 @@ public class HiveParserQBSubQuery {
 
 		this.frameworkConfig = frameworkConfig;
 		this.cluster = cluster;
-	}
-
-	public ASTNode getSubQueryAST() {
-		return subQueryAST;
 	}
 
 	boolean subqueryRestrictionsCheck(HiveParserRowResolver parentQueryRR,
@@ -607,10 +565,6 @@ public class HiveParserQBSubQuery {
 					subQueryAST, errorMsg + " clause is missing in SubQuery."));
 		}
 		return childAST;
-	}
-
-	public String getOuterQueryId() {
-		return outerQueryId;
 	}
 
 	public String getAlias() {

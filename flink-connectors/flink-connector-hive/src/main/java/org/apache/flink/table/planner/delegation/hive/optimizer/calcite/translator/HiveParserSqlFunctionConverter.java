@@ -246,7 +246,7 @@ public class HiveParserSqlFunctionConverter {
 	/**
 	 * UDAF is assumed to be deterministic.
 	 */
-	public static class CalciteUDAF extends SqlAggFunction implements CanAggregateDistinct {
+	private static class CalciteUDAF extends SqlAggFunction implements CanAggregateDistinct {
 		private final boolean isDistinct;
 
 		public CalciteUDAF(boolean isDistinct, String opName, SqlIdentifier identifier, SqlReturnTypeInference returnTypeInference,

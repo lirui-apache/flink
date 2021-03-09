@@ -35,7 +35,6 @@ import java.util.List;
 public class HiveParserJoinTypeCheckCtx extends HiveParserTypeCheckCtx {
 
 	private final List<HiveParserRowResolver> inputRRLst;
-	private final boolean outerJoin;
 
 	public HiveParserJoinTypeCheckCtx(HiveParserRowResolver leftRR, HiveParserRowResolver rightRR, JoinType hiveJoinType,
 			FrameworkConfig frameworkConfig, RelOptCluster cluster)
@@ -43,8 +42,6 @@ public class HiveParserJoinTypeCheckCtx extends HiveParserTypeCheckCtx {
 		super(HiveParserRowResolver.getCombinedRR(leftRR, rightRR), true, false, false, false, false, false, false, false,
 				false, false, frameworkConfig, cluster);
 		this.inputRRLst = Arrays.asList(leftRR, rightRR);
-		this.outerJoin = (hiveJoinType == JoinType.LEFTOUTER) || (hiveJoinType == JoinType.RIGHTOUTER)
-				|| (hiveJoinType == JoinType.FULLOUTER);
 	}
 
 	/**

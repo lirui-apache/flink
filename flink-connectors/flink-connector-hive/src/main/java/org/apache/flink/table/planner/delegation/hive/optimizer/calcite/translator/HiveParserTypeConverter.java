@@ -178,20 +178,20 @@ public class HiveParserTypeConverter {
 		return dtFactory.createTypeWithNullability(convertedType, true);
 	}
 
-	public static RelDataType convert(ListTypeInfo lstType,
+	private static RelDataType convert(ListTypeInfo lstType,
 			RelDataTypeFactory dtFactory) throws SemanticException {
 		RelDataType elemType = convert(lstType.getListElementTypeInfo(), dtFactory);
 		return dtFactory.createArrayType(elemType, -1);
 	}
 
-	public static RelDataType convert(MapTypeInfo mapType, RelDataTypeFactory dtFactory)
+	private static RelDataType convert(MapTypeInfo mapType, RelDataTypeFactory dtFactory)
 			throws SemanticException {
 		RelDataType keyType = convert(mapType.getMapKeyTypeInfo(), dtFactory);
 		RelDataType valueType = convert(mapType.getMapValueTypeInfo(), dtFactory);
 		return dtFactory.createMapType(keyType, valueType);
 	}
 
-	public static RelDataType convert(StructTypeInfo structType,
+	private static RelDataType convert(StructTypeInfo structType,
 			final RelDataTypeFactory dtFactory) throws SemanticException {
 		List<RelDataType> fTypes = new ArrayList<>(structType.getAllStructFieldTypeInfos().size());
 		for (TypeInfo ti : structType.getAllStructFieldTypeInfos()) {
@@ -200,7 +200,7 @@ public class HiveParserTypeConverter {
 		return dtFactory.createStructType(fTypes, structType.getAllStructFieldNames());
 	}
 
-	public static RelDataType convert(UnionTypeInfo unionType, RelDataTypeFactory dtFactory)
+	private static RelDataType convert(UnionTypeInfo unionType, RelDataTypeFactory dtFactory)
 			throws SemanticException {
 		// Union type is not supported in Calcite.
 		throw new SemanticException("Union type is not supported");
@@ -218,22 +218,22 @@ public class HiveParserTypeConverter {
 		}
 	}
 
-	public static TypeInfo convertStructType(RelDataType rType) {
+	private static TypeInfo convertStructType(RelDataType rType) {
 		List<TypeInfo> fTypes = rType.getFieldList().stream().map(f -> convert(f.getType())).collect(Collectors.toList());
 		List<String> fNames = rType.getFieldList().stream().map(RelDataTypeField::getName).collect(Collectors.toList());
 		return TypeInfoFactory.getStructTypeInfo(fNames, fTypes);
 	}
 
-	public static TypeInfo convertMapType(RelDataType rType) {
+	private static TypeInfo convertMapType(RelDataType rType) {
 		return TypeInfoFactory.getMapTypeInfo(convert(rType.getKeyType()),
 				convert(rType.getValueType()));
 	}
 
-	public static TypeInfo convertListType(RelDataType rType) {
+	private static TypeInfo convertListType(RelDataType rType) {
 		return TypeInfoFactory.getListTypeInfo(convert(rType.getComponentType()));
 	}
 
-	public static TypeInfo convertPrimitiveType(RelDataType rType) {
+	private static TypeInfo convertPrimitiveType(RelDataType rType) {
 		HiveShim hiveShim = HiveParserUtils.getSessionHiveShim();
 		switch (rType.getSqlTypeName()) {
 			case BOOLEAN:

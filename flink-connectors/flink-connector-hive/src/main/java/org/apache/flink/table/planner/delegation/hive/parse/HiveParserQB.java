@@ -53,8 +53,6 @@ public class HiveParserQB {
 	private final QBMetaData qbm;
 	private final String id;
 	private boolean isQuery;
-	private final CreateTableDesc tblDesc = null; // table descriptor of the final
-	private CreateTableDesc directoryDesc = null;
 	private boolean insideView;
 	private Set<String> aliasInsideView;
 
@@ -66,7 +64,7 @@ public class HiveParserQB {
 	/*
 	 * the HiveParserWindowingSpec used for windowing clauses in this QB.
 	 */
-	private HashMap<String, HiveParserWindowingSpec> destToWindowingSpec;
+	private final HashMap<String, HiveParserWindowingSpec> destToWindowingSpec;
 
 	/*
 	 * used to give a unique name to each SubQuery QB Currently there can be at
@@ -113,7 +111,7 @@ public class HiveParserQB {
 	//   (select * from T2 a where ...) subq2
 	// ..
 	// the alias is modified to subq1:a and subq2:a from a, to identify the right sub-query.
-	public static String getAppendedAliasFromId(String outerId, String alias) {
+	private static String getAppendedAliasFromId(String outerId, String alias) {
 		return (outerId == null ? alias : outerId + ":" + alias);
 	}
 
@@ -224,18 +222,14 @@ public class HiveParserQB {
 	}
 
 	public CreateTableDesc getTableDesc() {
-		return tblDesc;
+		return null;
 	}
 
 	public void setDirectoryDesc(CreateTableDesc directoryDesc) {
-		this.directoryDesc = directoryDesc;
 	}
 
-	/**
-	 * Whether this QB is for a CREATE-TABLE-AS-SELECT.
-	 */
 	public boolean isCTAS() {
-		return tblDesc != null;
+		return false;
 	}
 
 	/**
@@ -259,7 +253,7 @@ public class HiveParserQB {
 
 	public void addPTFNodeToSpec(ASTNode node, HiveParserPTFInvocationSpec spec) {
 		// Must be deterministic order map - see HIVE-8707
-		ptfNodeToSpec = ptfNodeToSpec == null ? new LinkedHashMap<ASTNode, HiveParserPTFInvocationSpec>() : ptfNodeToSpec;
+		ptfNodeToSpec = ptfNodeToSpec == null ? new LinkedHashMap<>() : ptfNodeToSpec;
 		ptfNodeToSpec.put(node, spec);
 	}
 

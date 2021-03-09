@@ -58,7 +58,7 @@ public class HiveASTParseDriver {
 	//and is purely used for matching lexical rules. This also means that the grammar will only
 	//accept capitalized tokens in case it is run from other tools like antlrworks which
 	//do not have the ANTLRNoCaseStringStream implementation.
-	public static class ANTLRNoCaseStringStream extends ANTLRStringStream {
+	private static class ANTLRNoCaseStringStream extends ANTLRStringStream {
 
 		public ANTLRNoCaseStringStream(String input) {
 			super(input);
@@ -81,7 +81,7 @@ public class HiveASTParseDriver {
 	/**
 	 * HiveLexerX.
 	 */
-	public static class HiveLexerX extends HiveASTLexer {
+	private static class HiveLexerX extends HiveASTLexer {
 
 		private final ArrayList<HiveASTParseError> errors;
 
@@ -185,7 +185,7 @@ public class HiveASTParseDriver {
 			parser.setHiveConf(ctx.getConf());
 		}
 		parser.setTreeAdaptor(ADAPTOR);
-		HiveASTParser.statement_return r = null;
+		HiveASTParser.statement_return r;
 		try {
 			r = parser.statement();
 		} catch (RecognitionException e) {

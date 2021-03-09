@@ -19,8 +19,6 @@
 package org.apache.flink.table.planner.delegation.hive;
 
 import org.apache.flink.table.planner.delegation.hive.parse.HiveASTParser;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserExplainConfiguration;
-import org.apache.flink.table.planner.delegation.hive.parse.HiveParserExplainConfiguration.AnalyzeState;
 
 import org.antlr.runtime.TokenRewriteStream;
 import org.apache.hadoop.conf.Configuration;
@@ -42,7 +40,6 @@ public class HiveParserContext {
 
 	private final Configuration conf;
 	protected int pathid = 10000;
-	protected HiveParserExplainConfiguration explainConfig = null;
 	private TokenRewriteStream tokenRewriteStream;
 	// Holds the qualified name to tokenRewriteStream for the views
 	// referenced by the query. This is used to rewrite the view AST
@@ -90,14 +87,7 @@ public class HiveParserContext {
 
 	// Find whether we should execute the current query due to explain.
 	public boolean isExplainSkipExecution() {
-		return (explainConfig != null && explainConfig.getAnalyze() != AnalyzeState.RUNNING);
-	}
-
-	public AnalyzeState getExplainAnalyze() {
-		if (explainConfig != null) {
-			return explainConfig.getAnalyze();
-		}
-		return null;
+		return false;
 	}
 
 	public Path getMRTmpPath(URI uri) {
@@ -114,7 +104,7 @@ public class HiveParserContext {
 	 * @param tokenRewriteStream the stream being used
 	 */
 	public void setTokenRewriteStream(TokenRewriteStream tokenRewriteStream) {
-		assert (this.tokenRewriteStream == null || this.getExplainAnalyze() == AnalyzeState.RUNNING);
+		assert this.tokenRewriteStream == null;
 		this.tokenRewriteStream = tokenRewriteStream;
 	}
 

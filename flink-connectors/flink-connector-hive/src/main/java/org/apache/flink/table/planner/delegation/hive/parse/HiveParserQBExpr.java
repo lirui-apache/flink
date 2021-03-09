@@ -35,8 +35,6 @@ public class HiveParserQBExpr {
 		NULLOP, UNION, INTERSECT, INTERSECTALL, EXCEPT, EXCEPTALL, DIFF
 	}
 
-	;
-
 	private Opcode opcode;
 	private HiveParserQBExpr qbexpr1;
 	private HiveParserQBExpr qbexpr2;

@@ -395,7 +395,7 @@ public class HiveParserTypeCheckProcFactory {
 			}
 
 			ASTNode expr = (ASTNode) nd;
-			Object str = null;
+			Object str;
 
 			switch (expr.getToken().getType()) {
 				case HiveASTParser.StringLiteral:

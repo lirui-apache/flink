@@ -49,7 +49,7 @@ public class SqlOperatorExprNodeDesc extends ExprNodeDesc {
 
 	@Override
 	public boolean isSame(Object o) {
-		return false;
+		return this == o;
 	}
 
 	public SqlOperator getSqlOperator() {

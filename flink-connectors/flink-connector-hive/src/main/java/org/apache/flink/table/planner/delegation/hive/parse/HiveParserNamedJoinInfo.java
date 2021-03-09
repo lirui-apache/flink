@@ -29,7 +29,7 @@ public class HiveParserNamedJoinInfo {
 
 	private List<String> tableAliases;
 	private List<String> namedColumns;
-	private JoinType hiveJoinType;
+	private final JoinType hiveJoinType;
 
 	public HiveParserNamedJoinInfo(List<String> aliases, List<String> namedColumns, JoinType hiveJoinType) {
 		super();

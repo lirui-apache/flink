@@ -64,10 +64,6 @@ public class HiveParserIntervalYearMonth implements Comparable<HiveParserInterva
 		set(other.getTotalMonths());
 	}
 
-	public HiveParserIntervalYearMonth negate() {
-		return new HiveParserIntervalYearMonth(-getTotalMonths());
-	}
-
 	@Override
 	public int compareTo(HiveParserIntervalYearMonth other) {
 		int cmp = this.getTotalMonths() - other.getTotalMonths();
@@ -103,7 +99,7 @@ public class HiveParserIntervalYearMonth implements Comparable<HiveParserInterva
 	}
 
 	public static HiveParserIntervalYearMonth valueOf(String strVal) {
-		HiveParserIntervalYearMonth result = null;
+		HiveParserIntervalYearMonth result;
 		if (strVal == null) {
 			throw new IllegalArgumentException("Interval year-month string was null");
 		}

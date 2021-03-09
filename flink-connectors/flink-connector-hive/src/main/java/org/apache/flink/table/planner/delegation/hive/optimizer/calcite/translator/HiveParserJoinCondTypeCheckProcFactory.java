@@ -70,9 +70,9 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 
 			boolean qualifiedAccess = (parent != null && parent.getType() == HiveASTParser.DOT);
 
-			ColumnInfo colInfo = null;
+			ColumnInfo colInfo;
 			if (!qualifiedAccess) {
-				colInfo = getColInfo(ctx, null, tableOrCol, expr);
+				colInfo = getColInfo(ctx, tableOrCol, expr);
 				// It's a column.
 				return new ExprNodeColumnDesc(colInfo);
 			} else if (hasTableAlias(ctx, tableOrCol, expr)) {
@@ -99,13 +99,13 @@ public class HiveParserJoinCondTypeCheckProcFactory extends HiveParserTypeCheckP
 			return tblAliasCnt == 1;
 		}
 
-		private static ColumnInfo getColInfo(HiveParserJoinTypeCheckCtx ctx, String tabName, String colAlias,
+		private static ColumnInfo getColInfo(HiveParserJoinTypeCheckCtx ctx, String colAlias,
 				ASTNode expr) throws SemanticException {
 			ColumnInfo tmp;
 			ColumnInfo cInfoToRet = null;
 
 			for (HiveParserRowResolver rr : ctx.getInputRRList()) {
-				tmp = rr.get(tabName, colAlias);
+				tmp = rr.get(null, colAlias);
 				if (tmp != null) {
 					if (cInfoToRet != null) {
 						throw new SemanticException(ErrorMsg.AMBIGUOUS_TABLE_OR_COLUMN.getMsg(expr));

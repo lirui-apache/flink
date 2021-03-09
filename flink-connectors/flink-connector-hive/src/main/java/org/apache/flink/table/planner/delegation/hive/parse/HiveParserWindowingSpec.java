@@ -38,9 +38,8 @@ import java.util.HashMap;
  */
 public class HiveParserWindowingSpec {
 
-	private HashMap<String, WindowExpressionSpec> aliasToWdwExpr = new HashMap<>();
-	private ArrayList<WindowExpressionSpec> windowExpressions = new ArrayList<>();
-	private HashMap<String, WindowSpec> windowSpecs = new HashMap<>();
+	private final ArrayList<WindowExpressionSpec> windowExpressions = new ArrayList<>();
+	private final HashMap<String, WindowSpec> windowSpecs = new HashMap<>();
 
 	public void addWindowSpec(String name, WindowSpec wdwSpec) {
 		windowSpecs.put(name, wdwSpec);
@@ -48,7 +47,6 @@ public class HiveParserWindowingSpec {
 
 	public void addWindowFunction(WindowFunctionSpec wFn) {
 		windowExpressions.add(wFn);
-		aliasToWdwExpr.put(wFn.getAlias(), wFn);
 	}
 
 	public ArrayList<WindowExpressionSpec> getWindowExpressions() {
@@ -143,7 +141,7 @@ public class HiveParserWindowingSpec {
 			throws SemanticException {
 		WindowSpec wdwSpec = wFn.getWindowSpec();
 		WindowFunctionInfo wFnInfo = FunctionRegistry.getWindowFunctionInfo(wFn.getName());
-		boolean supportsWindowing = wFnInfo == null ? true : wFnInfo.isSupportsWindow();
+		boolean supportsWindowing = wFnInfo == null || wFnInfo.isSupportsWindow();
 		WindowFrameSpec wFrame = wdwSpec.getWindowFrame();
 		OrderSpec orderSpec = wdwSpec.getOrder();
 		if (wFrame == null) {
@@ -376,7 +374,7 @@ public class HiveParserWindowingSpec {
 	 * WindowFrameSpec.
 	 */
 	public static class WindowFrameSpec {
-		private WindowType windowType;
+		private final WindowType windowType;
 		private BoundarySpec start;
 		private BoundarySpec end;
 
