@@ -78,6 +78,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /** A Parser that uses Hive's planner to parse a statement. */
@@ -344,7 +345,8 @@ public class HiveParser extends ParserImpl {
             sessionState.setCurrentDatabase(catalogManager.getCurrentDatabase());
             // some Hive functions needs the timestamp
             setCurrentTimestamp(sessionState);
-            SessionState.start(sessionState);
+            SessionState.setCurrentSessionState(sessionState);
+            //            SessionState.start(sessionState);
         } catch (LockException e) {
             throw new FlinkHiveException("Failed to init SessionState", e);
         } finally {
@@ -379,8 +381,8 @@ public class HiveParser extends ParserImpl {
                     FileSystem fs = path.getFileSystem(hiveConf);
                     fs.delete(path, true);
                 }
-            } catch (IOException e) {
-                LOG.warn("Error closing SessionState", e);
+            } catch (Throwable t) {
+                LOG.warn("Error closing SessionState", t);
             }
         }
     }

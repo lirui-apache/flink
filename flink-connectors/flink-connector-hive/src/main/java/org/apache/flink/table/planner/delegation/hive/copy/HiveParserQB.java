@@ -52,6 +52,7 @@ public class HiveParserQB {
     private boolean isQuery;
     private boolean insideView;
     private Set<String> aliasInsideView;
+    private final Map<String, List<List<String>>> valuesTableToData = new HashMap<>();
 
     // used by PTFs
     /*
@@ -310,5 +311,9 @@ public class HiveParserQB {
 
     public boolean isMaterializedView() {
         return false;
+    }
+
+    public Map<String, List<List<String>>> getValuesTableToData() {
+        return valuesTableToData;
     }
 }

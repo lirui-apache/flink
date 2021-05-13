@@ -74,6 +74,18 @@ public class TableEnvHiveConnectorITCase {
     @ClassRule public static TemporaryFolder tempFolder = new TemporaryFolder();
 
     @Test
+    public void test() throws Exception {
+        TableEnvironment tableEnv = getTableEnvWithHiveCatalog();
+        tableEnv.executeSql("create table dest (x int,y string)");
+        tableEnv.executeSql("insert into dest values (1,'a')").await();
+        System.out.println(
+                CollectionUtil.iteratorToList(
+                        tableEnv.executeSql(
+                                        "select x,y,grouping__id from dest group by x,y with rollup")
+                                .collect()));
+    }
+
+    @Test
     public void testMultiInputBroadcast() throws Exception {
         TableEnvironment tableEnv = getTableEnvWithHiveCatalog();
         tableEnv.executeSql("create database db1");
