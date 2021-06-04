@@ -72,6 +72,8 @@ import java.util.regex.Pattern;
 
 /**
  * Hive Configuration.
+ *
+ * This is copied from hive to fix initialization failure when hive-site is not available.
  */
 public class HiveConf extends Configuration {
   protected String hiveJar;
